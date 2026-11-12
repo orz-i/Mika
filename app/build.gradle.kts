@@ -138,10 +138,10 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":agent-display-common"))
-    implementation(project(":agent-display-client"))
-    implementation(project(":agent-display-a11y"))
-    implementation(project(":agent-display-setup"))
+    implementation(project(":aau-common"))
+    implementation(project(":aau-client"))
+    implementation(project(":aau-a11y"))
+    implementation(project(":aau-setup"))
     implementation(libs.protobuf.lite)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

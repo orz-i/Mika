@@ -42,7 +42,20 @@ class AudioMuteLedger(private val file: File?) {
             } else {
                 val tmp = File(f.parentFile, f.name + ".tmp")
                 tmp.writeText(format(modes))
-                if (!tmp.renameTo(f)) error("rename failed")
+                try {
+                    java.nio.file.Files.move(
+                        tmp.toPath(),
+                        f.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE
+                    )
+                } catch (e: Exception) {
+                    java.nio.file.Files.move(
+                        tmp.toPath(),
+                        f.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+                    )
+                }
             }
         }
     }

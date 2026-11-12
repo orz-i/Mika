@@ -2,7 +2,7 @@ package com.wangzan101.mika.cap.phone.display
 
 import android.graphics.Bitmap
 import android.hardware.display.DisplayManager
-import com.agent.display.client.AgentDisplay as DelegateDisplay
+import com.agent.use.client.AgentDisplay as DelegateDisplay
 import com.wangzan101.mika.cap.phone.shell.asAgentShell
 import com.wangzan101.mika.shell.IMikaShell
 import kotlinx.coroutines.flow.StateFlow

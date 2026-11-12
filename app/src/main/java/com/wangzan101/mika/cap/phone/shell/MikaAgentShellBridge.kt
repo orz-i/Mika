@@ -3,8 +3,9 @@ package com.wangzan101.mika.cap.phone.shell
 import android.content.Intent
 import android.os.Bundle
 import android.view.Surface
-import com.agent.display.common.DisplayConfig
-import com.agent.display.common.IAgentShell
+import com.agent.use.common.DisplayConfig
+import com.agent.use.common.IAgentShell
+import com.agent.use.common.network.INetworkCapture
 import com.wangzan101.mika.shell.IMikaShell
 
 /**
@@ -210,6 +211,8 @@ class MikaAgentShellBridge(private val mikaShell: IMikaShell) : IAgentShell {
     override fun enterDeviceCredential(kind: Int, credential: ByteArray, clear: Int): Boolean {
         return mikaShell.enterDeviceCredential(kind, credential, clear)
     }
+
+    override fun getNetworkCapture(): INetworkCapture? = null
 }
 
 /** 扩展方法：将 IMikaShell 转换为 IAgentShell */

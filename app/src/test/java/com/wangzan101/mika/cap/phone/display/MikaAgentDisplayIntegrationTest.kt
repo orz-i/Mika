@@ -4,11 +4,11 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.view.Surface
-import com.agent.display.common.DisplayConfig
-import com.agent.display.common.IAgentShell
-import com.agent.display.setup.CheckItem
-import com.agent.display.setup.DiagnosticReport
-import com.agent.display.setup.DiagnosticStatus
+import com.agent.use.common.DisplayConfig
+import com.agent.use.common.IAgentShell
+import com.agent.use.setup.CheckItem
+import com.agent.use.setup.DiagnosticReport
+import com.agent.use.setup.DiagnosticStatus
 import com.wangzan101.mika.cap.phone.shell.MikaAgentShellBridge
 import com.wangzan101.mika.cap.phone.shell.asAgentShell
 import com.wangzan101.mika.shell.IMikaShell
@@ -180,6 +180,9 @@ class MikaAgentDisplayIntegrationTest {
         val finishBundle = agentShell.finishDisplay(42, arrayOf("com.keep"), arrayOf("com.close"))
         assertNotNull(finishBundle)
         assertEquals(42, fakeShell.finishedDisplayId)
+
+        // 8. 验证原生网络捕获接口 (Mika 宿主桥接默认返回 null 以触发客户端 VPN 回退)
+        assertEquals(null, agentShell.networkCapture)
     }
 
     @Test
@@ -240,7 +243,7 @@ class MikaAgentDisplayIntegrationTest {
 
         // 3. 验证 Markdown 导出
         val md = report.toMarkdown()
-        assertTrue("Markdown 应包含报告主标题", md.contains("# AgentDisplayKit 环境与运行时诊断报告"))
+        assertTrue("Markdown 应包含报告主标题", md.contains("环境与运行时诊断报告"))
         assertTrue("Markdown 应包含设备信息", md.contains("Xiaomi 2407FRK8EC"))
         assertTrue("Markdown 应包含检查表格", md.contains("| Android 版本与 API 级别 |"))
 
