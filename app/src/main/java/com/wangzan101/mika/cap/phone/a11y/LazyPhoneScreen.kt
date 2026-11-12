@@ -31,6 +31,7 @@ class LazyPhoneScreen(
     private val height: Int,
     private val listApps: suspend () -> List<Pair<String, String>>,
     private val appCopies: suspend () -> List<AppCopy> = { emptyList() },
+    private val networkProvider: (() -> com.wangzan101.mika.core.cap.phone.PhoneNetworkPort?)? = null,
     private val acquire: suspend () -> ScreenPort,
 ) : ScreenPort {
     private val lock = Mutex()
@@ -115,6 +116,7 @@ class LazyPhoneScreen(
     override suspend fun checkScreen(): ScreenCheck? = port?.checkScreen()
     override suspend fun isProtected() = port?.isProtected() ?: false
     override suspend fun frameGrid() = port?.frameGrid()
+    override val network: com.wangzan101.mika.core.cap.phone.PhoneNetworkPort? get() = port?.network ?: networkProvider?.invoke()
 
     private fun empty() = ScreenSnapshot(snapshotId(), null, emptyList(), width, height, hasWindow = false)
 

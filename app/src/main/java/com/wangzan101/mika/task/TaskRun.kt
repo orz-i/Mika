@@ -638,6 +638,7 @@ class TaskRun(
                     beforeOpen = muter::beforeOpen,
                     notOpened = muter::notOpened,
                     appAccess = appAccess,
+                    network = phoneServices.network,
                 )
                 val side0 = PhoneSide(shell, a11y, screen, agentDisplay, muter)
                 phone = side0
@@ -651,7 +652,9 @@ class TaskRun(
                     phoneServices.hub.shell.value?.let { s ->
                         withContext(Dispatchers.IO) { runCatching { AppCopyReader.read(s, launchableApps(service.packageManager, service.packageName)) }.getOrNull() }
                     }.orEmpty()
-                }) { connectPhone() }
+                },
+                networkProvider = { phoneServices.network },
+            ) { connectPhone() }
             val accessedPhone = com.wangzan101.mika.core.uistate.AppAccessScreenPort(
                 phoneScreen, appAccess,
                 packages = { phone?.screen?.accessPackages().orEmpty() },
@@ -1045,6 +1048,7 @@ class TaskRun(
                         if (BuildConfig.DEBUG) runStore?.mirrorToExternal(r.runId)
                     }
                     // 恢复抛错也要撤掉「在跑」的登记,否则这份记录永远不归恢复处理
+                    runCatching { phoneServices.network.detach() }
                     try { mute?.restoreAll() } finally { recovery.endRun(key) }
                     watcher?.close()
                 } finally {
@@ -1123,6 +1127,8 @@ class TaskRun(
             p.screen.target.filterNotNull().collectLatest { t ->
                 _appShown.value = true
                 if (handoverRef?.handedOver != true) p.audio.opened(t.packageName, copyUser(t.userId))
+                // 自适应为目标应用激活原生网络嗅探
+                phoneServices.network.attachToPackage(t.packageName)
                 // 有目标 App 就说明 launch_app 已经建好了屏
                 val displayId = p.display.current?.displayId
                 if (t.taskId >= 0 && displayId != null) {

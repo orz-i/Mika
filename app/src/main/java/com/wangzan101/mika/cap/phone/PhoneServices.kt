@@ -1,6 +1,7 @@
 package com.wangzan101.mika.cap.phone
 
 import android.content.Context
+import com.wangzan101.mika.cap.phone.network.PhoneNetworkManager
 import com.wangzan101.mika.cap.phone.setup.BuiltinShellManager
 import com.wangzan101.mika.cap.phone.setup.BuiltinShellRecovery
 import com.wangzan101.mika.cap.phone.setup.PairingCoordinator
@@ -8,6 +9,7 @@ import com.wangzan101.mika.cap.phone.setup.PhoneSetupPrompt
 import com.wangzan101.mika.cap.phone.shell.BuiltinShellConnection
 import com.wangzan101.mika.cap.phone.shell.HelperHub
 import com.wangzan101.mika.cap.phone.shell.SharedShell
+import com.wangzan101.mika.cap.phone.shell.asAgentShell
 import com.wangzan101.mika.core.shell.BuiltinShellControl
 import com.wangzan101.mika.settings.RecoverySettings
 
@@ -42,6 +44,11 @@ class PhoneServices(context: Context) {
 
     /** 任务要用手机、助手却没在运行时的提示。 */
     val setupPrompt = PhoneSetupPrompt(app)
+
+    /** 原生移动端网络嗅探与流量捕获服务。 */
+    val network: PhoneNetworkManager by lazy {
+        PhoneNetworkManager(app, shellProvider = { hub.shell.value?.asAgentShell() })
+    }
 
     /** 给出进程里那一份的 Application。 */
     interface Owner {

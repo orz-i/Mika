@@ -323,4 +323,7 @@ interface ScreenPort {
 
     /** 此刻画面缩成的亮度格子(判动作效果用,见 [FrameGrid.sample]);没有画面、端口不支持时为 null。要便宜:不编码图片。 */
     suspend fun frameGrid(): FrameGrid? = null
+
+    /** 手机端网络抓包端口；设备不支持或未启用抓包时为 null。 */
+    val network: com.wangzan101.mika.core.cap.phone.PhoneNetworkPort? get() = null
 }
