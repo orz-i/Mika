@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -57,7 +59,57 @@ android {
     // 评测任务集(仓库根目录 eval/tasks)打进测试包的 assets,真机评测跑器从那里读题
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("eval/tasks"))
 
+    signingConfigs {
+        create("release") {
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            val localPropertiesFile = rootProject.file("local.properties")
+            val properties = Properties()
+
+            if (keystorePropertiesFile.exists()) {
+                keystorePropertiesFile.inputStream().use { properties.load(it) }
+            } else if (localPropertiesFile.exists()) {
+                localPropertiesFile.inputStream().use { properties.load(it) }
+            }
+
+            val storeFilePath = properties.getProperty("storeFile")
+                ?: properties.getProperty("RELEASE_STORE_FILE")
+                ?: providers.environmentVariable("KEYSTORE_FILE").orNull
+                ?: providers.gradleProperty("KEYSTORE_FILE").orNull
+
+            val resolvedStoreFile = storeFilePath?.let { path ->
+                val f = file(path)
+                if (f.isAbsolute) f else rootProject.file(path)
+            }
+
+            if (resolvedStoreFile != null && resolvedStoreFile.exists()) {
+                storeFile = resolvedStoreFile
+                storePassword = properties.getProperty("storePassword")
+                    ?: properties.getProperty("RELEASE_STORE_PASSWORD")
+                    ?: providers.environmentVariable("KEYSTORE_PASSWORD").orNull
+                    ?: providers.gradleProperty("KEYSTORE_PASSWORD").orNull
+                keyAlias = properties.getProperty("keyAlias")
+                    ?: properties.getProperty("RELEASE_KEY_ALIAS")
+                    ?: providers.environmentVariable("KEY_ALIAS").orNull
+                    ?: providers.gradleProperty("KEY_ALIAS").orNull
+                keyPassword = properties.getProperty("keyPassword")
+                    ?: properties.getProperty("RELEASE_KEY_PASSWORD")
+                    ?: providers.environmentVariable("KEY_PASSWORD").orNull
+                    ?: providers.gradleProperty("KEY_PASSWORD").orNull
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
+    }
+
     buildTypes {
+        getByName("release") {
+            val releaseSigning = signingConfigs.getByName("release")
+            signingConfig = if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
+                releaseSigning
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
         // 真机验收时并排安装,保留发行版和用户数据;默认构建标识不变。
         if (providers.gradleProperty("devInstall").isPresent) getByName("debug") {
             applicationIdSuffix = ".dev"
