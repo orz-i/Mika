@@ -26,6 +26,9 @@ import com.wangzan101.mika.cap.phone.display.LazyAgentDisplay
 import com.wangzan101.mika.cap.phone.setup.DeveloperSettings
 import com.wangzan101.mika.cap.phone.shell.ShellBinding
 import com.wangzan101.mika.cap.phone.shell.ShellService
+import com.wangzan101.mika.cap.phone.shell.asAgentShell
+import com.agent.display.setup.AgentDisplayDiagnosticSuite
+import com.agent.display.setup.DiagnosticReport
 import com.wangzan101.mika.cap.sandbox.AndroidSandbox
 import com.wangzan101.mika.cap.sandbox.SandboxState
 import com.wangzan101.mika.cap.web.WebHost
@@ -476,6 +479,15 @@ class AndroidSelfCheck(context: Context, private val status: () -> SystemStatus)
                 phone.sharedShell.release()
             }
         }
+    }
+
+    /**
+     * 运行 AgentDisplayKit 诊断套件，生成完整结构化诊断报告
+     */
+    suspend fun runAgentDisplayDiagnostics(): DiagnosticReport = withContext(Dispatchers.IO) {
+        val suite = AgentDisplayDiagnosticSuite(app)
+        val agentShell = shell?.asAgentShell()
+        suite.runFullDiagnostics(agentShell)
     }
 
     // ---------- 小工具 ----------

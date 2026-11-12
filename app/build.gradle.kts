@@ -50,6 +50,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+
     // 评测任务集(仓库根目录 eval/tasks)打进测试包的 assets,真机评测跑器从那里读题
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("eval/tasks"))
 
@@ -82,6 +86,10 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":agent-display-common"))
+    implementation(project(":agent-display-client"))
+    implementation(project(":agent-display-a11y"))
+    implementation(project(":agent-display-setup"))
     implementation(libs.protobuf.lite)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
