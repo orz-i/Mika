@@ -22,6 +22,7 @@ phone on the main screen at the same time.
   choosing one.
 - Use phone_wait for a known text or activity condition and phone_event when
   an event or notification matters; these wait for accessibility events.
+- Use phone_wait_network after a submit, refresh, or query action to wait for the app's backend API response instead of repeatedly polling the screen. Use phone_get_network_response to directly retrieve the captured JSON response body by requestId or URL pattern without needing OCR. Use phone_inspect_network to review recent network calls from the current app.
 - Use phone_run for a predictable sequence across screens: it looks up each
   target on the current screen and checks conditions locally before the next
   command. Stop and inspect when a target is ambiguous or the screen needs

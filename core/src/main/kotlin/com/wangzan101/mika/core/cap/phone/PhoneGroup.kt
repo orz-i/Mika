@@ -26,6 +26,7 @@ internal interface PhoneTool : AgentTool {
 internal object PhoneGroup {
     val tools: List<AgentTool> = ScreenTool.of(PHONE_FAMILY) + listOf(
         PhoneQuery, PhoneFind, PhoneExtract, PhoneCollect, PhoneWait, PhoneEventTool,
+        PhoneWaitNetwork, PhoneGetNetworkResponse, PhoneInspectNetwork,
         PhoneDialog, PhoneGesture, SetWheel, PhoneRun, PhoneCommand, ListApps, LaunchApp, AppAfterTask, ShareText, OpenLink,
         SetAlarm, SetTimer, ShowAlarms, AddCalendarEvent, BulkAddCalendarEvents,
     )
