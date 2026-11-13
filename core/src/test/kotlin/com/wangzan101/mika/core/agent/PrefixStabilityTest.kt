@@ -238,9 +238,87 @@ class PrefixStabilityTest {
         val r = check(bodies, "compaction", appendOnly = false)
         assertTrue(bodies.any { ContextCompressor.HEADER in it.toString() })
         // 越过触发点的那一次压缩一次(改写一次),之后只追加,再长一个余量越过时才再压:30 步里改写两次
-        // (80K 窗口:提示词和展开的工具约 20K,触发点 47K,压到 30K 以下;新增工具说明会让后续越过触发点提前)
-        assertEquals(listOf(12, 21, 30), r.changed)
+        // (80K 窗口:提示词瘦身后开局约 15K,触发点 47K,压到 30K 以下)
+        assertEquals(listOf(13, 24), r.changed)
         assertTrue("${r.share}", r.share > 0.85)
+    }
+
+    @Test fun fineGrainedActivationAppendsToolsWithoutBreakingZoneZeroPrefix() {
+        val screens = (1..5).map { n -> Screen("com.x", (1..4).map { label("@e$it", "第${n}屏第${it}项", 100 + it * 50) }) }
+        val port: ScreenPort = ScriptedScreen(screens)
+        val sb = FakeSandbox()
+        val bodies = CopyOnWriteArrayList<JsonObject>()
+        val server = MockWebServer().also { servers += it }.apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    val body = Json.parseToJsonElement(request.body.readUtf8()).jsonObject
+                    bodies += body
+                    val msgs = body["messages"]!!.jsonArray.map { it.jsonObject }
+                    val step = STEP.findAll(msgs.last().toString()).last().groupValues[1].toInt()
+                    val promptTokens = TokenEstimate.of(body.toString())
+                    if (step > 5) {
+                        return MockResponse().setBody(buildJsonObject {
+                            putJsonArray("choices") {
+                                add(buildJsonObject {
+                                    put("finish_reason", "stop")
+                                    putJsonObject("message") { put("content", "按需激活并完成") }
+                                })
+                            }
+                            putJsonObject("usage") { put("prompt_tokens", promptTokens); put("completion_tokens", 10) }
+                        }.toString())
+                    }
+                    val (name, args) = when (step) {
+                        1 -> "tool_search" to buildJsonObject { put("query", "tap"); put("capability", "phone") }
+                        2 -> "tool_activate" to buildJsonObject {
+                            putJsonArray("tools") { add(JsonPrimitive("phone_observe")); add(JsonPrimitive("phone_tap")) }
+                        }
+                        3 -> "phone_observe" to buildJsonObject {}
+                        4 -> "tool_activate" to buildJsonObject { put("topic", "sandbox:files") }
+                        else -> lastRead(msgs).let { (ref, snap) ->
+                            "phone_tap" to buildJsonObject { put("ref", ref); put("snapshotId", snap) }
+                        }
+                    }
+                    return MockResponse().setBody(buildJsonObject {
+                        putJsonArray("choices") {
+                            add(buildJsonObject {
+                                put("finish_reason", "tool_calls")
+                                putJsonObject("message") {
+                                    put("content", JsonPrimitive(null as String?))
+                                    putJsonArray("tool_calls") {
+                                        add(buildJsonObject {
+                                            put("id", "call_$step"); put("type", "function")
+                                            putJsonObject("function") { put("name", name); put("arguments", args.toString()) }
+                                        })
+                                    }
+                                }
+                            })
+                        }
+                        putJsonObject("usage") { put("prompt_tokens", promptTokens); put("completion_tokens", 10) }
+                    }.toString())
+                }
+            }
+            start()
+        }
+        val model = OpenAiCompatModel(server.url("/v1").toString().trimEnd('/'), "k", "m", Capabilities(true, false, 128_000, false), OkHttpClient())
+        runTest {
+            AgentLoop(model, toolDispatcher(port, sandbox = sb, workspace = { "w" }),
+                SystemPrompt.identity(), 10, clock = { 0L }, zone = ZoneOffset.UTC,
+            ).run("按需激活工具测试").also { assertTrue("$it", it is TaskState.Succeeded) }
+        }
+        val r = check(bodies.toList(), "fineGrained")
+        // 仅在第 2 步、第 4 步调用 tool_activate 后追加新工具;第 3 步调用已激活的 phone_observe 不展开整组 57 个手机工具
+        assertEquals(listOf(2, 4), r.opened)
+        val reqs = bodies.map(::wire)
+        val sys0 = bodies.first()["messages"]!!.jsonArray.first().toString()
+        for (b in bodies) {
+            assertEquals("系统提示词在按需激活期间必须逐字不变", sys0, b["messages"]!!.jsonArray.first().toString())
+        }
+        for (i in r.opened) {
+            val (prev, curr) = reqs[i - 1].tools to reqs[i].tools
+            assertEquals("第 ${i + 1} 次请求:新激活工具必须严格 Append-only 追加在末尾", prev, curr.take(prev.size))
+            assertTrue(curr.size > prev.size)
+        }
+        assertTrue("未展开全部 57 个手机工具", reqs.last().tools.size < 25)
     }
 
     private companion object {

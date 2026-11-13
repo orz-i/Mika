@@ -215,7 +215,7 @@ internal object PromptSurfaceFeedback {
         val done = com.wangzan101.mika.core.testing.answerReply("ok")
         val confirm = Part.ToolCall("c", "request_confirmation", "{\"action\":\"send\",\"target\":\"x\",\"content\":\"y\",\"app\":\"com.y\"}")
         val a = FakeModel(reply(Part.ToolCall("o1", "phone_observe", "{}"), Part.ToolCall("o2", "phone_observe", "{}")), reply(confirm), done)
-        AgentLoop(a, toolDispatcher(FakeScreen()), "BASE").run("t")
+        AgentLoop(a, toolDispatcher(FakeScreen()), "BASE", flags = SpeedFlags(serialToolCallsOnly = true)).run("t")
         val b = FakeModel(reply(confirm), done)
         AgentLoop(b, toolDispatcher(FakeScreen()), "BASE", confirmations = null).run("t")
         listOf(a, b).flatMapIndexed { i, m ->

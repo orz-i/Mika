@@ -323,7 +323,21 @@ class LoopScenarioTest {
         snapshot("m_irreversible_verified", end, "main" to main, "verifier" to checker)
     }
 
-    // (n) 英文问、回答漂成中文:交出前退回一次,让模型整段改写成用户的语言;改写好的英文回答照常交出
+    // 默认允许跨语言输入/输出:英文问、中文答不再强行打回重写
+    @Test fun crossLanguageAnswerIsAcceptedByDefault() = runTest {
+        val screen = ScriptedScreen(listOf(Screen(SETTINGS, listOf(label("@e1", "关于手机", 80), label("@e2", "Android 版本 14", 300),
+            label("@e3", "已使用 250.53 GB / 512 GB", 400)))))
+        val main = fakeModel("main") {
+            call("phone_observe")
+            answer(CHINESE_ANSWER)
+        }
+        val end = loop(main, toolDispatcher(screen)).run("What Android version is this phone on, and how much storage is used?")
+        assertEquals(CHINESE_ANSWER, (end as TaskState.Succeeded).answer)
+        assertEquals(0, main.remaining)
+        assertEquals(2, main.requests.size)
+    }
+
+    // (n) 开启 enforceReplyLanguage 回退开关时:英文问、回答漂成中文,交出前退回一次整段改写;改写好的英文回答照常交出
     @Test fun answerInOtherLanguageIsNudgedOnce() = runTest {
         val screen = ScriptedScreen(listOf(Screen(SETTINGS, listOf(label("@e1", "关于手机", 80), label("@e2", "Android 版本 14", 300),
             label("@e3", "已使用 250.53 GB / 512 GB", 400)))))
@@ -332,7 +346,7 @@ class LoopScenarioTest {
             answer(CHINESE_ANSWER)
             answer("Android version: 14 (Android 版本). Storage: 250.53 GB of 512 GB is used (已使用), as shown on About phone (关于手机).")
         }
-        val end = loop(main, toolDispatcher(screen)).run("What Android version is this phone on, and how much storage is used?")
+        val end = loop(main, toolDispatcher(screen), flags = SpeedFlags(enforceReplyLanguage = true)).run("What Android version is this phone on, and how much storage is used?")
         end as TaskState.Succeeded
         assertTrue(end.answer, end.answer.startsWith("Android version: 14"))
         val notice = main.requests[2].messages.withoutRuntime().last()
@@ -341,7 +355,7 @@ class LoopScenarioTest {
         snapshot("n_answer_language_nudge", end, "main" to main)
     }
 
-    // 改写后还是别的语言:不再退回,照样交出
+    // 开启 enforceReplyLanguage 时改写后还是别的语言:不再退回,照样交出
     @Test fun answerLanguageIsNudgedOnlyOnce() = runTest {
         val screen = ScriptedScreen(listOf(Screen(SETTINGS, listOf(label("@e1", "关于手机", 80), label("@e2", "Android 版本 14", 300),
             label("@e3", "已使用 250.53 GB / 512 GB", 400)))))
@@ -350,7 +364,7 @@ class LoopScenarioTest {
             answer(CHINESE_ANSWER)
             answer(CHINESE_ANSWER)
         }
-        val end = loop(main, toolDispatcher(screen)).run("What Android version is this phone on, and how much storage is used?")
+        val end = loop(main, toolDispatcher(screen), flags = SpeedFlags(enforceReplyLanguage = true)).run("What Android version is this phone on, and how much storage is used?")
         assertEquals(CHINESE_ANSWER, (end as TaskState.Succeeded).answer)
         assertEquals(0, main.remaining)
         assertEquals(3, main.requests.size)

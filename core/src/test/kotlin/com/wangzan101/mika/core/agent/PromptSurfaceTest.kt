@@ -100,6 +100,7 @@ class PromptSurfaceTest {
     @Test fun layeredSurfaces() {
         val c = combos.getValue("everything")
         val sizes = StringBuilder()
+        val measured = linkedMapOf<String, Triple<Int, Int, Int>>()
         for ((name, groups) in LAYERS) {
             val m = FakeRequestCapture()
             val prior = if (groups.isEmpty()) emptyList() else listOf(Turn("之前", "好", "succeeded", groups = groups))
@@ -109,10 +110,22 @@ class PromptSurfaceTest {
             val tools = m.tools.sumOf { (it.name + it.description + it.parametersJsonSchema).toByteArray().size }
             val tokens = TokenEstimate.of(listOf(com.wangzan101.mika.core.model.Message(com.wangzan101.mika.core.model.Role.User,
                 listOf(Part.Text(m.system!! + m.tools.joinToString("") { it.name + it.description + it.parametersJsonSchema })), com.wangzan101.mika.core.model.Author.Mika)))
+            measured[name] = Triple(system, system + tools, tokens)
             sizes.appendLine("$name: system $system bytes, ${m.tools.size} tools $tools bytes, total ${system + tools} bytes, ~$tokens tokens")
         }
         print(sizes)
         PromptSurface.check("layers/sizes", sizes.toString())
+
+        // 防止提示词表面未来膨胀回归（slimmed budgets）
+        val systemBudgets = mapOf("chat" to 11_000, "phone" to 18_500, "web" to 18_500, "all" to 26_000)
+        val tokenBudgets = mapOf("chat" to 8_800, "phone" to 22_000, "web" to 20_000, "all" to 32_500)
+        for ((name, triple) in measured) {
+            val (system, _, tokens) = triple
+            val maxSys = systemBudgets.getValue(name)
+            val maxTok = tokenBudgets.getValue(name)
+            org.junit.Assert.assertTrue("$name system prompt bloated: $system bytes > $maxSys", system <= maxSys)
+            org.junit.Assert.assertTrue("$name total prompt surface bloated: ~$tokens tokens > $maxTok", tokens <= maxTok)
+        }
     }
 
     @Test fun rolePrompts() {

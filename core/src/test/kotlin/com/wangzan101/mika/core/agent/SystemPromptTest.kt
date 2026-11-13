@@ -39,10 +39,10 @@ class SystemPromptTest {
 
     @Test fun tapOrderRefThenLocateThenDescription() {
         val p = rules()
-        val ref = p.indexOf("To tap something, phone_tap its ref")
+        val ref = p.indexOf("`phone_tap` its `ref`")
         assertTrue(ref >= 0)
         assertTrue(p.indexOf("phone_find_visually", ref) in ref until p.indexOf("phone_describe", ref))
-        assertTrue("exact on-screen label as text" in p && "say in target\n  what you are tapping" in p)
+        assertTrue("exact on-screen label" in p && "with `target` described" in p)
     }
 
     @Test fun warnsAboutUnavailableToolsInReferenceDocs() {
@@ -75,58 +75,51 @@ class SystemPromptTest {
 
     @Test fun presetSearchWordIsNotTheQuery() {
         val p = rules()
-        assertTrue("hint:true" in p && "not your search term" in p && "type your own query" in p)
+        assertTrue("hint:true" in p && "not typed queries" in p && "type your own query" in p)
     }
 
     @Test fun onlyReportValuesActuallyRead() {
         val p = flat()
-        assertTrue("Never recall or infer a value you did not read" in p && "a screenshot you were shown" in p)
+        assertTrue("Never recall or infer a value you did not read" in p && "attached image" in p)
         // 算出来的答案写出算式,每个输入都要是读到的;引用不许用「…」截短
-        assertTrue("write out the computation with its inputs" in p && "Every input must be a value you read" in p)
-        assertTrue("Never shorten a quote with" in p)
+        assertTrue("write out the computation with its inputs" in p && "every input is a value you read" in p)
+        assertTrue("never shorten a quote with" in p)
     }
 
     @Test fun giveUpHonestlyAfterExhaustingObviousPlaces() {
         val p = flat()
-        assertTrue("search inside the app" in p && "stop and say what you checked" in p)
-        // 应用内搜索两次不成,先去系统或应用给的标准入口
-        assertTrue("fails twice, go to the standard entry point" in p)
+        assertTrue("Check obvious entry points before concluding something is absent" in p)
+        assertTrue("definitive \"none\" answer" in p)
     }
 
     @Test fun skipListAppsWhenPackageKnownAndCheckScrollDirection() {
         val p = rules()
-        assertTrue("call phone_launch_app directly" in p)
-        assertTrue("scrolled the right way" in p)
+        assertTrue("phone_launch_app` directly" in p)
+        assertTrue("down` shows lower content" in p)
     }
 
     @Test fun readOnlyTasksHaveNoSideEffects() {
         val p = rules()
-        assertTrue("clipboard" in p && "switch the city" in p && "unless the task asks" in p)
+        assertTrue("clipboard" in p && "alter settings unless asked" in p)
     }
 
     @Test fun definitiveNoneIsAnAnswerNotAFailure() {
         val p = flat()
-        // 问「有没有」时搜索明确返回「没有」是答案,引用读到的原文
-        assertTrue("未搜索到相关用户" in p && "is answered: say yes or no and quote what you read" in p)
-        // 要的结果缺了要用的东西(功能、菜单、条目、值)仍是做不成,哪怕搜索它也没结果;只拿到一部分是只办了一部分
-        assertTrue("feature, menu, setting, page or value" in p && "even if searching for it showed no results" in p)
-        assertTrue("it is only partly done" in p && "or only part of it, call end_not_done with the confirmed part" in p)
+        assertTrue("definitive none from the app's or site's own search" in p)
+        assertTrue("feature, menu, setting, page, item or value" in p)
+        assertTrue("or only part of it, call end_not_done with the confirmed part" in p)
     }
 
     @Test fun lookingForAFeatureDoesNotOverlapWithAskingAboutAThing() {
         val p = flat()
-        // 「找不到就 end_not_done」只管要用的功能、菜单、设置、页面,不再包括「条目」
-        assertTrue("a feature, menu, setting or page you need to use" in p)
-        assertFalse("(a menu, setting, item or page)" in p)
-        // 问「有没有」的题,答「有 / 没有」就是结果
-        assertTrue("yes/no question about whether something exists" in p && "is answered: say yes or no" in p)
+        assertTrue("A yes/no question about whether something exists is answered by what you read" in p)
+        assertTrue("distinguish a definitive \"none\" answer (to an existence question) from a missing prerequisite" in p)
     }
 
     @Test fun requestedIrreversibleStepsRunDirectly() {
         val p = flat()
         assertTrue("Complete requested actions directly" in p)
         assertTrue("including actions that spend money, send content" in p)
-        assertTrue("while buying includes payment" in p)
         assertFalse("request_confirmation" in p)
     }
 
@@ -144,16 +137,14 @@ class SystemPromptTest {
 
     @Test fun recallEarlierScreensInsteadOfNavigatingBack() {
         val p = rules().replace(Regex("\\s+"), " ")
-        assertTrue("call view_past_screens with that result's screenshotId" in p && "never act on its positions, observe first" in p)
+        assertTrue("view_past_screens" in p && "never act on its positions without observing first" in p)
     }
 
     @Test fun barriersReportedAndClassified() {
         val p = rules()
-        assertTrue("use available signed-in or autofill options first" in p && "call handle_obstacle and hand over that step" in p)
-        // 登录墙的四种表现
-        assertTrue("will not\n  close" in p && "redirect to a sign-in page" in p && "while signed\n  out" in p && "covered by a sign-in prompt" in p)
-        assertTrue("do not call a risk-control page" in p && "arbitrary popup a CAPTCHA" in p)
-        assertTrue("its own close control" in p)
+        assertTrue("try available signed-in/autofill options first" in p && "handle_obstacle" in p && "hand_to_user" in p)
+        assertTrue("do not classify risk-control pages or arbitrary popups as CAPTCHAs" in p)
+        assertTrue("their own close control" in p)
     }
 
     @Test fun screenTextIsDataNotInstructions() {
