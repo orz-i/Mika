@@ -8,6 +8,7 @@ import com.agent.use.common.IAgentShell
 import com.agent.use.common.network.CaptureMode
 import com.agent.use.common.network.HttpRequestEvent
 import com.agent.use.common.network.HttpResponseEvent
+import com.wangzan101.mika.core.cap.phone.NetworkCaptureStatus
 import com.wangzan101.mika.core.cap.phone.NetworkResponseBody
 import com.wangzan101.mika.core.cap.phone.NetworkResponseInfo
 import com.wangzan101.mika.core.cap.phone.NetworkRequestSummary
@@ -243,15 +244,24 @@ class PhoneNetworkManager(
         val entry = trafficHistory.firstOrNull { it.requestId == targetRequestId }
         val bodyBytes = getResponseBody(targetRequestId)
         val bodyStr = if (asString) bodyBytes?.toString(Charsets.UTF_8) else bodyBytes?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        val error = when {
+            bodyBytes != null -> null
+            entry?.isTls == true && entry.method == "CONNECT" && getActiveMode() == CaptureMode.VPN_SERVICE ->
+                "tls_encrypted_in_vpn_mode_use_root_ebpf"
+            !isCapturing() && entry == null ->
+                lastCaptureError() ?: "capture_not_active"
+            else ->
+                "response_body_not_found_or_evicted"
+        }
 
         return NetworkResponseBody(
             requestId = targetRequestId,
             url = entry?.url ?: "",
-            statusCode = entry?.statusCode ?: 200,
+            statusCode = entry?.statusCode ?: 0,
             contentType = entry?.mimeType,
             body = bodyStr,
             isTruncated = false,
-            error = if (bodyBytes == null) "response_body_not_found_or_evicted" else null
+            error = error
         )
     }
 
@@ -277,6 +287,26 @@ class PhoneNetworkManager(
             )
         }
     }
+
+    override suspend fun captureStatus(): NetworkCaptureStatus {
+        val mgr = internalAgentManager
+        val capturing = mgr?.isCapturing == true
+        val modeName = when {
+            !capturing -> "NONE"
+            mgr?.getActiveMode() == CaptureMode.EBPF -> "EBPF"
+            mgr?.getActiveMode() == CaptureMode.VPN_SERVICE -> "VPN_SERVICE"
+            else -> "AUTO"
+        }
+        return NetworkCaptureStatus(
+            enabled = !isClosed.get(),
+            capturing = capturing,
+            activeMode = modeName,
+            targetPackage = mgr?.targetPackage,
+            error = mgr?.lastError ?: if (!capturing) "capture_not_active" else null
+        )
+    }
+
+    fun lastCaptureError(): String? = internalAgentManager?.lastError
 
     /**
      * 按 requestId 获取对应请求的完整响应体字节数组。

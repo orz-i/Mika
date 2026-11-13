@@ -89,6 +89,7 @@ fun NetworkCaptureScreen(
     val isCapturing = network.isCapturing()
     val currentPkg = network.currentPackage
     val activeMode = network.getActiveMode()
+    val lastError = network.lastCaptureError()
 
     LaunchedEffect(Unit) {
         ebpfSupported = withContext(Dispatchers.IO) { runCatching { network.isEbpfSupported() }.getOrDefault(false) }
@@ -123,6 +124,7 @@ fun NetworkCaptureScreen(
         } else {
             null
         },
+        lastError = if (!isCapturing) lastError else null,
         cacheCount = cacheCount,
         onClearCache = {
             network.clearHistory()
@@ -146,6 +148,7 @@ fun NetworkCaptureContent(
     cacheCount: Int,
     onClearCache: () -> Unit,
     onBack: () -> Unit,
+    lastError: String? = null,
 ) {
     PageScaffold(stringResource(R.string.network_capture_title), onBack) {
         GroupCard {
@@ -206,11 +209,19 @@ fun NetworkCaptureContent(
             ListRow(
                 MikaIcons.Refresh,
                 stringResource(R.string.network_capture_live_status),
-                activeSummary ?: stringResource(R.string.network_capture_idle),
+                activeSummary ?: lastError ?: stringResource(R.string.network_capture_idle),
             ) {
                 RowValue(
-                    if (activeSummary != null) stringResource(R.string.state_on) else stringResource(R.string.network_capture_idle),
-                    if (activeSummary != null) ValueTone.Ok else ValueTone.Plain,
+                    when {
+                        activeSummary != null -> stringResource(R.string.state_on)
+                        !lastError.isNullOrBlank() -> lastError
+                        else -> stringResource(R.string.network_capture_idle)
+                    },
+                    when {
+                        activeSummary != null -> ValueTone.Ok
+                        !lastError.isNullOrBlank() -> ValueTone.Bad
+                        else -> ValueTone.Plain
+                    },
                 )
             }
 

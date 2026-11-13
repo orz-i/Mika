@@ -1130,7 +1130,10 @@ class TaskRun(
                 // 自适应为目标应用激活原生网络嗅探
                 val netFlags = FeatureFlags.get(service)
                 if (netFlags.networkCaptureEnabled()) {
-                    phoneServices.network.attachToPackage(t.packageName, netFlags.networkCaptureMode())
+                    val attached = phoneServices.network.attachToPackage(t.packageName, netFlags.networkCaptureMode())
+                    if (!attached) {
+                        Log.w(TAG, "network capture failed to attach for ${t.packageName}: ${phoneServices.network.lastCaptureError()}")
+                    }
                 } else {
                     phoneServices.network.detach()
                 }
