@@ -47,6 +47,18 @@ data class NetworkRequestSummary(
 )
 
 /**
+ * 端侧抓包当前运行状态摘要。
+ */
+@Serializable
+data class NetworkCaptureStatus(
+    val enabled: Boolean = true,
+    val capturing: Boolean = false,
+    val activeMode: String = "NONE",
+    val targetPackage: String? = null,
+    val error: String? = null,
+)
+
+/**
  * 手机网络抓包端口：提供等待网络响应、提取响应体和检查近期请求列表的能力。
  * 底层可由 Root eBPF 或免 Root VpnService 驱动。
  */
@@ -67,6 +79,11 @@ interface PhoneNetworkPort {
      * 查看当前 App 最近捕获的请求与响应列表。
      */
     suspend fun inspectNetwork(limit: Int = 10, filter: String? = null): List<NetworkRequestSummary>
+
+    /**
+     * 返回当前底层抓包健康与活跃状态；未实现的模拟端口可返回 null。
+     */
+    suspend fun captureStatus(): NetworkCaptureStatus? = null
 }
 
 /** 注入到上下文中的网络端口 Key。 */

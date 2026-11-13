@@ -41,6 +41,18 @@ internal object PhoneWaitNetwork : PhoneTool {
         val timeout = (a.int("timeoutMs", 100, 30000) ?: 10000).toLong()
         val net = ctx.network ?: return failure("network_capture_unavailable")
 
+        val status = net.captureStatus()
+        if (status != null && !status.capturing) {
+            return ToolExecution(buildJsonObject {
+                put("ok", false)
+                put("error", status.error ?: "capture_not_active")
+                put("capturing", false)
+                put("activeMode", status.activeMode)
+                status.targetPackage?.let { put("targetPackage", it) }
+                put("urlPattern", pattern)
+            })
+        }
+
         val response = net.waitForResponse(pattern, timeout)
         return if (response != null) {
             ToolExecution(buildJsonObject {
@@ -138,10 +150,17 @@ internal object PhoneInspectNetwork : PhoneTool {
         val filter = a.str("filter", max = 200)
         val net = ctx.network ?: return failure("network_capture_unavailable")
 
+        val status = net.captureStatus()
         val requests = net.inspectNetwork(limit, filter)
         return ToolExecution(buildJsonObject {
-            put("ok", true)
+            put("ok", status?.capturing != false || requests.isNotEmpty())
             put("count", requests.size)
+            status?.let {
+                put("capturing", it.capturing)
+                put("activeMode", it.activeMode)
+                it.targetPackage?.let { pkg -> put("targetPackage", pkg) }
+                it.error?.let { err -> put("captureError", err) }
+            }
             put("requests", JsonArray(requests.map { r ->
                 buildJsonObject {
                     put("requestId", r.requestId)
