@@ -54,4 +54,20 @@ class ConversationTest {
         val t = text(listOf(Turn("查余额", "余额 10 元", "unverified", note = "防截屏")))
         assertTrue(t, "result (could not be verified): 余额 10 元" in t)
     }
+
+    @Test fun adaptiveBudgetScalesWithContextWindowWithoutFiveTurnCap() {
+        val turns = (1..12).map { Turn("问题$it", "答案$it", "succeeded") }
+        val defaultCtx = (Conversation.context(turns)!!.parts.single() as Part.Text).text
+        assertTrue("应该不再受 5 轮硬上限截断", "1. The user said: 问题1;" in defaultCtx && "12. The user said: 问题12;" in defaultCtx)
+
+        // 超过默认 2500 token 但仍在 128K 窗口自适应预算内的多轮历史应被保留
+        val medium = (1..10).map { Turn("长问题$it", "内容".repeat(250), "succeeded") }
+        val bigWindow = (Conversation.context(medium, contextTokens = 128_000)!!.parts.single() as Part.Text).text
+        val smallWindow = (Conversation.context(medium, contextTokens = 16_000)!!.parts.single() as Part.Text).text
+        assertTrue("128K 窗口预算应大于 16K 窗口", Conversation.tokenBudget(128_000) > Conversation.tokenBudget(16_000))
+        assertTrue("128K 窗口应装下更多轮", TokenEstimate.of(bigWindow) > TokenEstimate.of(smallWindow))
+        assertTrue("128K 窗口应突破旧 2500 token 上限", TokenEstimate.of(bigWindow) > 2_500)
+        assertTrue("16K 窗口应受对应比例预算约束", TokenEstimate.of(smallWindow) <= Conversation.tokenBudget(16_000))
+        assertNull(Conversation.context(turns, contextTokens = 0))
+    }
 }

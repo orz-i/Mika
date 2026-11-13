@@ -51,22 +51,65 @@ object Conversation {
     fun stopSummary(t: Turn): String? =
         t.outcome.trim().takeIf { t.status == "cancelled" && it.isNotEmpty() && it != CANCELLED_OUTCOME }
 
+    /** 默认用于参考历史的上下文窗口比例。 */
+    const val DEFAULT_BUDGET_RATIO = 0.10
+    const val DEFAULT_CONTEXT_TOKENS = 128_000
+    const val MIN_ADAPTIVE_TOKENS = 1_000
+    const val MAX_ADAPTIVE_TOKENS = 24_000
+
     /**
-     * 把之前的轮次做成一条用户角色的参考消息,最近的在最后;整条超过 [maxTokens](按 [TokenEstimate])就丢掉较早的轮次。
-     * 只剩一轮还超长时各字段分别截断(用户原话和结局都留一段),仍超长再整段截断。没有轮次返回 null。
+     * 按模型上下文窗口 [contextTokens] 与比例 [budgetRatio] 计算参考历史可用的 token 预算:
+     * 扣掉输出预留后的可用窗口按比例分配,并在 [minTokens]..[maxTokens] 间自适应,同时不超过可用窗口的三分之一。
      */
-    fun context(turns: List<Turn>, maxTurns: Int = 5, maxTokens: Int = 2_500): Message? {
-        var recent = turns.takeLast(maxTurns.coerceAtLeast(0))
-        if (recent.isEmpty()) return null
+    fun tokenBudget(
+        contextTokens: Int = DEFAULT_CONTEXT_TOKENS,
+        budgetRatio: Double = DEFAULT_BUDGET_RATIO,
+        minTokens: Int = MIN_ADAPTIVE_TOKENS,
+        maxTokens: Int = MAX_ADAPTIVE_TOKENS,
+    ): Int {
+        val usable = ContextLimits.of(contextTokens).usable
+        if (usable <= 0) return 0
+        val ratio = budgetRatio.coerceIn(0.01, 0.5)
+        val cap = (usable / 3).coerceAtLeast(1)
+        val low = minOf(minTokens, cap)
+        val high = minOf(maxTokens, cap).coerceAtLeast(low)
+        return (usable * ratio).toInt().coerceIn(low, high)
+    }
+
+    /**
+     * 把之前的轮次做成一条用户角色的参考消息,最近的在最后;整条超过预算(按 [TokenEstimate])就丢掉较早的轮次。
+     * 不传 [maxTurns] 时不设轮数硬上限,按预算尽可能装载多轮;传 [maxTokens] 时按固定上限,否则按 [contextTokens] 与 [budgetRatio] 自适应分配。
+     * 只剩一轮还超长时各字段分别截断(用户原话和结局都留一段),仍超长再整段截断。没有轮次或预算为 0 返回 null。
+     */
+    fun context(
+        turns: List<Turn>,
+        maxTurns: Int = Int.MAX_VALUE,
+        maxTokens: Int? = null,
+        contextTokens: Int = DEFAULT_CONTEXT_TOKENS,
+        budgetRatio: Double = DEFAULT_BUDGET_RATIO,
+    ): Message? {
+        val budget = (maxTokens ?: tokenBudget(contextTokens, budgetRatio)).coerceAtLeast(0)
+        if (budget <= 0) return null
+        val capped = turns.takeLast(maxTurns.coerceAtLeast(0))
+        if (capped.isEmpty()) return null
         val header = "$HEADER\n"
         fun render(ts: List<Turn>, clip: Int) = ts.mapIndexed { i, t -> line(i + 1, t, clip) }.joinToString("\n")
-        while (recent.size > 1 && TokenEstimate.of(header + render(recent, Int.MAX_VALUE)) > maxTokens) recent = recent.drop(1)
+        fun fits(drop: Int) = TokenEstimate.of(header + render(capped.subList(drop, capped.size), Int.MAX_VALUE)) <= budget
+        var recent = if (capped.size <= 1 || fits(0)) capped else {
+            var lo = 1
+            var hi = capped.size - 1
+            while (lo < hi) {
+                val mid = (lo + hi) ushr 1
+                if (fits(mid)) hi = mid else lo = mid + 1
+            }
+            capped.subList(lo, capped.size)
+        }
         var body = render(recent, Int.MAX_VALUE)
-        val room = (maxTokens - TokenEstimate.of(header)).coerceAtLeast(20)
-        if (TokenEstimate.of(header + body) > maxTokens) {
+        val room = (budget - TokenEstimate.of(header)).coerceAtLeast(20)
+        if (TokenEstimate.of(header + body) > budget) {
             // 只剩一轮还超长:各字段截断,原话和结局各留一段
             body = render(recent, room / 3)
-            if (TokenEstimate.of(header + body) > maxTokens) body = TokenEstimate.clip(body, room, "…")
+            if (TokenEstimate.of(header + body) > budget) body = TokenEstimate.clip(body, room, "…")
         }
         return Message(Role.User, listOf(Part.Text("$HEADER\n$body")), Author.Mika)
     }

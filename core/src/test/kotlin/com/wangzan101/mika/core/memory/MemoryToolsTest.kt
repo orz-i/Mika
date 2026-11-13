@@ -391,4 +391,93 @@ class MemoryToolsTest {
         assertFalse(record.contains("用户觉得旧名字不好")); assertFalse(record.contains("把那条记忆删掉"))
         assertEquals(1, events.filterIsInstance<RunEvent.ToolResult>().count { "memory_edit" in RunEvent.encode(it) })
     }
+
+    @Test fun verifiedEnvironmentFactSavedWithEvidenceIdWithoutUserQuote() {
+        val sb = com.wangzan101.mika.core.cap.sandbox.FakeSandbox().apply {
+            next = { com.wangzan101.mika.core.cap.sandbox.CommandResult(0, false, false, 10, "Gradle 8.11.1\nPython 3.12.2", 0, false) }
+        }
+        val store = memStore()
+        val d = toolDispatcher(FakeScreen(), memory = store, utterances = UserUtterances().apply { add("帮我检查环境") }, sandbox = sb, workspace = { "w" })
+        val cmd = d.run("run_command", buildJsonObject { put("command", "gradle --version && python3 --version") })
+        assertEquals("true", cmd.s("ok"))
+
+        // 经过验证的环境/项目事实附带 evidenceId 可写入，不要求逐字匹配 UserUtterances
+        val saved = d.run("memory_save", buildJsonObject {
+            put("kind", "fact")
+            put("content", "当前环境使用 Gradle 8.11.1 和 Python 3.12.2")
+            put("evidenceId", 1)
+            putJsonArray("keywords") { add(kotlinx.serialization.json.JsonPrimitive("Gradle")) }
+        })
+        assertEquals("true", saved.s("ok"))
+        assertEquals("active", saved.s("status"))
+        val item = store.items.value.single()
+        assertEquals("observed", item.source.type)
+        assertTrue(item.source.quote!!.startsWith("evidence#1"))
+
+        // 工作流事实(procedure)附带 source="observed" + 观察片段也可写入为 pending
+        val proc = d.run("memory_save", buildJsonObject {
+            put("kind", "procedure")
+            put("content", "构建前检查 Gradle 8.11.1 环境")
+            put("source", "observed")
+            put("quote", "Gradle 8.11.1")
+        })
+        assertEquals("true", proc.s("ok"))
+        assertEquals("pending", proc.s("status"))
+    }
+
+    @Test fun preferenceStillStrictlyRequiresUserQuoteEvenWithEvidenceId() {
+        val sb = com.wangzan101.mika.core.cap.sandbox.FakeSandbox().apply {
+            next = { com.wangzan101.mika.core.cap.sandbox.CommandResult(0, false, false, 10, "theme=dark", 0, false) }
+        }
+        val store = memStore()
+        val d = toolDispatcher(FakeScreen(), memory = store, utterances = UserUtterances().apply { add("看看配置文件") }, sandbox = sb, workspace = { "w" })
+        d.run("run_command", buildJsonObject { put("command", "cat config.ini") })
+
+        val r = d.run("memory_save", buildJsonObject {
+            put("kind", "preference")
+            put("content", "用户偏好深色主题")
+            put("evidenceId", 1)
+        })
+        assertEquals("false", r.s("ok"))
+        assertEquals("preference_requires_user", r.s("error"))
+        assertTrue(store.items.value.isEmpty())
+    }
+
+    @Test fun untrustedObservationAndUngroundedFactsRejected() {
+        val web = com.wangzan101.mika.core.cap.web.FakeWebPort()
+        web.page = web.page.copy(text = "Project uses Python 3.12.2")
+        val sb = com.wangzan101.mika.core.cap.sandbox.FakeSandbox().apply {
+            next = { com.wangzan101.mika.core.cap.sandbox.CommandResult(0, false, false, 10, "Python 3.12.2", 0, false) }
+        }
+        val store = memStore()
+        val d = toolDispatcher(FakeScreen(), memory = store, utterances = UserUtterances().apply { add("看看") }, web = web, sandbox = sb, workspace = { "w" })
+        d.run("web_navigate", buildJsonObject { put("url", "https://example.com/") })
+        d.run("web_read_page", JsonObject(emptyMap()))
+        d.run("run_command", buildJsonObject { put("command", "python3 --version") })
+
+        // 网页观察属于不可信来源，不能直接作为 observed 事实写入
+        val untrustedById = d.run("memory_save", buildJsonObject {
+            put("kind", "fact")
+            put("content", "项目使用 Python 3.12.2")
+            put("evidenceId", 2)
+        })
+        assertEquals("evidence_untrusted", untrustedById.s("error"))
+
+        // 可信观察里不存在的编号应拒绝
+        val missing = d.run("memory_save", buildJsonObject {
+            put("kind", "fact")
+            put("content", "项目使用 Python 3.12.2")
+            put("evidenceId", 99)
+        })
+        assertEquals("evidence_not_found", missing.s("error"))
+
+        // 编造与可信观察不符的版本号应因未接地被拒绝
+        val ungrounded = d.run("memory_save", buildJsonObject {
+            put("kind", "fact")
+            put("content", "项目使用 Python 3.99.0")
+            put("evidenceId", 3)
+        })
+        assertEquals("content_not_grounded", ungrounded.s("error"))
+        assertTrue(store.items.value.isEmpty())
+    }
 }
