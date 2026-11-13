@@ -1,6 +1,7 @@
 .superpowers/
 build/
 .gradle/
+.cxx/
 local.properties
 keystore.properties
 *.jks
