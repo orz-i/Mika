@@ -63,6 +63,13 @@ class LoopPoliciesTest {
         assertEquals(Feedback["final_turn"], TurnPolicy.finalTurn().text)
     }
 
+    @Test fun noNewDataSoftNoticeIncludesLimitAndProgress() {
+        val n = TurnPolicy.noNewDataNotice(RunProgress.Task("已收集", 2, null, "第 2 条"))
+        assertEquals(Feedback["closeout_source"], n.source)
+        assertTrue(n.text, "${NewDataTracker.LIMIT}" in n.text && "no new data" in n.text)
+        assertTrue(n.text, "Latest confirmed progress: 已收集 · 2 · 第 2 条" in n.text)
+    }
+
     // ---- 停止 ----
 
     @Test fun giveUpEndsBeforeGuardStop() {

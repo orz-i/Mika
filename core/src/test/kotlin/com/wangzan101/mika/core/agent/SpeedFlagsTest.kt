@@ -19,6 +19,14 @@ class SpeedFlagsTest {
         val all = SpeedFlags(true, true, true, true, true, true, true)
         assertEquals(all, SpeedFlags.parse(all.describe()))
         assertEquals(SpeedFlags(adaptiveVision = true), SpeedFlags.parse("adaptiveVision"))
+        val rollback = SpeedFlags(
+            strictIntentGate = true,
+            enforceReplyLanguage = true,
+            strictNoNewDataStop = true,
+            serialToolCallsOnly = true,
+        )
+        assertEquals(rollback, SpeedFlags.parse("strictIntentGate,enforceReplyLanguage,strictNoNewDataStop,serialToolCallsOnly"))
+        assertEquals(rollback, SpeedFlags.parse(rollback.describe()))
     }
 
     @Test fun unknownKeyRejected() {

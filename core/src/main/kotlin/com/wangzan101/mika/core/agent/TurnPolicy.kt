@@ -69,6 +69,16 @@ internal object TurnPolicy {
     /** 步数用完后最后一轮之前的提醒。 */
     fun finalTurn(): Notice = Notice(Feedback["final_source"], Feedback["final_turn"])
 
+    /** 连续多次行动未产生新数据时的一次性软提醒: 不强行终止, 提示模型换方法、核对或直接作答/放弃。 */
+    fun noNewDataNotice(progress: RunProgress.Task? = null): Notice {
+        val confirmed = progress?.display?.takeIf { it.isNotBlank() }?.let { "\nLatest confirmed progress: $it" }.orEmpty()
+        return Notice(
+            Feedback["closeout_source"],
+            "The last ${NewDataTracker.LIMIT} consecutive collection/browse actions produced no new data. " +
+                "Consider changing your query/approach, answering with what you have confirmed, or reporting what could not be found instead of repeating the same step.$confirmed",
+        )
+    }
+
     /** 完成或连续无新数据后的收尾:不再给操作工具，但仍可交出结果或如实报告部分完成。 */
     fun closeout(reason: Closeout, progress: RunProgress.Task? = null): Notice {
         val confirmed = progress?.display?.takeIf { it.isNotBlank() }?.let { "\nLatest confirmed progress: $it" }.orEmpty()

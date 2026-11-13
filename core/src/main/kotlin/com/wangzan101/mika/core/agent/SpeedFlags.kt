@@ -12,12 +12,24 @@ data class SpeedFlags(
     val structuredCompaction: Boolean = false,
     /** 元素优先,只有读不清或模型主动请求时才给主模型画面。 */
     val adaptiveVision: Boolean = false,
+    /** 回退兼容: 在主循环重新启用 IntentGate 对 Discuss 意图剥夺全部工具。默认关闭以放手给模型决策。 */
+    val strictIntentGate: Boolean = false,
+    /** 回退兼容: 强制打回与用户输入语言不一致的回复并要求用单一语言重写。默认关闭以尊重跨语言输出。 */
+    val enforceReplyLanguage: Boolean = false,
+    /** 回退兼容: 连续无新数据达到上限时强行跳转收尾。默认关闭并降级为一次性软提醒。 */
+    val strictNoNewDataStop: Boolean = false,
+    /** 回退兼容: 单轮多工具调用退回仅执行第一个并对其余返回 parallel_tool_call_skipped。默认关闭以启用波次并发调度。 */
+    val serialToolCallsOnly: Boolean = false,
 ) {
     private fun on(): Map<String, Boolean> = mapOf(
         "inlineScreen" to inlineScreen, "batchSteps" to batchSteps,
         "replay" to replay, "deepLinks" to deepLinks, "lightSteps" to lightSteps, "parallelTasks" to parallelTasks,
         "structuredCompaction" to structuredCompaction,
         "adaptiveVision" to adaptiveVision,
+        "strictIntentGate" to strictIntentGate,
+        "enforceReplyLanguage" to enforceReplyLanguage,
+        "strictNoNewDataStop" to strictNoNewDataStop,
+        "serialToolCallsOnly" to serialToolCallsOnly,
     )
 
     /** 打开的开关名按字母序用逗号连接;全关为 "none"。[parse] 可读回。 */
@@ -47,7 +59,11 @@ data class SpeedFlags(
                 }
             }
             fun f(k: String) = set[k] ?: false
-            return SpeedFlags(f("inlineScreen"), f("batchSteps"), f("replay"), f("deepLinks"), f("lightSteps"), f("parallelTasks"), f("structuredCompaction"), f("adaptiveVision"))
+            return SpeedFlags(
+                f("inlineScreen"), f("batchSteps"), f("replay"), f("deepLinks"),
+                f("lightSteps"), f("parallelTasks"), f("structuredCompaction"), f("adaptiveVision"),
+                f("strictIntentGate"), f("enforceReplyLanguage"), f("strictNoNewDataStop"), f("serialToolCallsOnly"),
+            )
         }
     }
 }
