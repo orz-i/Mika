@@ -8,7 +8,10 @@ import com.wangzan101.mika.core.cap.web.PagePacing
 import com.wangzan101.mika.core.uistate.PlacePace
 import kotlin.random.Random
 import com.wangzan101.mika.core.action.OutwardPacing
+import com.wangzan101.mika.core.cap.phone.AppPacing
 import com.wangzan101.mika.core.cap.phone.OperatingPace
+import com.wangzan101.mika.core.policy.RunProfile
+import com.wangzan101.mika.core.policy.asPacingPolicy
 import com.wangzan101.mika.core.usage.RunUsageTally
 import com.wangzan101.mika.core.shell.AccessibilityRepair
 import com.wangzan101.mika.core.shell.HelperRestart
@@ -782,10 +785,19 @@ class TaskRun(
             // 这个对话里用户发来的屏幕(跟着对话存在工作区里)
             val userScreens = (service.application as MikaApp).userScreens.source(conversationId)
             val stepLimit = if (conditionCheck) null else FeatureFlags.get(service).taskStepLimit()
+            val runCapabilities = if (conditionCheck) setOf("web", "sandbox") else null
+            val outwardPacing = if (!conditionCheck && provenance.origin != RunOrigin.Mcp && pace != OperatingPace.FAST) OutwardPacing.human() else OutwardPacing.Off
+            val baseProfile = RunProfile.resolve(
+                capabilities = runCapabilities,
+                readOnly = conditionCheck,
+                paceEnabled = pace != OperatingPace.FAST,
+                remote = provenance.origin == RunOrigin.Mcp,
+                pacing = outwardPacing.asPacingPolicy(),
+            )
             val runSpec = RunSpec(RunId(key), goal, conversationId,
                 priorTurns,
-                provenance, if (conditionCheck) setOf("web", "sandbox") else null, readOnly = conditionCheck,
-                stepBudget = stepLimit, tokenBudget = tokenBudget)
+                provenance, runCapabilities, readOnly = conditionCheck,
+                stepBudget = stepLimit, tokenBudget = tokenBudget, profile = baseProfile)
             // 外部 MCP server 只在主任务接;子任务/条件检查/评测不接,避免绕过父任务审批、影响评测可复现
             if (!conditionCheck) {
                 // 连上的当场归 resources:收尾(含取消、失败、连到一半被停)关作用域时一起关,stdio server 的进程和沙箱租约跟着放掉
@@ -804,19 +816,36 @@ class TaskRun(
                 }
             }
             val runApproval = approvalControl.start(remote = provenance.origin == RunOrigin.Mcp).also { approval = it }
+            val runProfile = baseProfile.withPermissions(runApproval.permissionPolicy())
+            val runPolicy = runProfile.executionPolicy
             val childRunner = if (provenance.origin == RunOrigin.Ui && web != null) ChildAgentRunner(
                 create = { childSpec ->
+                    val childProfile = RunProfile.resolveForChild(
+                        parentProfile = runProfile,
+                        capabilities = childSpec.capabilities,
+                        role = childSpec.role,
+                        readOnly = childSpec.readOnly,
+                        explicitProfile = childSpec.profile,
+                    )
+                    val childPolicy = childProfile.executionPolicy
                     val childTools = toolDispatcher(accessedPhone, model.capabilities.vision,
-                        web = web, webPacing = { PagePacing.human() }, webPlacePace = { PlacePace.of(catalog.sitePace(it)) },
-                        webIdleScroll = { IdleScroll(Random.Default) },
-                        appPacing = { pace.appPacing() }, appPace = { PlacePace.of(catalog.appPace(it)) }, appIdleScroll = { IdleScroll(Random.Default) },
-                        sandbox = sandbox, workspace = { conversationId }, runSpec = childSpec,
+                        web = web,
+                        webPacing = { if (childPolicy.enableAntiCrawlPacing) PagePacing.human() else PagePacing.Off },
+                        webPlacePace = { PlacePace.of(catalog.sitePace(it)) },
+                        webIdleScroll = { if (childPolicy.enableIdleScroll) IdleScroll(Random.Default) else null },
+                        appPacing = { if (childPolicy.enableAntiCrawlPacing) pace.appPacing() else AppPacing.Off },
+                        appPace = { PlacePace.of(catalog.appPace(it)) },
+                        appIdleScroll = { if (childPolicy.enableIdleScroll) IdleScroll(Random.Default) else null },
+                        sandbox = sandbox, workspace = { conversationId }, runSpec = childSpec.copy(profile = childProfile),
                         conversationId = conversationId, inlineScreen = speed.inlineScreen,
                         adaptiveVision = speed.adaptiveVision)
                     AgentLoop(model, childTools, SystemPrompt.identity(), maxSteps = childSpec.stepBudget ?: AgentLoop.UNLIMITED_STEPS,
                         // 子任务跟着询问 / 自主;询问时它也过关卡,子任务里花钱的一步一律不做
                         confirmations = runApproval.gate(), approvals = runApproval, autonomous = runApproval.startedAutonomous,
-                        reviewFinalAnswer = false, flags = speed, outwardPacing = OutwardPacing.human())
+                        reviewFinalAnswer = false, flags = speed,
+                        outwardPacing = if (childPolicy.enableAntiCrawlPacing) outwardPacing else OutwardPacing.Off,
+                        runProfile = childProfile,
+                        guardMode = childPolicy.guardMode)
                 },
                 store = (service.application as MikaApp).childRuns,
                 ownerAlive = { job?.isActive == true },
@@ -832,12 +861,12 @@ class TaskRun(
                 utterances = utterances, conversationId = conversationId,
                 web = web,
                 // 同一个网站一页一页看:换页前补足停留,不连着秒开
-                webPacing = { PagePacing.human() },
+                webPacing = { if (runPolicy.enableAntiCrawlPacing) PagePacing.human() else PagePacing.Off },
                 // 停留时像人一样把页面轻轻滚几下
-                webIdleScroll = { IdleScroll(Random.Default) },
+                webIdleScroll = { if (runPolicy.enableIdleScroll) IdleScroll(Random.Default) else null },
                 // 在 App 里一步一步操作:动作之间停一会儿,限制浏览快慢的 App 停得更久、屏数有上限(按设置里的操作节奏)
-                appPacing = { pace.appPacing() },
-                appIdleScroll = { IdleScroll(Random.Default) },
+                appPacing = { if (runPolicy.enableAntiCrawlPacing) pace.appPacing() else AppPacing.Off },
+                appIdleScroll = { if (runPolicy.enableIdleScroll) IdleScroll(Random.Default) else null },
                 // 上传只认本对话工作区里的普通文件(与沙箱同一套路径规则);技能目录、工作区外一律越界
                 workspacePath = web?.let { { p: String -> sandbox.uploadCheck(conversationId, p) } },
                 // 工作区 = 对话:同一对话的追问接着用上一轮的文件,不同对话互不可见
@@ -903,7 +932,9 @@ class TaskRun(
                 streamReplies = true,
                 userScreens = userScreens,
                 // 同一网站、App 里连着联系别人、提交:两次之间隔一段随机的时间
-                outwardPacing = OutwardPacing.human(),
+                outwardPacing = if (runPolicy.enableAntiCrawlPacing) outwardPacing else OutwardPacing.Off,
+                runProfile = runProfile,
+                guardMode = runPolicy.guardMode,
             )
             loop = agent
             liveFeed = agent.events.subscribe(liveEvents)
