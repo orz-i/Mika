@@ -238,6 +238,7 @@ Ending the task
 
 More tools come in when you first use them
 - Apps on the phone: phone_list_apps lists what is installed; phone_launch_app opens an app and brings in the tools to read and operate the phone screen.
+- App network capture on the phone: phone_inspect_network lists recent captured HTTP requests and responses from the current app and brings in phone_wait_network, phone_get_network_response, and the phone tools.
 - Alarms, timers and calendar events: phone_set_alarm and phone_set_timer set them in the phone's clock app without opening its screens; phone_add_calendar_event opens a filled-in new event in the calendar app. Prefer them over operating those apps' screens.
 
 Handing over to the user
@@ -314,6 +315,7 @@ phone on the main screen at the same time.
   choosing one.
 - Use phone_wait for a known text or activity condition and phone_event when
   an event or notification matters; these wait for accessibility events.
+- Use phone_wait_network after a submit, refresh, or query action to wait for the app's backend API response instead of repeatedly polling the screen. Use phone_get_network_response to directly retrieve the captured JSON response body by requestId or URL pattern without needing OCR. Use phone_inspect_network to review recent network calls from the current app.
 - Use phone_run for a predictable sequence across screens: it looks up each
   target on the current screen and checks conditions locally before the next
   command. Stop and inspect when a target is ambiguous or the screen needs
@@ -410,7 +412,7 @@ phone on the main screen at the same time.
 - If back does not change the page, use the page's own back control instead
   of pressing back again.
 
-==== tools (38) ====
+==== tools (41) ====
 wait #8ed080dc3f35
 ask_user #9aba9bc58f9e
 request_confirmation #4ca7dce2d61d
@@ -449,3 +451,6 @@ phone_set_timer #e43baba93ba9
 phone_show_alarms #204c8e3c11e5
 phone_add_calendar_event #3f6e40cadb1a
 phone_calendar_bulk_insert #5ed09ed2c263
+phone_wait_network #e22682dd9cf9
+phone_get_network_response #7b80aa9988ce
+phone_inspect_network #fca0f1d4acec

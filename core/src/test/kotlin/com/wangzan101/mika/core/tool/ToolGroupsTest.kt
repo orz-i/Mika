@@ -38,7 +38,7 @@ class ToolGroupsTest {
     private val chatOnly = listOf(
         "wait", "ask_user", "request_confirmation", "end_not_done",
         "phone_list_apps", "phone_launch_app", "phone_set_alarm", "phone_set_timer", "phone_add_calendar_event",
-        "phone_calendar_bulk_insert", "web_navigate", "web_read_page", "run_command",
+        "phone_calendar_bulk_insert", "phone_inspect_network", "web_navigate", "web_read_page", "run_command",
     )
 
     @Test fun chatOnlyGetsBaseAndEntries() {
@@ -48,7 +48,7 @@ class ToolGroupsTest {
         // 入口收着时用短说明,参数和全文一样
         val now = d.offeredNow().associateBy { it.name }
         val full = d.definitions().associateBy { it.name }
-        for (e in listOf("phone_launch_app", "phone_list_apps", "phone_set_alarm", "phone_set_timer", "phone_add_calendar_event", "phone_calendar_bulk_insert", "web_navigate", "web_read_page", "run_command")) {
+        for (e in listOf("phone_launch_app", "phone_list_apps", "phone_set_alarm", "phone_set_timer", "phone_add_calendar_event", "phone_calendar_bulk_insert", "phone_inspect_network", "web_navigate", "web_read_page", "run_command")) {
             assertEquals(Prompts.entry(e), now.getValue(e).description)
             assertEquals(full.getValue(e).parametersJsonSchema, now.getValue(e).parametersJsonSchema)
             assertTrue(e, now.getValue(e).description.length < full.getValue(e).description.length)
@@ -146,6 +146,9 @@ class ToolGroupsTest {
         assertEquals(listOf("phone", "web"), all().preload("再看一下", listOf("web", "phone")))
         // 带着工作区里的文件(附件一行写着 /workspace/ 下的路径)
         assertEquals(listOf("sandbox"), all().preload("总结一下\n附件:/workspace/inbox/a.pdf(12 KB)", emptyList()))
+        // 问端侧抓包或网络请求:开局就展开手机一组(含 phone_wait_network / phone_get_network_response / phone_inspect_network)
+        assertEquals(listOf("phone"), all().preload("帮我用端侧抓包看一下这个 App 的网络请求", emptyList()))
+        assertEquals(listOf("phone"), all().preload("How do I use network capture?", emptyList()))
         // 从浏览器页上对着一页问的:那一页已是当前标签
         val page = com.wangzan101.mika.core.cap.web.AttachedPage.compose(com.wangzan101.mika.core.cap.web.AttachedPage.Page("https://shop.example.com/", "店"), "挑一个")
         assertEquals(listOf("web"), all().preload(page, emptyList()))

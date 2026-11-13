@@ -45,6 +45,8 @@ internal class PhoneCapability(
 
     override val folds = true
 
+    override fun preload(task: String): Boolean = NETWORK_CAPTURE_RE.containsMatchIn(task)
+
     override fun status(): CapabilityStatus = CapabilityStatus.Available
 
     override fun tools(): List<AgentTool> = tools
@@ -119,6 +121,9 @@ internal class PhoneCapability(
     companion object {
         val KEY = CapabilityKey<PhoneCapability>(PHONE)
         private val SECTION_VERBS = setOf(Verb.LaunchApp, Verb.ListApps)
+        private val NETWORK_CAPTURE_RE = Regex(
+            "(?i)(?:抓包|网络嗅探|嗅探|网络请求|网络响应|响应体|network\\s*capture|packet\\s*capture|http\\s*traffic|api\\s*response|phone_(?:inspect|wait|get)_network)",
+        )
 
         /** 应用访问规则那一段(capabilities/app-access.md)。 */
         private const val APP_ACCESS = "app-access"

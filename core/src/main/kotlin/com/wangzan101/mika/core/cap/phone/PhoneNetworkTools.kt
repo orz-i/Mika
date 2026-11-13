@@ -4,6 +4,7 @@ import com.wangzan101.mika.core.observation.Untrusted
 import com.wangzan101.mika.core.prompt.Prompts
 import com.wangzan101.mika.core.tool.ArgError
 import com.wangzan101.mika.core.tool.Args
+import com.wangzan101.mika.core.tool.Entry
 import com.wangzan101.mika.core.tool.Risk
 import com.wangzan101.mika.core.tool.ToolContext
 import com.wangzan101.mika.core.tool.ToolDef
@@ -121,6 +122,7 @@ internal object PhoneGetNetworkResponse : PhoneTool {
 internal object PhoneInspectNetwork : PhoneTool {
     override val verb = Verb.PhoneInspectNetwork
     override val risk = Risk.Read
+    override val entry = Entry.Opens
     override val label = "查看近期网络请求"
     override val def = ToolDef(
         "phone_inspect_network",

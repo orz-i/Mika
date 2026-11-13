@@ -1,0 +1,1 @@
+Inspect recent HTTP network requests and responses captured on the phone. From your next call on you also get phone_wait_network, phone_get_network_response, and the rest of the phone tools.
