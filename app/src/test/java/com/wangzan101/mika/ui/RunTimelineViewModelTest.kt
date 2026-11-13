@@ -3,6 +3,7 @@ package com.wangzan101.mika.ui
 import com.wangzan101.mika.i18n.ChineseTexts
 import com.wangzan101.mika.core.guard.GuardVerdict
 import com.wangzan101.mika.core.guard.Severity
+import com.wangzan101.mika.core.observation.Untrusted
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.record.RunHandle
@@ -295,5 +296,136 @@ class RunTimelineViewModelTest {
         assertTrue(ui.steps.single().said.contains(Redactor.MASK))
         assertTrue(ui.header.goal.contains(Redactor.MASK))
         assertEquals("没有结束", ui.header.outcome)
+    }
+
+    @Test fun networkInspectAndResponseResultsPopulateTimelineSteps() {
+        val longBody = "x".repeat(RunTimelineViewModel.NETWORK_PREVIEW_MAX + 120)
+        val id = run("抓包查看接口") {
+            event(RunEvent.ModelReply(clock, 1, "查看请求", "phone_inspect_network", """{"limit":10}""", 100, 10, 0, 50))
+            event(RunEvent.ToolResult(
+                clock + 20, 1, "phone_inspect_network",
+                buildJsonObject {
+                    put("ok", true)
+                    put("count", 2)
+                    put("capturing", true)
+                    put("activeMode", "EBPF")
+                    put("targetPackage", "com.example.shop")
+                    put("requests", JsonArray(listOf(
+                        buildJsonObject {
+                            put("requestId", "req-1")
+                            put("url", "https://api.example.com/orders")
+                            put("method", "GET")
+                            put("statusCode", 200)
+                            put("durationMs", 42)
+                            put("timestamp", 1_760_000_000_010L)
+                        },
+                        buildJsonObject {
+                            put("requestId", "req-2")
+                            put("url", "https://api.example.com/submit")
+                            put("method", "POST")
+                            put("statusCode", 500)
+                            put("durationMs", 120)
+                            put("timestamp", 1_760_000_000_020L)
+                        },
+                    )))
+                }.toString(),
+                changed = null, screenshotId = null,
+            ))
+            event(RunEvent.ModelReply(clock + 100, 2, "读响应体", "phone_get_network_response", """{"requestId":"req-1"}""", 100, 10, 0, 50))
+            event(RunEvent.ToolResult(
+                clock + 120, 2, "phone_get_network_response",
+                buildJsonObject {
+                    put("ok", true)
+                    put("requestId", "req-1")
+                    put("url", "https://api.example.com/orders")
+                    put("statusCode", 200)
+                    put("contentType", "application/json")
+                    put("body", Untrusted.wrap("""{"items":[1,2],"note":"ok"}"""))
+                    put("truncated", false)
+                }.toString(),
+                changed = null, screenshotId = null,
+            ))
+            event(RunEvent.ModelReply(clock + 200, 3, "超长响应", "phone_get_network_response", """{"requestId":"req-3"}""", 100, 10, 0, 50))
+            event(RunEvent.ToolResult(
+                clock + 220, 3, "phone_get_network_response",
+                buildJsonObject {
+                    put("ok", true)
+                    put("requestId", "req-3")
+                    put("url", "https://api.example.com/blob")
+                    put("statusCode", 200)
+                    put("contentType", "text/plain")
+                    put("body", Untrusted.wrap(longBody))
+                    put("truncated", false)
+                }.toString(),
+                changed = null, screenshotId = null,
+            ))
+            event(RunEvent.TaskEnded(clock + 300, "succeeded", "完成"))
+        }
+
+        val steps = ready(id).steps
+        assertEquals(3, steps.size)
+
+        val step1Net = steps[0].networkResults.single()
+        assertEquals(NetworkResultKind.Requests, step1Net.kind)
+        assertTrue(step1Net.ok)
+        assertEquals(true, step1Net.capturing)
+        assertEquals("EBPF", step1Net.activeMode)
+        assertEquals("com.example.shop", step1Net.targetPackage)
+        assertEquals(2, step1Net.requests.size)
+        assertEquals("GET", step1Net.requests[0].method)
+        assertEquals(200, step1Net.requests[0].statusCode)
+        assertEquals("https://api.example.com/orders", step1Net.requests[0].url)
+        assertEquals(42L, step1Net.requests[0].durationMs)
+        assertEquals("req-1", step1Net.requests[0].requestId)
+        assertEquals(500, step1Net.requests[1].statusCode)
+
+        val step2Net = steps[1].networkResults.single()
+        assertEquals(NetworkResultKind.Response, step2Net.kind)
+        assertTrue(step2Net.ok)
+        assertEquals(200, step2Net.statusCode)
+        assertEquals("application/json", step2Net.contentType)
+        assertFalse(step2Net.truncated)
+        assertFalse(step2Net.body!!.contains("<untrusted>"))
+        assertTrue(step2Net.body!!.contains("\n"))
+        assertTrue(step2Net.body!!.contains("\"items\""))
+
+        val step3Net = steps[2].networkResults.single()
+        assertTrue(step3Net.truncated)
+        assertEquals(RunTimelineViewModel.NETWORK_PREVIEW_MAX, step3Net.body!!.length)
+    }
+
+    @Test fun networkResultHandlesErrorsAndNonNetworkSteps() {
+        val id = run("抓包异常") {
+            event(RunEvent.ModelReply(clock, 1, "", "phone_tap", "{}", null, null, null))
+            event(RunEvent.ToolResult(clock, 1, "phone_tap", """{"ok":true}""", true, null))
+            event(RunEvent.ModelReply(clock + 10, 2, "", "phone_inspect_network", "{}", null, null, null))
+            event(RunEvent.ToolResult(
+                clock + 10, 2, "phone_inspect_network",
+                """{"ok":false,"capturing":false,"captureError":"vpn_permission_required","count":0,"requests":[]}""",
+                null, null,
+            ))
+            event(RunEvent.ModelReply(clock + 20, 3, "", "phone_get_network_response", "{}", null, null, null))
+            event(RunEvent.ToolResult(
+                clock + 20, 3, "phone_get_network_response",
+                """{"ok":false,"error":"not_found","requestId":"missing"}""",
+                null, null,
+            ))
+        }
+        val steps = ready(id).steps
+        assertTrue(steps[0].networkResults.isEmpty())
+
+        val s2 = steps[1].networkResults.single()
+        assertEquals(NetworkResultKind.Requests, s2.kind)
+        assertFalse(s2.ok)
+        assertEquals(false, s2.capturing)
+        assertEquals("vpn_permission_required", s2.error)
+        assertTrue(s2.requests.isEmpty())
+
+        val s3 = steps[2].networkResults.single()
+        assertEquals(NetworkResultKind.Response, s3.kind)
+        assertFalse(s3.ok)
+        assertEquals("not_found", s3.error)
+        assertEquals("missing", s3.requestId)
+        assertNull(s3.body)
     }
 }
