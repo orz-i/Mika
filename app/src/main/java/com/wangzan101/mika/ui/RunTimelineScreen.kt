@@ -13,6 +13,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -22,11 +23,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -44,9 +50,11 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.wangzan101.mika.ui.components.EmptyNote
 import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.GroupLabel
@@ -205,12 +213,31 @@ private fun HeaderGroup(h: TimelineHeader, onExport: () -> Unit) {
 @Composable
 private fun TimelineRow(s: TimelineStep, first: Boolean, last: Boolean, vm: RunTimelineViewModel) {
     val c = MikaTheme.colors
-    var open by rememberSaveable(s.step) { mutableStateOf(false) }
+    var screenOpen by rememberSaveable(s.step, "screen") { mutableStateOf(false) }
+    var networkOpen by rememberSaveable(s.step, "network") { mutableStateOf(false) }
     val shot = s.screenshotId
+    val netResults = s.networkResults
+    val expandable = shot != null || netResults.isNotEmpty()
     val failed = s.result?.startsWith(stringResource(R.string.result_error_prefix)) == true
     StepItem(
         if (failed) StepState.Failed else StepState.Done, first, last,
-        Modifier.then(if (shot != null) Modifier.clickable { open = !open } else Modifier),
+        Modifier.then(
+            if (expandable) {
+                Modifier.clickable {
+                    when {
+                        shot != null && netResults.isEmpty() -> screenOpen = !screenOpen
+                        shot == null -> networkOpen = !networkOpen
+                        else -> {
+                            val next = !(screenOpen || networkOpen)
+                            screenOpen = next
+                            networkOpen = next
+                        }
+                    }
+                }
+            } else {
+                Modifier
+            }
+        ),
         dotY = 20.dp,
     ) {
         Column(Modifier.fillMaxWidth().padding(end = 16.dp, top = 11.dp, bottom = 11.dp)) {
@@ -253,11 +280,174 @@ private fun TimelineRow(s: TimelineStep, first: Boolean, last: Boolean, vm: RunT
             }
             if (shot != null) {
                 Text(
-                    if (open) stringResource(R.string.timeline_hide_screen) else stringResource(R.string.timeline_show_screen), Modifier.padding(top = 6.dp),
+                    if (screenOpen) stringResource(R.string.timeline_hide_screen) else stringResource(R.string.timeline_show_screen),
+                    Modifier.padding(top = 6.dp).clickable { screenOpen = !screenOpen },
                     style = MikaType.Label, color = c.accent,
                 )
-                if (open) Shot(vm, shot, s.step)
+                if (screenOpen) Shot(vm, shot, s.step)
             }
+            if (netResults.isNotEmpty()) {
+                val (showRes, hideRes) = networkToggleLabels(netResults)
+                Text(
+                    if (networkOpen) stringResource(hideRes) else stringResource(showRes),
+                    Modifier.padding(top = 6.dp).clickable { networkOpen = !networkOpen },
+                    style = MikaType.Label, color = c.accent,
+                )
+                if (networkOpen) NetworkResultsCard(netResults)
+            }
+        }
+    }
+}
+
+private fun networkToggleLabels(results: List<TimelineNetworkResult>): Pair<Int, Int> {
+    val hasRequests = results.any { it.kind == NetworkResultKind.Requests }
+    val hasResponse = results.any { it.kind == NetworkResultKind.Response }
+    return when {
+        hasRequests && !hasResponse -> R.string.timeline_show_network_requests to R.string.timeline_hide_network_requests
+        hasResponse && !hasRequests -> R.string.timeline_show_network_response to R.string.timeline_hide_network_response
+        else -> R.string.timeline_show_network_results to R.string.timeline_hide_network_results
+    }
+}
+
+@Composable
+private fun NetworkResultsCard(results: List<TimelineNetworkResult>) {
+    val c = MikaTheme.colors
+    Column(
+        Modifier.fillMaxWidth().padding(top = 8.dp)
+            .background(c.fill, RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        results.forEachIndexed { idx, res ->
+            if (idx > 0) Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.hair))
+            if (results.size > 1) {
+                Text(
+                    stringResource(
+                        if (res.kind == NetworkResultKind.Requests) R.string.timeline_network_requests_title
+                        else R.string.timeline_network_response_title,
+                    ),
+                    style = MikaType.Label, color = c.ink,
+                )
+            }
+            if (res.rawFallback != null) {
+                NetworkMonoBox(res.rawFallback, res.truncated)
+            } else if (res.kind == NetworkResultKind.Requests) {
+                RequestsResultBlock(res)
+            } else {
+                ResponseResultBlock(res)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RequestsResultBlock(res: TimelineNetworkResult) {
+    val c = MikaTheme.colors
+    val meta = listOfNotNull(
+        stringResource(R.string.timeline_network_request_count, res.requests.size),
+        res.activeMode?.takeIf(String::isNotBlank),
+        res.targetPackage?.takeIf(String::isNotBlank),
+    ).joinToString(" · ")
+    Text(meta, style = MikaType.Hint, color = c.ink3)
+    res.error?.takeIf(String::isNotBlank)?.let { err ->
+        Text(err, style = MikaType.Caption, color = c.bad)
+    }
+    if (res.requests.isEmpty()) {
+        if (res.error.isNullOrBlank()) {
+            Text(
+                stringResource(
+                    if (res.capturing == false) R.string.timeline_network_capture_off
+                    else R.string.timeline_network_empty,
+                ),
+                style = MikaType.Caption, color = c.ink3,
+            )
+        }
+        return
+    }
+    SelectionContainer {
+        Column(
+            Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            res.requests.forEachIndexed { index, req ->
+                if (index > 0) Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.hair))
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(req.method, style = MikaType.Label, color = c.ink)
+                        req.statusCode?.takeIf { it > 0 }?.let { code ->
+                            Text(
+                                code.toString(),
+                                style = MikaType.Label,
+                                color = if (code < 400) c.ok else c.bad,
+                            )
+                        }
+                        req.durationMs?.takeIf { it >= 0 }?.let { ms ->
+                            Text("${ms} ms", style = MikaType.Hint, color = c.ink3)
+                        }
+                        req.requestId?.takeIf(String::isNotBlank)?.let { id ->
+                            Text(id, style = MikaType.Hint, color = c.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                    Text(
+                        req.url,
+                        fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp, color = c.ink2,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResponseResultBlock(res: TimelineNetworkResult) {
+    val c = MikaTheme.colors
+    val statusText = res.statusCode?.takeIf { it > 0 }?.toString()
+    val metaRight = listOfNotNull(
+        res.contentType?.takeIf(String::isNotBlank),
+        res.requestId?.takeIf(String::isNotBlank),
+    ).joinToString(" · ")
+    if (statusText != null || metaRight.isNotEmpty()) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            statusText?.let {
+                val code = res.statusCode ?: 0
+                Text(it, style = MikaType.Label, color = if (code < 400) c.ok else c.bad)
+            }
+            if (metaRight.isNotEmpty()) {
+                Text(metaRight, style = MikaType.Hint, color = c.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+    res.url?.takeIf(String::isNotBlank)?.let { u ->
+        SelectionContainer {
+            Text(u, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp, color = c.ink)
+        }
+    }
+    res.error?.takeIf(String::isNotBlank)?.let { err ->
+        Text(err, style = MikaType.Caption, color = c.bad)
+    }
+    when {
+        res.body == null -> Unit
+        res.body.isEmpty() -> Text(stringResource(R.string.timeline_network_body_empty), style = MikaType.Caption, color = c.ink3)
+        else -> NetworkMonoBox(res.body, res.truncated)
+    }
+}
+
+@Composable
+private fun NetworkMonoBox(text: String, truncated: Boolean) {
+    val c = MikaTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(
+            Modifier.fillMaxWidth().heightIn(max = 280.dp)
+                .background(c.surface.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                .verticalScroll(rememberScrollState())
+                .padding(10.dp),
+        ) {
+            SelectionContainer {
+                Text(text, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = c.ink2)
+            }
+        }
+        if (truncated) {
+            Text(stringResource(R.string.timeline_network_truncated), style = MikaType.Hint, color = c.ink3)
         }
     }
 }

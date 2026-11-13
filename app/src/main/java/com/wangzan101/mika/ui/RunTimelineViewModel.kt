@@ -2,15 +2,20 @@ package com.wangzan101.mika.ui
 
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
+import com.wangzan101.mika.core.observation.Untrusted
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunMetrics
 import com.wangzan101.mika.record.RunStore
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import java.io.File
 import com.wangzan101.mika.core.assembly.knownTools
 
@@ -38,9 +43,41 @@ data class StepTiming(
     val totalMs: Long? get() = if (modelMs != null && toolMs != null) modelMs + toolMs else null
 }
 
+enum class NetworkResultKind { Requests, Response }
+
+/** 近期网络请求列表里的一条记录,供时间线展开查看。 */
+data class TimelineNetworkRequest(
+    val requestId: String?,
+    val method: String,
+    val statusCode: Int?,
+    val url: String,
+    val durationMs: Long?,
+)
+
+/**
+ * 「查看近期网络请求」或「获取网络响应体」的执行结果预览,供时间线按「看当时的画面」同款交互展开查看。
+ */
+data class TimelineNetworkResult(
+    val kind: NetworkResultKind,
+    val ok: Boolean,
+    val capturing: Boolean? = null,
+    val activeMode: String? = null,
+    val targetPackage: String? = null,
+    val requests: List<TimelineNetworkRequest> = emptyList(),
+    val requestId: String? = null,
+    val url: String? = null,
+    val statusCode: Int? = null,
+    val contentType: String? = null,
+    val body: String? = null,
+    val truncated: Boolean = false,
+    val error: String? = null,
+    val rawFallback: String? = null,
+)
+
 /**
  * 时间线的一行。[said] 是模型这一步说的话(截到 80 字),[tool] 是工具的中文说法,
- * [detail] 是参数里最能说明对象的那一个(记录里已脱敏,原样显示),[screenshotId] 是这一步存下的画面。
+ * [detail] 是参数里最能说明对象的那一个(记录里已脱敏,原样显示),[screenshotId] 是这一步存下的画面,
+ * [networkResults] 是这一步捕获到的网络请求列表或响应体预览。
  */
 data class TimelineStep(
     val step: Int,
@@ -52,6 +89,7 @@ data class TimelineStep(
     val screenshotId: Int?,
     val activities: List<TimelineActivity> = emptyList(),
     val timing: StepTiming = StepTiming(),
+    val networkResults: List<TimelineNetworkResult> = emptyList(),
 )
 
 data class TimelineHeader(
@@ -165,10 +203,12 @@ class RunTimelineViewModel(
                 is RunEvent.ToolResult -> {
                     toolTimes.getOrPut(e.step) { mutableListOf() } += e
                     val row = at(e.step)
+                    val networkResult = networkResultOf(e.tool, e.resultJson)
                     rows[e.step] = row.copy(
                         result = resultLabel(e.resultJson, e.changed),
                         tags = row.tags + guardTags(e.resultJson),
                         screenshotId = row.screenshotId ?: e.screenshotId,
+                        networkResults = if (networkResult != null) row.networkResults + networkResult else row.networkResults,
                     )
                 }
                 is RunEvent.Media -> at(e.step).let { rows[e.step] = it.copy(screenshotId = it.screenshotId ?: e.mediaId) }
@@ -281,6 +321,104 @@ class RunTimelineViewModel(
         } catch (e: SerializationException) {
             null
         }
+
+        internal const val NETWORK_PREVIEW_MAX = 8_000
+        private const val TOOL_INSPECT_NETWORK = "phone_inspect_network"
+        private const val TOOL_GET_NETWORK_RESPONSE = "phone_get_network_response"
+        private val PRETTY_JSON = Json { prettyPrint = true }
+
+        private fun networkResultOf(tool: String, resultJson: String): TimelineNetworkResult? = when (tool) {
+            TOOL_INSPECT_NETWORK -> parseInspectNetworkResult(resultJson)
+            TOOL_GET_NETWORK_RESPONSE -> parseNetworkResponseResult(resultJson)
+            else -> null
+        }
+
+        private fun parseInspectNetworkResult(resultJson: String): TimelineNetworkResult {
+            val o = parse(resultJson) ?: return TimelineNetworkResult(
+                kind = NetworkResultKind.Requests,
+                ok = !NOT_OK.containsMatchIn(resultJson),
+                truncated = resultJson.length > NETWORK_PREVIEW_MAX,
+                rawFallback = resultJson.take(NETWORK_PREVIEW_MAX),
+            )
+            val requests = (o["requests"] as? JsonArray).orEmpty().mapNotNull { el ->
+                val item = el as? JsonObject ?: return@mapNotNull null
+                val url = item.str("url") ?: return@mapNotNull null
+                TimelineNetworkRequest(
+                    requestId = item.str("requestId"),
+                    method = item.str("method") ?: "?",
+                    statusCode = item.int("statusCode"),
+                    url = url,
+                    durationMs = item.long("durationMs"),
+                )
+            }
+            return TimelineNetworkResult(
+                kind = NetworkResultKind.Requests,
+                ok = o.bool("ok") ?: true,
+                capturing = o.bool("capturing"),
+                activeMode = o.str("activeMode"),
+                targetPackage = o.str("targetPackage"),
+                requests = requests,
+                error = o.str("captureError") ?: o.str("error"),
+            )
+        }
+
+        private fun parseNetworkResponseResult(resultJson: String): TimelineNetworkResult {
+            val o = parse(resultJson) ?: return TimelineNetworkResult(
+                kind = NetworkResultKind.Response,
+                ok = !NOT_OK.containsMatchIn(resultJson),
+                truncated = resultJson.length > NETWORK_PREVIEW_MAX,
+                rawFallback = resultJson.take(NETWORK_PREVIEW_MAX),
+            )
+            val rawBody = o.str("body")?.let(::unwrapUntrusted)
+            val (formattedBody, clipped) = rawBody?.let(::formatNetworkBody) ?: (null to false)
+            return TimelineNetworkResult(
+                kind = NetworkResultKind.Response,
+                ok = o.bool("ok") ?: false,
+                requestId = o.str("requestId"),
+                url = o.str("url") ?: o.str("urlPattern"),
+                statusCode = o.int("statusCode"),
+                contentType = o.str("contentType"),
+                body = formattedBody,
+                truncated = (o.bool("truncated") ?: false) || clipped,
+                error = o.str("error"),
+            )
+        }
+
+        private fun unwrapUntrusted(text: String): String {
+            var s = text
+            if (s.startsWith("${Untrusted.OPEN}\n")) s = s.removePrefix("${Untrusted.OPEN}\n")
+            else if (s.startsWith(Untrusted.OPEN)) s = s.removePrefix(Untrusted.OPEN)
+            if (s.endsWith("\n${Untrusted.CLOSE}")) s = s.removeSuffix("\n${Untrusted.CLOSE}")
+            else if (s.endsWith(Untrusted.CLOSE)) s = s.removeSuffix(Untrusted.CLOSE)
+            return s.replace("<\\/untrusted>", Untrusted.CLOSE)
+        }
+
+        private fun formatNetworkBody(raw: String): Pair<String, Boolean> {
+            val trimmed = raw.trim()
+            val pretty = if ((trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+                (trimmed.startsWith("[") && trimmed.endsWith("]"))
+            ) {
+                try {
+                    val el = Json.parseToJsonElement(trimmed)
+                    if (el is JsonObject || el is JsonArray) PRETTY_JSON.encodeToString(JsonElement.serializer(), el)
+                    else raw
+                } catch (_: SerializationException) {
+                    raw
+                }
+            } else {
+                raw
+            }
+            return if (pretty.length <= NETWORK_PREVIEW_MAX) pretty to false
+            else pretty.take(NETWORK_PREVIEW_MAX) to true
+        }
+
+        private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+
+        private fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
+
+        private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
+
+        private fun JsonObject.long(key: String): Long? = (this[key] as? JsonPrimitive)?.longOrNull
 
         private val GUARD_LABELS get() = mapOf(
             "repeating_action" to tr(R.string.guard_repeating),
