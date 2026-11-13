@@ -102,18 +102,19 @@ class SettingsScreenTest {
                 onOpenRecovery = { opened += "recovery" },
                 computerAccess = false, onOpenComputerAccess = { opened += "computer" },
                 mcpServersCount = 0, onOpenMcpServers = { opened += "mcp" },
+                networkCaptureEnabled = true, onOpenNetworkCapture = { opened += "capture" },
                 showDeveloper = true, onOpenDeveloper = { opened += "dev" },
                 onQuit = { opened += "quit" },
             )
         }
-        for (t in listOf("网络代理", "文件与计算环境", "连接电脑", "MCP 服务器", "恢复与修复")) {
+        for (t in listOf("网络代理", "文件与计算环境", "连接电脑", "MCP 服务器", "端侧网络抓包", "恢复与修复")) {
             scrollTo(t)
             compose.onNodeWithText(t).performClick()
         }
         compose.onNodeWithText("开发者选项").performScrollTo().performClick()
         scrollTo("完全退出 Mika")
         compose.onNodeWithText("完全退出 Mika").performClick()
-        assertEquals(listOf("proxy", "sandbox", "computer", "mcp", "recovery", "dev", "quit"), opened)
+        assertEquals(listOf("proxy", "sandbox", "computer", "mcp", "capture", "recovery", "dev", "quit"), opened)
     }
 
     /** 发布版的高级与其他里没有开发者选项。 */

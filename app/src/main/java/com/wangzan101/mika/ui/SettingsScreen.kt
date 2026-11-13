@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import com.agent.use.common.network.CaptureMode
 import com.wangzan101.mika.BuildConfig
 import com.wangzan101.mika.cap.sandbox.SandboxState
 import com.wangzan101.mika.capsule.CapsuleMode
@@ -66,7 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置里能进入的子页面;[Home] 是设置首页,[Advanced] 集中放置连接、维护和工程能力。 */
-private enum class SettingsPage { Home, Advanced, AppAccess, PhoneOps, Wechat, DuringWork, Capsule, Language, Notifications, Recommendations, Sandbox, Recovery, SelfCheck, ComputerAccess, McpServers, Root, Developer, RunStats }
+private enum class SettingsPage { Home, Advanced, AppAccess, PhoneOps, Wechat, DuringWork, Capsule, Language, Notifications, Recommendations, Sandbox, Recovery, SelfCheck, ComputerAccess, McpServers, Root, NetworkCapture, Developer, RunStats }
 
 /**
  * 设置页:总状态卡 + 常用 / 我的数据 / 其他。高级与其他只增加一层,各子页返回来时的页面。
@@ -121,6 +122,8 @@ fun SettingsScreen(
     var selfConfig by remember { mutableStateOf(flags.selfConfig()) }
     var capsuleMode by remember { mutableStateOf(flags.capsuleMode()) }
     var capsuleIdleOpacity by remember { mutableStateOf(flags.capsuleIdleOpacity()) }
+    var networkCaptureEnabled by remember { mutableStateOf(flags.networkCaptureEnabled()) }
+    var networkCaptureMode by remember { mutableStateOf(flags.networkCaptureMode()) }
     // 换语言时界面会重建,这里每次进来读一次即可
     val language = remember { AppLanguage.current(context) }
     val runtimeLimit by (context.applicationContext as com.wangzan101.mika.MikaApp).taskState.parallelLimit.collectAsState()
@@ -160,7 +163,7 @@ fun SettingsScreen(
             SettingsPage.RunStats -> SettingsPage.Developer
             SettingsPage.SelfCheck -> SettingsPage.Recovery
             SettingsPage.Sandbox, SettingsPage.Recovery, SettingsPage.ComputerAccess,
-            SettingsPage.McpServers, SettingsPage.Root, SettingsPage.Developer -> SettingsPage.Advanced
+            SettingsPage.McpServers, SettingsPage.Root, SettingsPage.NetworkCapture, SettingsPage.Developer -> SettingsPage.Advanced
             else -> SettingsPage.Home
         }
     }
@@ -198,6 +201,8 @@ fun SettingsScreen(
             computerAccess = mcpOn, onOpenComputerAccess = { page = SettingsPage.ComputerAccess },
             mcpServersCount = mcpServers?.servers?.value?.size, onOpenMcpServers = { page = SettingsPage.McpServers },
             showRoot = rootState.suPresent, rootCommands = rootState.commands, onOpenRoot = { page = SettingsPage.Root },
+            networkCaptureEnabled = networkCaptureEnabled, networkCaptureMode = networkCaptureMode,
+            onOpenNetworkCapture = { page = SettingsPage.NetworkCapture },
             showDeveloper = showDeveloper, onOpenDeveloper = { page = SettingsPage.Developer },
             onBack = toHome,
             onQuit = { confirmingQuit = true },
@@ -232,6 +237,13 @@ fun SettingsScreen(
         SettingsPage.ComputerAccess -> McpScreen(mcp, onBack = toAdvanced)
         SettingsPage.McpServers -> mcpServers?.let { McpServersScreen(it, onBack = toAdvanced) }
         SettingsPage.Root -> RootScreen(helperRow = status.sdkInt >= Prerequisites.MIN_SDK, onBack = toAdvanced)
+        SettingsPage.NetworkCapture -> NetworkCaptureScreen(
+            enabled = networkCaptureEnabled,
+            onEnabled = { flags.setNetworkCaptureEnabled(it); networkCaptureEnabled = it },
+            mode = networkCaptureMode,
+            onMode = { flags.setNetworkCaptureMode(it); networkCaptureMode = it },
+            onBack = toAdvanced,
+        )
         SettingsPage.Developer -> DeveloperOptionsScreen(
             speed, onSpeed = { flags.setSpeed(it); speed = it }, onBack = toAdvanced,
             grounding = visionConfig?.let { GroundingSetting(it.model, it.capabilities.groundingVerified) },
@@ -419,13 +431,16 @@ fun AdvancedSettingsContent(
     showRoot: Boolean = false,
     rootCommands: Boolean = false,
     onOpenRoot: () -> Unit = {},
+    networkCaptureEnabled: Boolean? = null,
+    networkCaptureMode: CaptureMode = CaptureMode.AUTO,
+    onOpenNetworkCapture: () -> Unit = {},
     showDeveloper: Boolean = false,
     onOpenDeveloper: () -> Unit = {},
     onQuit: () -> Unit = {},
 ) {
     PageScaffold(stringResource(R.string.settings_advanced), onBack) {
         val sandboxRow = sandbox?.takeIf { it !is SandboxStatus.Unsupported }
-        if (proxy != null || webSearch != null || sandboxRow != null || computerAccess != null || mcpServersCount != null || showRoot) {
+        if (proxy != null || webSearch != null || sandboxRow != null || computerAccess != null || mcpServersCount != null || showRoot || networkCaptureEnabled != null) {
             GroupLabel(stringResource(R.string.settings_connections))
             GroupCard {
                 var first = true
@@ -458,6 +473,18 @@ fun AdvancedSettingsContent(
                 }
                 if (showRoot) {
                     ListRow(MikaIcons.Key, PhoneSetupCopy.ROOT_GROUP, PhoneSetupCopy.rootEntryLine(rootCommands), first = take(), onClick = onOpenRoot) {
+                        RowChevron()
+                    }
+                }
+                networkCaptureEnabled?.let { enabled ->
+                    ListRow(
+                        MikaIcons.Globe,
+                        stringResource(R.string.network_capture_title),
+                        stringResource(R.string.network_capture_row_sub),
+                        first = take(),
+                        onClick = onOpenNetworkCapture,
+                    ) {
+                        RowValue(NetworkCaptureCopy.entryValue(enabled, networkCaptureMode))
                         RowChevron()
                     }
                 }

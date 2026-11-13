@@ -3,6 +3,7 @@ package com.wangzan101.mika.cap.phone.network
 import android.content.Context
 import android.util.Log
 import com.agent.use.client.network.AgentNetworkManager
+import com.agent.use.client.network.DeviceEbpfDetector
 import com.agent.use.common.IAgentShell
 import com.agent.use.common.network.CaptureMode
 import com.agent.use.common.network.HttpRequestEvent
@@ -349,6 +350,17 @@ class PhoneNetworkManager(
      */
     val currentPackage: String?
         get() = internalAgentManager?.targetPackage
+
+    /**
+     * 检查当前设备是否满足 Root eBPF 抓包条件（不提前创建并缓存 Manager）。
+     */
+    fun isEbpfSupported(): Boolean = internalAgentManager?.isEbpfSupported()
+        ?: (DeviceEbpfDetector.isDeviceRooted(shellProvider?.invoke()) && DeviceEbpfDetector.isKernelSupported())
+
+    /**
+     * 当前内存中缓存的历史网络请求条数。
+     */
+    fun cachedHistoryCount(): Int = trafficHistory.size
 
     /**
      * 当前实际生效的抓包模式。

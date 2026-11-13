@@ -2,6 +2,7 @@ package com.wangzan101.mika.settings
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.agent.use.common.network.CaptureMode
 import com.wangzan101.mika.capsule.CapsuleDock
 import com.wangzan101.mika.capsule.CardDocking
 import com.wangzan101.mika.capsule.CapsuleIdleOpacity
@@ -91,6 +92,22 @@ class FeatureFlags(private val prefs: SharedPreferences) {
 
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(THEME_MODE, mode.name).commit()
+    }
+
+    /** 端侧网络抓包总开关；默认开启。 */
+    fun networkCaptureEnabled(): Boolean = prefs.getBoolean(NETWORK_CAPTURE_ENABLED, true)
+
+    fun setNetworkCaptureEnabled(on: Boolean) {
+        prefs.edit().putBoolean(NETWORK_CAPTURE_ENABLED, on).commit()
+    }
+
+    /** 端侧网络抓包模式（默认 [CaptureMode.AUTO] 优先 Root eBPF，非 Root 自动回退 VpnService）。 */
+    fun networkCaptureMode(): CaptureMode = prefs.getString(NETWORK_CAPTURE_MODE, null)
+        ?.let { raw -> CaptureMode.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } }
+        ?: CaptureMode.AUTO
+
+    fun setNetworkCaptureMode(mode: CaptureMode) {
+        prefs.edit().putString(NETWORK_CAPTURE_MODE, mode.name).commit()
     }
 
     /**
@@ -204,6 +221,8 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val CAPSULE_SIDE = "capsule_side"
         private const val CAPSULE_HEIGHT = "capsule_height"
         private const val CAPSULE_CARD_HEIGHT = "capsule_card_height"
+        private const val NETWORK_CAPTURE_ENABLED = "network_capture_enabled"
+        private const val NETWORK_CAPTURE_MODE = "network_capture_mode"
 
         fun get(context: Context) = FeatureFlags(context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE))
     }
