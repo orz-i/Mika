@@ -62,4 +62,7 @@
     <string name="tool_tap">Ketuk</string>
     <string name="tool_type">Ketik teks</string>
     <string name="tool_clear">Kosongkan kolom</string>
+    <string name="tool_wait_network">Tunggu respons jaringan</string>
+    <string name="tool_get_network_response">Ambil respons jaringan</string>
+    <string name="tool_inspect_network">Periksa permintaan jaringan</string>
 </resources>

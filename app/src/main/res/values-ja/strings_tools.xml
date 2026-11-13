@@ -62,4 +62,7 @@
     <string name="tool_tap">タップ</string>
     <string name="tool_type">テキストを入力</string>
     <string name="tool_clear">入力欄をクリア</string>
+    <string name="tool_wait_network">ネットワーク応答を待機</string>
+    <string name="tool_get_network_response">ネットワーク応答を取得</string>
+    <string name="tool_inspect_network">最近の通信を確認</string>
 </resources>

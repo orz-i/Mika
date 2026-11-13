@@ -62,4 +62,7 @@
     <string name="tool_tap">Tocar</string>
     <string name="tool_type">Escribir texto</string>
     <string name="tool_clear">Borrar campo</string>
+    <string name="tool_wait_network">Esperar respuesta de red</string>
+    <string name="tool_get_network_response">Obtener respuesta de red</string>
+    <string name="tool_inspect_network">Inspeccionar solicitudes de red</string>
 </resources>

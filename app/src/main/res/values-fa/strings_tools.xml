@@ -62,4 +62,7 @@
     <string name="tool_tap">لمس</string>
     <string name="tool_type">وارد کردن متن</string>
     <string name="tool_clear">پاک کردن کادر</string>
+    <string name="tool_wait_network">انتظار برای پاسخ شبکه</string>
+    <string name="tool_get_network_response">دریافت پاسخ شبکه</string>
+    <string name="tool_inspect_network">بررسی درخواست‌های شبکه</string>
 </resources>

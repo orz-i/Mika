@@ -62,4 +62,7 @@
     <string name="tool_tap">點選</string>
     <string name="tool_type">輸入文字</string>
     <string name="tool_clear">清空輸入框</string>
+    <string name="tool_wait_network">等待網路回應</string>
+    <string name="tool_get_network_response">取得網路回應內容</string>
+    <string name="tool_inspect_network">檢視近期網路請求</string>
 </resources>

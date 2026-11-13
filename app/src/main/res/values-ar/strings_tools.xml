@@ -62,4 +62,7 @@
     <string name="tool_tap">نقر</string>
     <string name="tool_type">كتابة نص</string>
     <string name="tool_clear">مسح الحقل</string>
+    <string name="tool_wait_network">انتظار استجابة الشبكة</string>
+    <string name="tool_get_network_response">جلب استجابة الشبكة</string>
+    <string name="tool_inspect_network">فحص طلبات الشبكة</string>
 </resources>
