@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.guard
 
+import com.wangzan101.mika.core.policy.GuardMode
 import com.wangzan101.mika.core.prompt.Feedback
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -7,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
 import kotlin.math.abs
@@ -58,7 +60,11 @@ fun actionSignature(tool: String, args: JsonObject): String {
  * 每次任务一份的操作守卫。只有动作确实没有效果、重复读取没有新内容或工具连续失败时才提醒并最终叫停。
  * 相同的点击/滚动和已见过的界面指纹本身不代表停滞；新的页面或读取内容会清掉无进展计数。
  */
-class OperationGuards(private val stepBudget: Int? = null) {
+class OperationGuards(
+    private val stepBudget: Int? = null,
+    private val mode: GuardMode = GuardMode.SOFT,
+) {
+    private val allowStop: Boolean get() = mode != GuardMode.WARN_ONLY
 
     private var frameId: String? = null
     private var frameHash: Long? = null
@@ -92,6 +98,8 @@ class OperationGuards(private val stepBudget: Int? = null) {
 
     private var consecutiveFailures = 0
     private var unrecoverableFailures = 0
+    private var lastFailureTool: String? = null
+    private var lastFailureOutcome: String? = null
     private val recentFailures = ArrayDeque<JsonObject>()
 
     var stop: GuardVerdict? = null
@@ -153,11 +161,13 @@ class OperationGuards(private val stepBudget: Int? = null) {
 
     private fun noProgress(): List<GuardVerdict> {
         if (treeBlindActions >= 2) {
-            return verdict("no_progress", if (unchanged >= 3) Severity.Stop else Severity.Warn, buildJsonObject {
+            val rung = GuardRules.climb(unchanged, GuardRules.TREE_BLIND_LADDER, unchangedWarnedAt, canStop = allowStop) ?: return emptyList()
+            unchangedWarnedAt = rung.threshold
+            return verdict("no_progress", rung.severity, buildJsonObject {
                 put("unchanged", unchanged); put("treeBlind", true); put("treeBlindActions", treeBlindActions)
             }, unchanged)
         }
-        val rung = GuardRules.climb(unchanged, GuardRules.NO_EFFECT_LADDER, unchangedWarnedAt, canStop = true) ?: return emptyList()
+        val rung = GuardRules.climb(unchanged, GuardRules.NO_EFFECT_LADDER, unchangedWarnedAt, canStop = allowStop) ?: return emptyList()
         unchangedWarnedAt = rung.threshold
         return verdict("no_progress", rung.severity, buildJsonObject { put("unchanged", unchanged) }, unchanged)
     }
@@ -193,7 +203,7 @@ class OperationGuards(private val stepBudget: Int? = null) {
         val n = (visits[hash] ?: 1) + 1
         visits[hash] = n
         if (GuardRules.cycle(trail.toList()) != null) return emptyList()
-        val rung = GuardRules.climb(n, GuardRules.sameStateLadder(stepBudget), visitsWarnedAt[hash] ?: 0, canStop = true) ?: return emptyList()
+        val rung = GuardRules.climb(n, GuardRules.sameStateLadder(stepBudget), visitsWarnedAt[hash] ?: 0, canStop = allowStop) ?: return emptyList()
         visitsWarnedAt[hash] = rung.threshold
         return verdict("same_state", rung.severity, buildJsonObject { put("visits", n) }, n)
     }
@@ -201,7 +211,7 @@ class OperationGuards(private val stepBudget: Int? = null) {
     private fun cycle(): List<GuardVerdict> {
         val c = GuardRules.cycle(trail.toList())
         if (c == null) { cycleWarnedAt = 0; return emptyList() }
-        val rung = GuardRules.climb(c.rounds, GuardRules.cycleLadder(stepBudget), cycleWarnedAt, canStop = true) ?: return emptyList()
+        val rung = GuardRules.climb(c.rounds, GuardRules.cycleLadder(stepBudget), cycleWarnedAt, canStop = allowStop) ?: return emptyList()
         cycleWarnedAt = rung.threshold
         return verdict("state_cycle", rung.severity, buildJsonObject { put("states", c.period); put("rounds", c.rounds) }, c.rounds, period = c.period)
     }
@@ -226,7 +236,7 @@ class OperationGuards(private val stepBudget: Int? = null) {
         window.sync(epoch)
         window.rereads += 1
         val n = window.rereads
-        val rung = GuardRules.climb(n, GuardRules.REREAD_LADDER, window.warnedAt, window.canStop) ?: return emptyList()
+        val rung = GuardRules.climb(n, GuardRules.REREAD_LADDER, window.warnedAt, window.canStop && allowStop) ?: return emptyList()
         window.warnedAt = rung.threshold
         return verdict("read_loop", rung.severity, buildJsonObject {
             put("tool", tool); put("rereadsOfUnchangedPage", n)
@@ -258,21 +268,47 @@ class OperationGuards(private val stepBudget: Int? = null) {
         if (neutral || countsAsFailure == false || ok != false) {
             consecutiveFailures = 0
             unrecoverableFailures = 0
+            lastFailureTool = null
+            lastFailureOutcome = null
+            if (stop?.code == "too_many_failures") stop = null
             return emptyList()
         }
         val recoverable = (content["recoverable"] as? JsonPrimitive)?.booleanOrNull != false
-        consecutiveFailures += 1
-        if (!recoverable) unrecoverableFailures += 1
+        val outcomeKey = failureOutcomeKey(content)
+        val outcomeChanged = tool == lastFailureTool && outcomeKey != null && lastFailureOutcome != null && outcomeKey != lastFailureOutcome
+        if (outcomeChanged) {
+            // 输出或退出码发生变化说明尝试取得了新反馈，不算无意义死循环，重置连续失败计数
+            consecutiveFailures = 1
+            unrecoverableFailures = if (!recoverable) 1 else 0
+            if (stop?.code == "too_many_failures") stop = null
+        } else {
+            consecutiveFailures += 1
+            if (!recoverable) unrecoverableFailures += 1
+        }
+        lastFailureTool = tool
+        lastFailureOutcome = outcomeKey
         recentFailures.pushCapped(buildJsonObject {
             put("tool", tool); put("recoverable", recoverable)
             (content["error"] as? JsonPrimitive)?.takeIf { it.isString }?.let { put("error", it.content) }
         })
-        val severity = GuardRules.failures(consecutiveFailures, unrecoverableFailures) ?: return emptyList()
+        val severity = GuardRules.failures(consecutiveFailures, unrecoverableFailures, canStop = allowStop) ?: return emptyList()
         return verdict("too_many_failures", severity, buildJsonObject {
             put("consecutive", consecutiveFailures)
             put("unrecoverable", unrecoverableFailures)
             put("recent", JsonArray(recentFailures.toList().takeLast(5)))
         }, consecutiveFailures, waysOut = consecutiveFailures >= GuardRules.FAILURE_WAYS_OUT || unrecoverableFailures > 0)
+    }
+
+    private fun failureOutcomeKey(content: JsonObject): String? {
+        val hasOutputSignal = content.containsKey("exitCode") || content.containsKey("output") ||
+            content.containsKey("stdout") || content.containsKey("stderr")
+        if (!hasOutputSignal) return null
+        val exitCode = (content["exitCode"] as? JsonPrimitive)?.contentOrNull
+        val error = (content["error"] as? JsonPrimitive)?.contentOrNull
+        val output = (content["output"] as? JsonPrimitive)?.contentOrNull
+            ?: (content["stdout"] as? JsonPrimitive)?.contentOrNull
+            ?: (content["stderr"] as? JsonPrimitive)?.contentOrNull
+        return "$exitCode|$error|$output"
     }
 
     private companion object {

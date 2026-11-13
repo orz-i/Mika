@@ -1,29 +1,37 @@
 package com.wangzan101.mika.core.cap.sandbox
 
+import com.wangzan101.mika.core.guard.GuardVerdict
+import com.wangzan101.mika.core.guard.OffScreenGuard
+import com.wangzan101.mika.core.guard.Severity
+import com.wangzan101.mika.core.guard.actionSignature
 import com.wangzan101.mika.core.model.Part
+import com.wangzan101.mika.core.policy.GuardMode
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
-import com.wangzan101.mika.core.guard.GuardVerdict
-import com.wangzan101.mika.core.guard.Severity
-import com.wangzan101.mika.core.guard.actionSignature
-import com.wangzan101.mika.core.guard.OffScreenGuard
 
 /** 一个任务里沙箱命令累计最多跑这么久。 */
 const val SANDBOX_BUDGET_MS = 30 * 60_000L
 private val SANDBOX_COMMANDS = setOf(RunCommand.name, RunBundledScript.name)
-private const val SANDBOX_LOOP_WARN = 3
-private const val SANDBOX_LOOP_STOP = 5
-private const val SANDBOX_LOOP_HINT = "This exact command has failed several times in a row. Do not repeat it unchanged: read the error, then try a different approach."
+internal const val SANDBOX_LOOP_WARN = 3
+internal const val SANDBOX_LOOP_STOP = 15
+private const val SANDBOX_LOOP_HINT = "This exact command has failed several times in a row with the same result. Do not repeat it unchanged: read the error/output, modify files or arguments, or try a different approach."
 
-/** 沙箱命令的守卫(每次任务一份):同一条命令原样重复且失败的次数,和累计运行时长。屏幕守卫不看沙箱工具。 */
-class SandboxGuard(private val budgetMs: Long = SANDBOX_BUDGET_MS) : OffScreenGuard {
+/** 沙箱命令的守卫(每次任务一份):同一条命令原样重复且结果无变化地失败的次数,和累计运行时长。屏幕守卫不看沙箱工具。 */
+class SandboxGuard(
+    private val budgetMs: Long = SANDBOX_BUDGET_MS,
+    private val loopWarn: Int = SANDBOX_LOOP_WARN,
+    private val loopStop: Int = SANDBOX_LOOP_STOP,
+    private val mode: GuardMode = GuardMode.SOFT,
+) : OffScreenGuard {
     private var usedMs = 0L
     private var lastSignature: String? = null
+    private var lastOutcome: String? = null
     private var repeats = 0
 
     override var stop: GuardVerdict? = null
@@ -51,20 +59,47 @@ class SandboxGuard(private val budgetMs: Long = SANDBOX_BUDGET_MS) : OffScreenGu
     }
 
     override fun result(tool: String, args: JsonObject, content: JsonObject): List<GuardVerdict> {
-        if (tool !in SANDBOX_COMMANDS) return emptyList()
+        if (tool !in SANDBOX_COMMANDS) {
+            if (tool == WriteFile.name && (content["ok"] as? JsonPrimitive)?.booleanOrNull != false) {
+                resetLoop()
+            }
+            return emptyList()
+        }
         (content["durationMs"] as? JsonPrimitive)?.longOrNull?.let { usedMs += it }
         if ((content["ok"] as? JsonPrimitive)?.booleanOrNull != false) {
-            lastSignature = null; repeats = 0
+            resetLoop()
             return emptyList()
         }
         val sig = actionSignature(tool, args)
-        repeats = if (sig == lastSignature) repeats + 1 else 1
+        val outcome = outcomeSignature(content)
+        repeats = if (sig == lastSignature && outcome == lastOutcome) repeats + 1 else 1
         lastSignature = sig
-        if (repeats < SANDBOX_LOOP_WARN) return emptyList()
-        val v = GuardVerdict("sandbox_loop", if (repeats >= SANDBOX_LOOP_STOP) Severity.Stop else Severity.Warn, buildJsonObject {
+        lastOutcome = outcome
+        if (repeats < loopWarn) return emptyList()
+        val severity = if (mode != GuardMode.WARN_ONLY && repeats >= loopStop) Severity.Stop else Severity.Warn
+        val nudge = if (severity == Severity.Warn) {
+            "$SANDBOX_LOOP_HINT (repeated $repeats times with identical exitCode/output)."
+        } else null
+        val v = GuardVerdict("sandbox_loop", severity, buildJsonObject {
             put("tool", tool); put("repeatCount", repeats); put("hint", SANDBOX_LOOP_HINT)
-        })
+        }, nudge)
         if (v.severity == Severity.Stop) stop = v
         return listOf(v)
+    }
+
+    private fun resetLoop() {
+        lastSignature = null
+        lastOutcome = null
+        repeats = 0
+        stop = null
+    }
+
+    private fun outcomeSignature(content: JsonObject): String {
+        val exitCode = (content["exitCode"] as? JsonPrimitive)?.contentOrNull
+        val timedOut = (content["timedOut"] as? JsonPrimitive)?.booleanOrNull
+        val killed = (content["killedBySystem"] as? JsonPrimitive)?.booleanOrNull
+        val error = (content["error"] as? JsonPrimitive)?.contentOrNull
+        val output = (content["output"] as? JsonPrimitive)?.contentOrNull
+        return "$exitCode|$timedOut|$killed|$error|$output"
     }
 }

@@ -46,7 +46,7 @@ class AgentLoopSandboxTest {
         assertTrue(toolResults(m).none { it.containsKey("guard") })
     }
 
-    @Test fun fiveIdenticalFailuresStop() = runTest {
+    @Test fun identicalFailuresWarnFromThreeAndStopOnlyAtSafetyFuse() = runTest {
         sb.next = { CommandResult(2, false, false, 10, "No such file", 0, false) }
         val m = FakeModel(cmd("python3 x.py"), repeatLast = true)
         val r = loop(m).run("跑脚本")
@@ -54,12 +54,24 @@ class AgentLoopSandboxTest {
         r as TaskState.Failed
         assertTrue(r.reason, r.reason.startsWith("已安全停止(sandbox_loop)"))
         assertEquals(FailKind.Guard, r.kind)
-        assertEquals(5, sb.runs.size)
+        // 相同命令 + 相同输出连续失败 15 次才熔断;前面只给带诊断建议的提醒
+        assertEquals(15, sb.runs.size)
         val results = toolResults(m)
         assertTrue(results[1].containsKey("guard").not())
         val guard = results[2]["guard"]!!.jsonArray.single().jsonObject
         assertEquals("sandbox_loop", guard["code"]!!.jsonPrimitive.content)
         assertEquals("warn", guard["severity"]!!.jsonPrimitive.content)
+        assertTrue(guard["nudge"]!!.jsonPrimitive.content.contains("Do not repeat"))
+    }
+
+    @Test fun changingOutputDoesNotCountAsADeadLoop() = runTest {
+        var n = 0
+        sb.next = { CommandResult(2, false, false, 10, "error #${++n}", 0, false) }
+        val m = FakeModel(*(1..20).map { cmd("python3 x.py") }.toTypedArray(), finish())
+        val r = loop(m).run("跑脚本")
+        assertTrue(r.toString(), r is TaskState.Succeeded)
+        assertEquals(20, sb.runs.size)
+        assertTrue(toolResults(m).none { it["guard"]?.jsonArray?.any { g -> g.jsonObject["code"]!!.jsonPrimitive.content == "sandbox_loop" } == true })
     }
 
     @Test fun budgetExhausted() = runTest {

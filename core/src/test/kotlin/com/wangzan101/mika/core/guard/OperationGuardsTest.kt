@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.guard
 
+import com.wangzan101.mika.core.policy.GuardMode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.int
@@ -46,14 +47,14 @@ class OperationGuardsTest {
         assertEquals(1, g.unchangedFrames)
     }
 
-    @Test fun unchangedScreenNudgesAt3_6_9StopsAt12() {
+    @Test fun unchangedScreenNudgesAt3_6_10_16StopsAt24() {
         val g = OperationGuards()
         g.frame("f0", 42L)
-        val perAction = (1..12).map { g.noteAction(); g.frame("f$it", 42L) }
-        assertEquals(listOf(3, 6, 9, 12), perAction.withIndex().filter { it.value.any { v -> v.code == "no_progress" } }.map { it.index + 1 })
+        val perAction = (1..24).map { g.noteAction(); g.frame("f$it", 42L) }
+        assertEquals(listOf(3, 6, 10, 16, 24), perAction.withIndex().filter { it.value.any { v -> v.code == "no_progress" } }.map { it.index + 1 })
         val v = perAction.flatten().filter { it.code == "no_progress" }
-        assertEquals(listOf(Severity.Warn, Severity.Warn, Severity.Warn, Severity.Stop), v.map { it.severity })
-        assertEquals(12, v.last().evidence["unchanged"]!!.jsonPrimitive.int)
+        assertEquals(listOf(Severity.Warn, Severity.Warn, Severity.Warn, Severity.Warn, Severity.Stop), v.map { it.severity })
+        assertEquals(24, v.last().evidence["unchanged"]!!.jsonPrimitive.int)
     }
 
     @Test fun reportedNoEffectCountsOnceNotAgainForTheFrame() {
@@ -67,15 +68,24 @@ class OperationGuardsTest {
         g.noteAction(); g.effect("done"); assertEquals(0, g.unchangedFrames)
     }
 
-    @Test fun treeBlindNoVisibleEffectWarnsAtTwoAndStopsAtThree() {
+    @Test fun treeBlindNoVisibleEffectWarnsEarlyAndStopsOnlyAtHighFuse() {
         val g = OperationGuards()
         assertTrue(g.effect("no_effect", treeBlind = true).isEmpty())
         val warned = g.effect("no_effect", treeBlind = true).single()
         assertEquals(Severity.Warn, warned.severity)
         assertEquals("no_progress", warned.code)
+        // 第 3 次不再过激熔断，前几次只做温和提醒直至高安全熔断阈值 12
+        assertTrue(g.effect("no_effect", treeBlind = true).isEmpty())
+        assertNull(g.stop)
+        val warn4 = g.effect("no_effect", treeBlind = true).single()
+        assertEquals(Severity.Warn, warn4.severity)
+        repeat(3) { assertTrue(g.effect("no_effect", treeBlind = true).isEmpty()) }
+        val warn8 = g.effect("no_effect", treeBlind = true).single()
+        assertEquals(Severity.Warn, warn8.severity)
+        repeat(3) { assertTrue(g.effect("no_effect", treeBlind = true).isEmpty()) }
         val stopped = g.effect("no_effect", treeBlind = true).single()
         assertEquals(Severity.Stop, stopped.severity)
-        assertEquals(3, stopped.evidence["unchanged"]!!.jsonPrimitive.int)
+        assertEquals(12, stopped.evidence["unchanged"]!!.jsonPrimitive.int)
         assertEquals("true", stopped.evidence["treeBlind"]!!.jsonPrimitive.content)
         assertEquals("no_progress", g.stop?.code)
 
@@ -94,11 +104,14 @@ class OperationGuardsTest {
         assertNull(ordinary.evidence["treeBlind"])
         assertNull(unrelated.stop)
 
-        // 同一轮无效果里已有两次空树点击,紧接的滚动也没效果时可以在第三次停下;
-        // 单独滚动到底仍只走普通阶梯,不会被当成注入不响应。
+        // 同一轮无效果里已有两次空树点击，只在安全熔断阈值 12 时停下，中间按 2/4/8 提醒
         val mixed = OperationGuards()
         assertTrue(mixed.effect("no_effect", treeBlind = true).isEmpty())
         assertEquals(Severity.Warn, mixed.effect("no_effect", treeBlind = true).single().severity)
+        assertTrue(mixed.effect("no_effect").isEmpty())
+        assertNull(mixed.stop)
+        assertEquals(Severity.Warn, mixed.effect("no_effect").single().severity)
+        repeat(7) { mixed.effect("no_effect") }
         val stopped = mixed.effect("no_effect").single()
         assertEquals(Severity.Stop, stopped.severity)
         assertEquals(2, stopped.evidence["treeBlindActions"]!!.jsonPrimitive.int)
@@ -226,7 +239,7 @@ class OperationGuardsTest {
     @Test fun changedFrameCancelsProvisionalNoProgressStop() {
         val g = OperationGuards()
         g.frame("initial", 1L)
-        repeat(11) { i -> g.noteAction(); g.effect("no_effect"); g.frame("same-$i", 1L) }
+        repeat(23) { i -> g.noteAction(); g.effect("no_effect"); g.frame("same-$i", 1L) }
         g.noteAction()
         assertEquals(Severity.Stop, g.effect("no_effect").single().severity)
         g.frame("changed", 2L)
@@ -238,10 +251,10 @@ class OperationGuardsTest {
         val fail = obj("""{"ok":false,"error":"action_failed","recoverable":true}""")
         val g = OperationGuards()
         assertTrue(g.result("phone_tap", fail).isEmpty())
-        val counts = (2..8).map { g.result("phone_tap", fail) }
-        assertEquals(List(6) { Severity.Warn } + Severity.Stop, counts.map { it.single().severity })
+        val counts = (2..16).map { g.result("phone_tap", fail) }
+        assertEquals(List(14) { Severity.Warn } + Severity.Stop, counts.map { it.single().severity })
         assertEquals("too_many_failures", counts.last().single().code)
-        assertEquals(8, counts.last().single().evidence["consecutive"]!!.jsonPrimitive.int)
+        assertEquals(16, counts.last().single().evidence["consecutive"]!!.jsonPrimitive.int)
         // 第 4 次起提醒里附出路
         assertFalse(counts[0].single().nudge!!.contains("ask the user"))
         assertTrue(counts[2].single().nudge!!.contains("ask the user"))
@@ -254,13 +267,44 @@ class OperationGuardsTest {
         g2.result("end_not_done", obj("""{"ok":false,"counts_as_failure":false}"""))
         assertTrue(g2.result("phone_tap", fail).isEmpty())
     }
-    @Test fun unrecoverableFailureWarnsOnceStopsAtThree() {
+
+    @Test fun changingOutputOrExitCodeResetsFailureRepeatCount() {
+        val g = OperationGuards()
+        val f1 = obj("""{"ok":false,"exitCode":1,"output":"err1","recoverable":true}""")
+        val f2 = obj("""{"ok":false,"exitCode":2,"output":"err2","recoverable":true}""")
+        val f3 = obj("""{"ok":false,"exitCode":2,"output":"err3","recoverable":true}""")
+        assertTrue(g.result("root_run_command", f1).isEmpty())
+        // 相同结果累计到第 2 次提醒
+        assertEquals(Severity.Warn, g.result("root_run_command", f1).single().severity)
+        // 退出码或输出发生变化，说明有新进展/反馈，重置连续失败计数，不再继续触发提醒
+        assertTrue(g.result("root_run_command", f2).isEmpty())
+        assertTrue(g.result("root_run_command", f3).isEmpty())
+        assertNull(g.stop)
+    }
+
+    @Test fun unrecoverableFailureWarnsRepeatedlyAndStopsLate() {
         val denied = obj("""{"ok":false,"error":"denied","recoverable":false}""")
         val g = OperationGuards()
-        val v = (1..3).map { g.result("phone_tap", denied).single() }
-        assertEquals(listOf(Severity.Warn, Severity.Warn, Severity.Stop), v.map { it.severity })
-        assertEquals(3, v.last().evidence["unrecoverable"]!!.jsonPrimitive.int)
+        val v = (1..10).map { g.result("phone_tap", denied).single() }
+        assertEquals(List(9) { Severity.Warn } + Severity.Stop, v.map { it.severity })
+        assertEquals(10, v.last().evidence["unrecoverable"]!!.jsonPrimitive.int)
         assertEquals("denied", (v.last().evidence["recent"] as kotlinx.serialization.json.JsonArray).last().jsonObject["error"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun warnOnlyModeNeverStopsTask() {
+        val g = OperationGuards(mode = GuardMode.WARN_ONLY)
+        g.frame("f0", 1L)
+        repeat(30) { i ->
+            g.noteAction()
+            val v = g.effect("no_effect", treeBlind = true)
+            assertTrue(v.all { it.severity == Severity.Warn })
+            g.frame("f-${i + 1}", 1L)
+        }
+        repeat(20) {
+            val v = g.result("phone_tap", obj("""{"ok":false,"error":"denied","recoverable":false}"""))
+            assertTrue(v.all { it.severity == Severity.Warn })
+        }
+        assertNull(g.stop)
     }
 
     @Test fun verdictJsonForModel() {
@@ -268,14 +312,14 @@ class OperationGuardsTest {
         assertEquals("""{"code":"repeating_action","severity":"warn","evidence":{}}""", v.toJson().toString())
     }
 
-    // 页面没变、换着工具和参数反复读:读不出新东西,5、8 次提醒,12 次停;读到新内容、画面变了都从头算
+    // 页面没变、换着工具和参数反复读:读不出新东西,5、10、16 次提醒,24 次停;读到新内容、画面变了都从头算
     @Test fun rereadingAnUnchangedPageWarnsThenStops() {
         val g = OperationGuards()
         assertTrue(g.firstSeen(1L))
         assertTrue(g.read("phone_observe", fresh = true).isEmpty())
-        val verdicts = (1..12).map { i -> g.read(if (i % 2 == 0) "web_evaluate_js" else "web_read_page", g.firstSeen(1L)) }
-        assertEquals(listOf(5, 8, 12), verdicts.withIndex().filter { it.value.isNotEmpty() }.map { it.index + 1 })
-        assertEquals(listOf(Severity.Warn, Severity.Warn, Severity.Stop), verdicts.flatten().map { it.severity })
+        val verdicts = (1..24).map { i -> g.read(if (i % 2 == 0) "web_evaluate_js" else "web_read_page", g.firstSeen(1L)) }
+        assertEquals(listOf(5, 10, 16, 24), verdicts.withIndex().filter { it.value.isNotEmpty() }.map { it.index + 1 })
+        assertEquals(listOf(Severity.Warn, Severity.Warn, Severity.Warn, Severity.Stop), verdicts.flatten().map { it.severity })
         assertTrue(verdicts.flatten().all { it.code == "read_loop" })
         assertEquals("read_loop", g.stop?.code)
     }

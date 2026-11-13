@@ -9,12 +9,13 @@ package com.wangzan101.mika.core.guard
  *
  * | 信号 | 提醒 | 叫停(安全网) |
  * |---|---|---|
- * | 同一动作 + 同一目标重复(最近 [LOOP_WINDOW] 次里) | 3、6 | 12 |
- * | 同上,诊断类看界面的工具(按工具计) | 6、9 | 15 |
- * | 动作没有效果(effect 为 no_effect,或动过之后界面不变),连续 | 3、6、9 | 12 |
- * | 页面没变时又读了一遍、没读出新内容 | 5、8 | 12 |
- * | 连续失败(第 4 次起附出路) | 2、4 | 8 |
- * | 不可恢复的失败 | 1 | 3 |
+ * | 同一动作 + 同一目标重复(最近 [LOOP_WINDOW] 次里) | 4、8、14 | 24 |
+ * | 同上,诊断类看界面的工具(按工具计) | 8、14 | 24 |
+ * | 动作没有效果(effect 为 no_effect,或动过之后界面不变),连续 | 3、6、10、16 | 24 |
+ * | 空树下无可见变化动作(含两次以上 treeBlind) | 2、4、8 | 12 |
+ * | 页面没变时又读了一遍、没读出新内容 | 5、10、16 | 24 |
+ * | 连续失败(第 4 次起附出路) | 2、5、10 | 16 |
+ * | 不可恢复的失败 | 1、3、6 | 10 |
  * | 没到过新状态时第 N 次回到同一状态 | 3、6 | 步数上限的 1/4(至少 10) |
  * | 在两三个状态之间兜圈(整圈数) | 2、4 | 步数上限的 1/5(至少 6) |
  * | 连续 N 个动作没到过任何新状态 | 8、16 | 步数上限的 1/2(至少 24) |
@@ -31,18 +32,21 @@ internal object GuardRules {
     /** 不知道任务的步数上限时按这么多步算。 */
     const val DEFAULT_BUDGET = 60
 
-    /** 重复动作的阶梯:提醒、再提醒、叫停。诊断类看界面本来就常重复,门槛更高。 */
-    fun repeatLadder(diagnostic: Boolean): List<Int> = if (diagnostic) listOf(6, 9, 15) else listOf(3, 6, 12)
+    /** 重复动作的阶梯:多次温和提醒、仅极高阈值才安全熔断。诊断类看界面本来就常重复,门槛更高。 */
+    fun repeatLadder(diagnostic: Boolean): List<Int> = if (diagnostic) listOf(8, 14, 24) else listOf(4, 8, 14, 24)
 
-    /** 动作没有效果的阶梯。 */
-    val NO_EFFECT_LADDER = listOf(3, 6, 9, 12)
+    /** 动作没有效果的阶梯:前几次只发诊断提醒,极高安全阈值才叫停。 */
+    val NO_EFFECT_LADDER = listOf(3, 6, 10, 16, 24)
+
+    /** 空控件树下连续无可见变化的阶梯:2/4/8 提醒,12 才安全熔断(不再在第 3 次过早叫停)。 */
+    val TREE_BLIND_LADDER = listOf(2, 4, 8, 12)
 
     /** 页面没变时重读的阶梯。 */
-    val REREAD_LADDER = listOf(5, 8, 12)
+    val REREAD_LADDER = listOf(5, 10, 16, 24)
 
     /** 连续失败的阶梯;不可恢复的失败另按 [UNRECOVERABLE_LADDER]。 */
-    val FAILURE_LADDER = listOf(2, 4, 8)
-    val UNRECOVERABLE_LADDER = listOf(1, 3)
+    val FAILURE_LADDER = listOf(2, 5, 10, 16)
+    val UNRECOVERABLE_LADDER = listOf(1, 3, 6, 10)
 
     /** 连续失败到这一次起,提醒里附上出路。 */
     const val FAILURE_WAYS_OUT = 4
@@ -94,9 +98,9 @@ internal object GuardRules {
         return best
     }
 
-    /** 连续失败 [consecutive] 次、其中不可恢复 [unrecoverable] 次时该给的级别;不到为 null。 */
-    fun failures(consecutive: Int, unrecoverable: Int): Severity? = when {
-        consecutive >= FAILURE_LADDER.last() || unrecoverable >= UNRECOVERABLE_LADDER.last() -> Severity.Stop
+    /** 连续失败 [consecutive] 次、其中不可恢复 [unrecoverable] 次时该给的级别;不到为 null。[canStop] 为 false 时仅提醒不熔断。 */
+    fun failures(consecutive: Int, unrecoverable: Int, canStop: Boolean = true): Severity? = when {
+        canStop && (consecutive >= FAILURE_LADDER.last() || unrecoverable >= UNRECOVERABLE_LADDER.last()) -> Severity.Stop
         consecutive >= FAILURE_LADDER.first() || unrecoverable >= UNRECOVERABLE_LADDER.first() -> Severity.Warn
         else -> null
     }

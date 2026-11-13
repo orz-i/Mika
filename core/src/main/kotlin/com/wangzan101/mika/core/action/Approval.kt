@@ -1,6 +1,9 @@
 package com.wangzan101.mika.core.action
 
 import com.wangzan101.mika.core.gate.ConfirmationRequest
+import com.wangzan101.mika.core.policy.ApprovalScope
+import com.wangzan101.mika.core.policy.PermissionDecision
+import com.wangzan101.mika.core.policy.PermissionPolicy
 import com.wangzan101.mika.core.run.Attendance
 import com.wangzan101.mika.core.run.RunOrigin
 import com.wangzan101.mika.core.run.RunProvenance
@@ -22,20 +25,33 @@ enum class ActionRisk { Read, Change, External, Irreversible, Unknown;
  */
 data class Risk(val level: ActionRisk, val payment: Boolean = false, val ask: ConfirmationRequest? = null)
 
-/** 用户在确认卡片上的选择:同意这一次,或不同意。 */
-enum class ConfirmChoice { Once, Deny;
+/** 用户在确认卡片上的选择:同意这一次、本次会话放行、永久放行,或不同意。 */
+enum class ConfirmChoice(val scope: ApprovalScope? = null) {
+    Once(ApprovalScope.Once),
+    Session(ApprovalScope.Session),
+    Persistent(ApprovalScope.Persistent),
+    Deny(null);
 
     val approved: Boolean get() = this != Deny
 }
 
 /** 询问 / 自主:此刻是不是自主模式(中途换成自主时,正在跑的任务从下一步起照它)。由设置提供,测试里换成固定值。 */
 fun interface ApprovalSettings {
-    /** 自主模式:连付款也不先问。 */
+    /** 自主模式:跳过普通确认弹窗(但不绕过硬性安全底线与 Hard Deny 规则)。 */
     fun autonomous(): Boolean
+
+    /** 规则式权限策略;默认走 [PermissionPolicy.DEFAULT]。 */
+    fun permissionPolicy(): PermissionPolicy = PermissionPolicy.DEFAULT
 
     companion object {
         /** 询问(默认):付款和工具声明要问的那几步(见 [Risk.ask])先问。 */
         val ASK = ApprovalSettings { false }
+
+        fun of(autonomous: Boolean = false, policy: PermissionPolicy = PermissionPolicy.DEFAULT): ApprovalSettings =
+            object : ApprovalSettings {
+                override fun autonomous() = autonomous
+                override fun permissionPolicy() = policy
+            }
     }
 }
 
@@ -57,5 +73,14 @@ object ApprovalPolicy {
         !risk.payment && risk.ask == null -> Approval.Allow
         run.attendance == Attendance.Unattended || run.origin != RunOrigin.Ui -> Approval.Deny
         else -> Approval.Ask
+    }
+
+    /** 结合规则式 [PermissionDecision] 与默认审批策略得出最终 [Approval]。 */
+    fun decide(decision: PermissionDecision, risk: Risk, run: RunProvenance = RunProvenance()): Approval = when (decision) {
+        is PermissionDecision.Allow -> Approval.Allow
+        is PermissionDecision.Deny -> Approval.Deny
+        is PermissionDecision.Ask ->
+            if (run.attendance == Attendance.Unattended || run.origin != RunOrigin.Ui) Approval.Deny else Approval.Ask
+        PermissionDecision.Abstain -> decide(risk, run)
     }
 }
