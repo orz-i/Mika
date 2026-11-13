@@ -92,4 +92,17 @@
     <string name="timeline_step_limit_value">%1$d / %2$d</string>
     <string name="timeline_token_budget">Token 預算</string>
     <string name="timeline_token_budget_value">%1$s / %2$s</string>
+    <string name="timeline_show_network_requests">看當時的網路請求</string>
+    <string name="timeline_hide_network_requests">收起網路請求</string>
+    <string name="timeline_show_network_response">看當時的網路回應內容</string>
+    <string name="timeline_hide_network_response">收起網路回應內容</string>
+    <string name="timeline_show_network_results">看當時的擷取結果</string>
+    <string name="timeline_hide_network_results">收起擷取結果</string>
+    <string name="timeline_network_requests_title">近期網路請求</string>
+    <string name="timeline_network_response_title">網路回應內容</string>
+    <string name="timeline_network_request_count">請求數：%1$d</string>
+    <string name="timeline_network_empty">未擷取到網路請求</string>
+    <string name="timeline_network_capture_off">網路擷取未開啟</string>
+    <string name="timeline_network_body_empty">回應內容為空</string>
+    <string name="timeline_network_truncated">內容較長，僅顯示部分預覽</string>
 </resources>

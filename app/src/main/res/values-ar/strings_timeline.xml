@@ -112,4 +112,17 @@
     <string name="timeline_running">قيد التشغيل</string>
     <string name="timeline_token_budget">ميزانية Token</string>
     <string name="timeline_token_budget_value">%1$s / %2$s</string>
+    <string name="timeline_show_network_requests">عرض طلبات الشبكة في ذلك الوقت</string>
+    <string name="timeline_hide_network_requests">إخفاء طلبات الشبكة</string>
+    <string name="timeline_show_network_response">عرض محتوى الاستجابة</string>
+    <string name="timeline_hide_network_response">إخفاء محتوى الاستجابة</string>
+    <string name="timeline_show_network_results">عرض نتائج الشبكة</string>
+    <string name="timeline_hide_network_results">إخفاء نتائج الشبكة</string>
+    <string name="timeline_network_requests_title">الطلبات الأخيرة</string>
+    <string name="timeline_network_response_title">محتوى الاستجابة</string>
+    <string name="timeline_network_request_count">الطلبات: %1$d</string>
+    <string name="timeline_network_empty">لم يتم التقاط أي طلبات شبكة</string>
+    <string name="timeline_network_capture_off">التقاط الشبكة غير نشط</string>
+    <string name="timeline_network_body_empty">محتوى الاستجابة فارغ</string>
+    <string name="timeline_network_truncated">تم اقتطاع المحتوى؛ يتم عرض معاينة جزئية فقط</string>
 </resources>

@@ -92,4 +92,17 @@
     <string name="timeline_step_limit_value">%1$d / %2$d</string>
     <string name="timeline_token_budget">Token 予算</string>
     <string name="timeline_token_budget_value">%1$s / %2$s</string>
+    <string name="timeline_show_network_requests">そのときのネットワーク通信を見る</string>
+    <string name="timeline_hide_network_requests">ネットワーク通信を隠す</string>
+    <string name="timeline_show_network_response">そのときのレスポンス本文を見る</string>
+    <string name="timeline_hide_network_response">レスポンス本文を隠す</string>
+    <string name="timeline_show_network_results">そのときの通信結果を見る</string>
+    <string name="timeline_hide_network_results">通信結果を隠す</string>
+    <string name="timeline_network_requests_title">最近のネットワーク通信</string>
+    <string name="timeline_network_response_title">レスポンス本文</string>
+    <string name="timeline_network_request_count">通信件数：%1$d</string>
+    <string name="timeline_network_empty">取得されたネットワーク通信はありません</string>
+    <string name="timeline_network_capture_off">ネットワークキャプチャが有効ではありません</string>
+    <string name="timeline_network_body_empty">レスポンス本文は空です</string>
+    <string name="timeline_network_truncated">内容が長いため一部のみ表示しています</string>
 </resources>

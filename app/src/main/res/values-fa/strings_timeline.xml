@@ -96,4 +96,17 @@
     <string name="timeline_step_limit_value">%1$d / %2$d</string>
     <string name="timeline_token_budget">سقف توکن</string>
     <string name="timeline_token_budget_value">%1$s / %2$s</string>
+    <string name="timeline_show_network_requests">مشاهدهٔ درخواست‌های شبکه</string>
+    <string name="timeline_hide_network_requests">پنهان کردن درخواست‌های شبکه</string>
+    <string name="timeline_show_network_response">مشاهدهٔ متن پاسخ</string>
+    <string name="timeline_hide_network_response">پنهان کردن متن پاسخ</string>
+    <string name="timeline_show_network_results">مشاهدهٔ نتایج شبکه</string>
+    <string name="timeline_hide_network_results">پنهان کردن نتایج شبکه</string>
+    <string name="timeline_network_requests_title">درخواست‌های اخیر</string>
+    <string name="timeline_network_response_title">متن پاسخ</string>
+    <string name="timeline_network_request_count">درخواست‌ها: %1$d</string>
+    <string name="timeline_network_empty">درخواست شبکه‌ای ثبت نشده است</string>
+    <string name="timeline_network_capture_off">ثبت شبکه فعال نیست</string>
+    <string name="timeline_network_body_empty">متن پاسخ خالی است</string>
+    <string name="timeline_network_truncated">محتوا کوتاه شده؛ فقط پیش‌نمایش نمایش داده می‌شود</string>
 </resources>

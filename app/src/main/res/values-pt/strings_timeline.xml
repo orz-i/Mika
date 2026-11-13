@@ -100,4 +100,17 @@
     <string name="timeline_step_limit_value">%1$d / %2$d</string>
     <string name="timeline_token_budget">Orçamento de tokens</string>
     <string name="timeline_token_budget_value">%1$s / %2$s</string>
+    <string name="timeline_show_network_requests">Ver solicitações capturadas</string>
+    <string name="timeline_hide_network_requests">Ocultar solicitações capturadas</string>
+    <string name="timeline_show_network_response">Ver corpo da resposta</string>
+    <string name="timeline_hide_network_response">Ocultar corpo da resposta</string>
+    <string name="timeline_show_network_results">Ver resultados de rede</string>
+    <string name="timeline_hide_network_results">Ocultar resultados de rede</string>
+    <string name="timeline_network_requests_title">Solicitações recentes</string>
+    <string name="timeline_network_response_title">Corpo da resposta</string>
+    <string name="timeline_network_request_count">Solicitações: %1$d</string>
+    <string name="timeline_network_empty">Nenhuma solicitação de rede capturada</string>
+    <string name="timeline_network_capture_off">A captura de rede não está ativa</string>
+    <string name="timeline_network_body_empty">O corpo da resposta está vazio</string>
+    <string name="timeline_network_truncated">Conteúdo truncado; exibindo apenas prévia</string>
 </resources>

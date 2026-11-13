@@ -104,4 +104,17 @@
     <string name="timeline_step_limit_value">%1$d / %2$d</string>
     <string name="timeline_token_budget">Бюджет токенов</string>
     <string name="timeline_token_budget_value">%1$s / %2$s</string>
+    <string name="timeline_show_network_requests">Посмотреть перехваченные запросы</string>
+    <string name="timeline_hide_network_requests">Скрыть перехваченные запросы</string>
+    <string name="timeline_show_network_response">Посмотреть тело ответа</string>
+    <string name="timeline_hide_network_response">Скрыть тело ответа</string>
+    <string name="timeline_show_network_results">Посмотреть сетевые результаты</string>
+    <string name="timeline_hide_network_results">Скрыть сетевые результаты</string>
+    <string name="timeline_network_requests_title">Недавние запросы</string>
+    <string name="timeline_network_response_title">Тело ответа</string>
+    <string name="timeline_network_request_count">Запросов: %1$d</string>
+    <string name="timeline_network_empty">Сетевые запросы не перехвачены</string>
+    <string name="timeline_network_capture_off">Перехват сети не активен</string>
+    <string name="timeline_network_body_empty">Тело ответа пустое</string>
+    <string name="timeline_network_truncated">Содержимое обрезано; показан только фрагмент</string>
 </resources>

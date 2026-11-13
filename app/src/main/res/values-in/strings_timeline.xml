@@ -92,4 +92,17 @@
     <string name="timeline_step_limit_value">%1$d / %2$d</string>
     <string name="timeline_token_budget">Anggaran token</string>
     <string name="timeline_token_budget_value">%1$s / %2$s</string>
+    <string name="timeline_show_network_requests">Lihat permintaan jaringan</string>
+    <string name="timeline_hide_network_requests">Sembunyikan permintaan jaringan</string>
+    <string name="timeline_show_network_response">Lihat isi respons</string>
+    <string name="timeline_hide_network_response">Sembunyikan isi respons</string>
+    <string name="timeline_show_network_results">Lihat hasil jaringan</string>
+    <string name="timeline_hide_network_results">Sembunyikan hasil jaringan</string>
+    <string name="timeline_network_requests_title">Permintaan terbaru</string>
+    <string name="timeline_network_response_title">Isi respons</string>
+    <string name="timeline_network_request_count">Permintaan: %1$d</string>
+    <string name="timeline_network_empty">Tidak ada permintaan jaringan yang tertangkap</string>
+    <string name="timeline_network_capture_off">Penangkapan jaringan tidak aktif</string>
+    <string name="timeline_network_body_empty">Isi respons kosong</string>
+    <string name="timeline_network_truncated">Konten dipotong; hanya pratinjau yang ditampilkan</string>
 </resources>
