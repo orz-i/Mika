@@ -29,6 +29,7 @@ import com.wangzan101.mika.core.capability.Paced
 import com.wangzan101.mika.core.capability.PromptEnv
 import com.wangzan101.mika.core.capability.PromptSections
 import com.wangzan101.mika.core.guard.OffScreenGuard
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 工具调用的入口:解析参数,按名字在 [ToolRegistry] 里找到工具执行,再做所有工具共用的收尾
@@ -79,20 +80,117 @@ class ToolDispatcher internal constructor(
 
     /** 本任务已展开的能力组(按展开的先后)。 */
     private val opened = linkedSetOf<String>()
+    /** 经 tool_activate 细粒度按需激活的工具名(按激活先后保存,Append-only 追加在工具表末尾)。 */
+    private val activatedTools = linkedSetOf<String>()
     /** 本任务真的用过的能力组(调过组里的工具;单用就够的入口不算):下一轮开局据此预先展开。 */
     private val usedGroups = linkedSetOf<String>()
+    private val groupLock = Any()
+    private val evidenceLock = Any()
+
+    init {
+        ctx[ToolDiscovery.KEY] = object : ToolDiscovery {
+            override fun search(
+                query: String?,
+                capability: String?,
+                topic: String?,
+                includeActive: Boolean,
+                limit: Int,
+            ): List<ToolCatalogEntry> = registry.searchCatalog(
+                query = query,
+                capability = capability,
+                topic = topic,
+                expanded = openSet(),
+                activated = synchronized(groupLock) { activatedTools.toSet() },
+                includeActive = includeActive,
+                limit = limit,
+            )
+
+            override fun deferredTopics(capability: String?): List<TopicSummary> = registry.deferredTopics(
+                expanded = openSet(),
+                activated = synchronized(groupLock) { activatedTools.toSet() },
+                capability = capability,
+            )
+
+            override fun activate(
+                tools: List<String>?,
+                topic: String?,
+                capability: String?,
+            ): ActivationResult = this@ToolDispatcher.activate(tools, topic, capability)
+        }
+    }
 
     /** 本任务给了工具、却一个入口都没给的组(只读的任务里跑命令不给):不收,一开始就展开,免得整组看不见。 */
     private val entryless: Set<String> by lazy { folding.filter { registry.members(it).isNotEmpty() && !registry.hasEntry(it) }.toSet() }
 
     /** 已展开的能力组(不含 [ToolGroups.SCREENS])。 */
-    val expanded: Set<String> get() = entryless + opened
+    val expanded: Set<String> get() = entryless + synchronized(groupLock) { opened.toSet() }
+
+    /** 已通过细粒度发现(tool_activate)按需激活的工具名(按激活先后顺序)。 */
+    val activated: List<String> get() = synchronized(groupLock) { activatedTools.toList() }
 
     /** 本任务真的用过的能力组。 */
-    val used: Set<String> get() = usedGroups.toSet()
+    val used: Set<String> get() = synchronized(groupLock) { usedGroups.toSet() }
 
     /** 展开 [group](本任务提供了它的工具才展开);新展开的返回 true。 */
-    fun expand(group: String): Boolean = group in folding && group !in entryless && registry.members(group).isNotEmpty() && opened.add(group)
+    fun expand(group: String): Boolean =
+        group in folding && group !in entryless && registry.members(group).isNotEmpty() && synchronized(groupLock) { opened.add(group) }
+
+    /**
+     * 按单个/多个工具名或子主题增量激活延迟工具,不必一次性展开整组;
+     * 新激活的 [ToolSpec] 严格追加在 [offeredNow] 末尾以保持 Zone 0 Prefix Cache 稳定。
+     */
+    internal fun activate(
+        tools: List<String>? = null,
+        topic: String? = null,
+        capability: String? = null,
+    ): ActivationResult {
+        val slots = registry.slots()
+        val byName = slots.associateBy { it.full.name }
+        val open = openSet()
+        val requestedSlots = linkedSetOf<ToolGroups.Slot>()
+        val unknown = mutableListOf<String>()
+
+        if (!tools.isNullOrEmpty()) {
+            for (raw in tools) {
+                val name = raw.trim()
+                if (name.isEmpty()) continue
+                val direct = byName[name]
+                if (direct != null) {
+                    requestedSlots += direct
+                } else if (':' in name) {
+                    val matched = slots.filter { registry.matchesTopic(it, name, capability) }
+                    if (matched.isNotEmpty()) requestedSlots.addAll(matched) else unknown += name
+                } else {
+                    unknown += name
+                }
+            }
+        }
+        if (!topic.isNullOrBlank()) {
+            val matched = slots.filter { registry.matchesTopic(it, topic, capability) }
+            requestedSlots.addAll(matched)
+        }
+
+        val newlyActivated = mutableListOf<ToolSpec>()
+        val alreadyActive = mutableListOf<String>()
+        synchronized(groupLock) {
+            for (s in requestedSlots) {
+                val name = s.full.name
+                val inBase = s.group == null || s.group in open || s.entry != null
+                if (inBase || name in activatedTools) {
+                    alreadyActive += name
+                } else {
+                    activatedTools += name
+                    newlyActivated += s.full
+                }
+            }
+        }
+        return ActivationResult(
+            activated = newlyActivated,
+            alreadyActive = alreadyActive.distinct(),
+            unknown = unknown.distinct(),
+            totalActivatedCount = synchronized(groupLock) { activatedTools.size },
+        )
+    }
 
     /**
      * 开局预先展开:上一轮用过的组([previous]),和能力按这次的话认为一定用得上的(带着工作区里的文件时的沙箱,见 [Capability.preload])。
@@ -107,11 +205,16 @@ class ToolDispatcher internal constructor(
     private fun openSet(): Set<String> = expanded.let { e -> if (e.any { it in screenGroups }) e + ToolGroups.SCREENS else e }
 
     /**
-     * 此刻发给模型的工具:一直都在的、展开了的组(全文),收着的组只给入口(短说明),顺序固定(见 [ToolGroups])。
+     * 此刻发给模型的工具:一直都在的、展开了的组(全文),收着的组只给入口(短说明),顺序固定(见 [ToolGroups]);
+     * 经 tool_activate 按需激活的工具按激活先后追加在最末尾(Append-only)。
      * [screenExtra] 是循环自己另给的、随有屏幕的组一起出现的定义(一次多步)。[all] 时当每组都展开了。
      */
     fun offeredNow(screenExtra: List<ToolSpec> = emptyList(), all: Boolean = false): List<ToolSpec> =
-        registry.layered(if (all) folding.toSet() + ToolGroups.SCREENS else openSet(), if (screenGroups.isEmpty()) emptyMap() else mapOf(ToolGroups.SCREENS to screenExtra)).let {
+        registry.layered(
+            expanded = if (all) folding.toSet() + ToolGroups.SCREENS else openSet(),
+            extra = if (screenGroups.isEmpty()) emptyMap() else mapOf(ToolGroups.SCREENS to screenExtra),
+            activated = if (all) emptyList() else activated,
+        ).let {
             if (screenGroups.isEmpty()) it + screenExtra else it
         }
 
@@ -164,6 +267,14 @@ class ToolDispatcher internal constructor(
     /** 不动屏幕的工具(沙箱一类):不进屏幕守卫,由各自的守卫另管;结果里的图是文件。 */
     fun offScreen(name: String): Boolean = registry.declared(name)?.offScreen == true
 
+    /** 这个工具是否声明了可与同波次其他并发安全工具并行执行;不认识的名字为 false。 */
+    fun isParallelSafe(name: String): Boolean = registry.declared(name)?.concurrency == Concurrency.ParallelSafe
+
+    /** 并行安全且不写屏的工具无需进出 SurfaceLayer（避免并发争夺焦点/动作目标与误改 offScreen 语义）。 */
+    fun skipsSurface(name: String): Boolean = registry.declared(name)?.skipsSurface() == true
+
+    private fun AgentTool.skipsSurface(): Boolean = concurrency == Concurrency.ParallelSafe && !writesScreen
+
     /** 模型给这次调用写的用意(附加的 reason 参数);工具自己有叫 reason 的字段、没写或写空时为 null。 */
     fun callReason(name: String, args: JsonObject): String? {
         if (registry.declared(name)?.def?.ownReason == true) return null
@@ -178,6 +289,9 @@ class ToolDispatcher internal constructor(
 
     /** 这个工具做的动作;不认识的名字为 null。 */
     fun verb(name: String?): Verb? = ctx.tools.verb(name)
+
+    /** 按工具名查询正交行为特征;不认识的名字为 null。 */
+    fun traits(name: String?): ToolTraits? = name?.let { registry.declared(it)?.traits ?: ctx.tools.traits(it) }
 
     /** 这个工具作用在哪块屏上(屏幕工具的能力 id);不是屏幕工具为 null。 */
     fun surfaceOf(name: String): String? = surfaces.surfaceOf(registry.declared(name))
@@ -225,25 +339,37 @@ class ToolDispatcher internal constructor(
     @Suppress("UNUSED_PARAMETER")
     suspend fun execute(call: Part.ToolCall, pass: ActionPass, step: Int? = null, sub: SubActions? = null): ToolExecution = dispatch(call, step, sub)
 
-    private var executed = 0
+    private val executed = AtomicInteger(0)
 
     private suspend fun dispatch(call: Part.ToolCall, step: Int?, sub: SubActions?): ToolExecution {
-        surfaces.skip()
-        val tool = registry[call.name] ?: return unknown(call.name, parseArgs(call.argsJson))
-        // 收着的组里的工具(入口,或模型凭记忆调了没给它看的)照常执行;它那一组就此展开,结果里说一句,下一次调用起看得到整组
+        val tool = registry[call.name] ?: run {
+            surfaces.skip()
+            return unknown(call.name, parseArgs(call.argsJson))
+        }
+        val skipSurface = tool.skipsSurface()
+        if (!skipSurface) surfaces.skip()
+        // 收着的组里的工具(入口,或模型凭记忆调了没给它看的)照常执行;
+        // 若该工具已通过 tool_activate 细粒度按需激活,则直接执行而不展开整组(避免一次性展开 57 个手机工具破坏前缀);
+        // 否则按既有 ToolGroups 规则展开整组,结果里说一句,下一次调用起看得到整组。
         val group = groupOf(tool)
-        if (group != null && group != ToolGroups.SCREENS && tool.entry != Entry.Alone) usedGroups += group
+        val isActivated = synchronized(groupLock) { tool.name in activatedTools }
+        if (group != null && group != ToolGroups.SCREENS && tool.entry != Entry.Alone) {
+            synchronized(groupLock) { usedGroups += group }
+        }
         val opening = when {
+            isActivated -> null
             group == null || tool.entry == Entry.Alone -> null
             group == ToolGroups.SCREENS -> surfaces.current.takeIf { it in screenGroups }
             else -> group
         }?.takeIf(::expand)
-        val result = dispatchTool(tool, call, step, sub)
+        val result = dispatchTool(tool, call, step, sub, skipSurface)
         return if (opening == null) result else result.with(content = JsonObject(result.content + (MORE_TOOLS to JsonPrimitive(Feedback.format("group_opened",
             "group" to opening, "examples" to registry.members(opening).filter { registry[it]?.entry == null }.take(4).joinToString())))))
     }
 
-    private suspend fun dispatchTool(tool: AgentTool, call: Part.ToolCall, step: Int?, sub: SubActions?): ToolExecution {
+    private suspend fun dispatchTool(
+        tool: AgentTool, call: Part.ToolCall, step: Int?, sub: SubActions?, skipSurface: Boolean,
+    ): ToolExecution {
         val args = try {
             val el = if (call.argsJson.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(call.argsJson)
             Args(tool.def(ctx), el as? JsonObject ?: throw ArgError("arguments", "must be a JSON object"))
@@ -252,67 +378,94 @@ class ToolDispatcher internal constructor(
         } catch (e: kotlinx.serialization.SerializationException) {
             return invalid(ArgError("arguments", "not valid JSON"))
         }
+        if (skipSurface) return run(tool, args, call, step, sub, skipSurface = true)
         shots.idAsSnapshot(args.o)?.let { return it }
         misaimed(call.name, args.o)?.let { return it }
         aim(call.name, args.o)
         var ok = false
         try {
-            return run(tool, args, call, step, sub).also { ok = it.content["ok"] == JsonPrimitive(true) }
+            return run(tool, args, call, step, sub, skipSurface = false).also { ok = it.content["ok"] == JsonPrimitive(true) }
         } finally {
             release(ok)
         }
     }
 
-    private suspend fun run(tool: AgentTool, args: Args, call: Part.ToolCall, step: Int?, sub: SubActions?): ToolExecution {
-        executed++
-        ctx.currentStep = step ?: executed
-        evidenceLog.step = ctx.currentStep
-        ctx.callId = call.id
-        ctx.sub = sub
-        // 页面脚本里的动作也经这里:各自记自己的停留,外层的照样含着里面的
-        val outerWait = ctx.pacedWaitMs
-        val outerIdle = ctx.idleScrolls
-        ctx.pacedWaitMs = 0
-        ctx.idleScrolls = 0
-        // 界面上的准备(路线要的目标、改变界面的动作前先看一眼)与收尾都在界面一侧
-        val result = surfaces.around(tool, args.o, inlineScreen) { reportsEffect ->
-            ctx.reportsEffect = reportsEffect
-            try {
-                if (!tool.yieldsToSteer) tool.execute(args, ctx)
-                else waitOrSteer { tool.execute(args, ctx) } ?: failCode(SKIPPED_FOR_NEW_MESSAGE)
-            } catch (e: com.wangzan101.mika.core.access.AppAccessDenied) {
-                throw e
-            } catch (e: ArgError) {
-                invalid(e)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                fail("operation_failed", Feedback.format("operation_failed", "tool" to tool.name, "error" to (e.message ?: e::class.simpleName)))
-            } finally {
-                ctx.reportsEffect = false
+    private suspend fun run(
+        tool: AgentTool, args: Args, call: Part.ToolCall, step: Int?, sub: SubActions?, skipSurface: Boolean,
+    ): ToolExecution {
+        val seq = executed.incrementAndGet()
+        val resolvedStep = step ?: seq
+        val parent = ctx.currentSession()
+        val session = CallSession(callId = call.id, sub = sub, step = resolvedStep)
+        var logTarget: String? = null
+        var logTyped: String? = null
+        val result = ctx.withSession(session) {
+            val res = if (skipSurface) {
+                executeTool(tool, args)
+            } else {
+                synchronized(shots) { shots.step = resolvedStep }
+                // 界面上的准备(路线要的目标、改变界面的动作前先看一眼)与收尾都在界面一侧
+                surfaces.around(tool, args.o, inlineScreen) { reportsEffect ->
+                    session.reportsEffect = reportsEffect
+                    try {
+                        executeTool(tool, args)
+                    } finally {
+                        session.reportsEffect = false
+                    }
+                }
             }
+            if (tool.logged) {
+                logTarget = tool.logTarget(args.o, res, ctx)
+                logTyped = tool.logTyped(args.o, res)
+            }
+            res
         }
-        val waited = ctx.pacedWaitMs
-        ctx.pacedWaitMs = outerWait + waited
-        val idled = ctx.idleScrolls
-        ctx.idleScrolls = outerIdle + idled
+        val waited = session.pacedWaitMs
+        val idled = session.idleScrolls
+        // 页面脚本里的动作也在同一个调用链内回流:各自记自己的停留,外层的照样含着里面的
+        if (parent != null) {
+            parent.pacedWaitMs += waited
+            parent.idleScrolls += idled
+        }
         val ok = result.content["ok"] == JsonPrimitive(true)
-        if (tool.logged) evidenceLog.logAction(stepLabel(), tool.name, tool.logTarget(args.o, result, ctx), tool.logTyped(args.o, result), result, tool.wideTarget)
-        // 读到的(结果里能力给的,和工具按结果另给的)记进账本,结果里换成账本里那几条
-        val seen = remember(result.observations + tool.observations(args.o, result, evidenceLog), tool.capability)
-        // 打进输入框的字(端口明确说不是密码框):之后读屏里的输入框回显不给回答作证
-        if (tool.verb == Verb.TypeText && ok && result.content["secret"] == JsonPrimitive(false)) args.o.argStr("text")?.let(evidenceLog::noteTyped)
+        val seen = synchronized(evidenceLock) {
+            evidenceLog.step = resolvedStep
+            if (tool.logged) evidenceLog.logAction(stepLabel(resolvedStep), tool.name, logTarget, logTyped, result, tool.wideTarget)
+            // 打进输入框的字(端口明确说不是密码框):之后读屏里的输入框回显不给回答作证
+            if (tool.verb == Verb.TypeText && ok && result.content["secret"] == JsonPrimitive(false)) args.o.argStr("text")?.let(evidenceLog::noteTyped)
+            // 读到的(结果里能力给的,和工具按结果另给的)记进账本,结果里换成账本里那几条
+            rememberLocked(result.observations + tool.observations(args.o, result, evidenceLog), tool.capability)
+        }
+        seen.forEach { observer?.invoke(it) }
         // 停留里轻轻滚过页面:只记进运行记录,不给模型
         val record = if (idled > 0) JsonObject(result.record + ("idleScrolls" to JsonPrimitive(idled))) else result.record
         return result.with(observations = seen, place = placeAfter(tool.verb, result.content), waitMs = waited, record = record)
     }
 
+    private suspend fun executeTool(tool: AgentTool, args: Args): ToolExecution = try {
+        if (!tool.yieldsToSteer) tool.execute(args, ctx)
+        else waitOrSteer { tool.execute(args, ctx) } ?: failCode(SKIPPED_FOR_NEW_MESSAGE)
+    } catch (e: com.wangzan101.mika.core.access.AppAccessDenied) {
+        throw e
+    } catch (e: ArgError) {
+        invalid(e)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        fail("operation_failed", Feedback.format("operation_failed", "tool" to tool.name, "error" to (e.message ?: e::class.simpleName)))
+    }
+
     /** 记进账本;没写出处的按 [capability](核心的工具为 core)。返回账本里记下的那几条,每条也交给 [observer]。 */
     private fun remember(observations: List<Observation>, capability: String?): List<Observation> =
-        observations.mapNotNull { o -> evidenceLog.observe(if (o.source != null) o else o.copy(source = capability ?: CORE_SOURCE))?.also { observer?.invoke(it) } }
+        synchronized(evidenceLock) { rememberLocked(observations, capability) }.also { seen ->
+            seen.forEach { observer?.invoke(it) }
+        }
+
+    private fun rememberLocked(observations: List<Observation>, capability: String?): List<Observation> =
+        observations.mapNotNull { o -> evidenceLog.observe(if (o.source != null) o else o.copy(source = capability ?: CORE_SOURCE)) }
 
     /** 每条记进证据账本的观察(运行记录据此原样记下,评测能照样重建账本);由循环设置。 */
-    var observer: ((Observation) -> Unit)? = null
+    @Volatile var observer: ((Observation) -> Unit)? = null
 
     /** 不认识的工具;是改名前的名字时说清现在叫什么(不替模型换成新名执行)。 */
     private fun unknown(name: String, args: JsonObject) = ToolExecution(buildJsonObject {
@@ -326,9 +479,9 @@ class ToolDispatcher internal constructor(
     })
 
     /** 证据账本此刻的位置(见 [EvidenceLedger.lastId]);动作之前记下,之后用 [readSince] 看动作之后有没有重新读过。 */
-    fun ledgerMark(): Int = evidenceLog.ledger.lastId
+    fun ledgerMark(): Int = synchronized(evidenceLock) { evidenceLog.ledger.lastId }
 
-    fun readSince(mark: Int): Boolean = evidenceLog.ledger.readSince(mark)
+    fun readSince(mark: Int): Boolean = synchronized(evidenceLock) { evidenceLog.ledger.readSince(mark) }
 
     /** 按名字找本任务登记的工具;不认识为 null。 */
     internal fun declared(name: String): AgentTool? = registry.declared(name)
@@ -343,13 +496,17 @@ class ToolDispatcher internal constructor(
     /** 用户发来的一屏(屏上的字)也是依据:回答里说的屏上内容从这里来。 */
     fun noteUserScreen(screen: com.wangzan101.mika.core.userscreen.UserScreen) {
         if (screen.blocked || screen.lines.isEmpty()) return
-        evidenceLog.observe(Observation(ObsKind.Read, screen.lines.joinToString("\n") { it.text }, source = CORE_SOURCE,
-            place = screen.packageName?.let(com.wangzan101.mika.core.observation.Place::app),
-            trust = com.wangzan101.mika.core.observation.Trust.Untrusted))
+        synchronized(evidenceLock) {
+            evidenceLog.observe(Observation(ObsKind.Read, screen.lines.joinToString("\n") { it.text }, source = CORE_SOURCE,
+                place = screen.packageName?.let(com.wangzan101.mika.core.observation.Place::app),
+                trust = com.wangzan101.mika.core.observation.Trust.Untrusted))
+        }
     }
 
     fun noteUserAnswer(prompt: String, answer: String) {
-        evidenceLog.observe(Observation(ObsKind.UserSaid, "问用户「${prompt.take(200)}」,用户答:$answer", source = CORE_SOURCE))
+        synchronized(evidenceLock) {
+            evidenceLog.observe(Observation(ObsKind.UserSaid, "问用户「${prompt.take(200)}」,用户答:$answer", source = CORE_SOURCE))
+        }
         capabilities.forEach { it.onUserAnswered(ctx) }
     }
 
@@ -361,8 +518,10 @@ class ToolDispatcher internal constructor(
         val e = evidenceLog
         // 看不到此刻的样子也照样交出之前读到的,由核查器判断
         val look = if (fresh) capabilities.firstOrNull { it.id == surface }?.freshLook(ctx, withImage) else null
-        return Evidence(look?.observations.orEmpty(), look?.image, e.ledger.copy(), e.actionLog.toList(), look?.protected == true, ctx.appOpened,
-            e.takeovers.toList(), userFacts = e.userFacts.toList())
+        return synchronized(evidenceLock) {
+            Evidence(look?.observations.orEmpty(), look?.image, e.ledger.copy(), e.actionLog.toList(), look?.protected == true, ctx.appOpened,
+                e.takeovers.toList(), userFacts = e.userFacts.toList())
+        }
     }
 
     /** 开着时写操作执行前取目标元素与锚点(回放开关打开时由循环设置)。 */
@@ -409,12 +568,14 @@ class ToolDispatcher internal constructor(
             HandBackOutcome.timeout -> "接管超时,无人处理"
             HandBackOutcome.aborted -> "任务被取消"
         }
-        evidenceLog.noteTakeover("${stepLabel()} ${ctx.tools.nameOf(Verb.HandToUser)}($reason) $effect")
+        synchronized(evidenceLock) {
+            evidenceLog.noteTakeover("${stepLabel(ctx.currentStep)} ${ctx.tools.nameOf(Verb.HandToUser)}($reason) $effect")
+        }
         if (back.outcome == HandBackOutcome.complete) capabilities.forEach { it.onUserAnswered(ctx) }
     }
 
     /** 动作清单里的「第 N 步」和循环的轮次一致(批里的几步同属一轮);回放没有轮次。 */
-    private fun stepLabel() = if (ctx.currentStep > 0) "第${ctx.currentStep}步" else "回放"
+    private fun stepLabel(step: Int) = if (step > 0) "第${step}步" else "回放"
 
     /** 发给主模型的一张图,按 [ModelImage] 统一编码;[screenshotId] 是屏幕画面的回看编号。 */
     fun modelImage(img: ByteArray, screenshotId: Int?): Part.Image = ModelImage.part(img, imageOps, screenshotId)
@@ -449,5 +610,5 @@ class ToolDispatcher internal constructor(
     }
 
     /** 测试用:回看记录里有没有留着图。 */
-    internal fun keepsRecallImages(): Boolean = shots.recalls.any { it.png != null }
+    internal fun keepsRecallImages(): Boolean = synchronized(shots) { shots.recalls.any { it.png != null } }
 }

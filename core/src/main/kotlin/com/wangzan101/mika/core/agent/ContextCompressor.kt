@@ -13,7 +13,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import com.wangzan101.mika.core.tool.ToolIndex
-import com.wangzan101.mika.core.tool.Verb
 
 /** [estimate]:[messages] 的 token 粗估(未校准),发出后和真实用量比对用。[rewritten]:这次是否改写了请求前缀。 */
 data class Compressed(
@@ -184,22 +183,29 @@ class ContextCompressor(
         starts.takeWhile { it < cut }.forEachIndexed { k, start ->
             val end = starts.getOrElse(k + 1) { pruned.size }
             val round = pruned.subList(start, end)
-            // 每轮只执行第一个调用,其余都以 parallel_tool_call_skipped 退回,所以按第一个调用判断要不要保留
-            val call = round.first().parts.filterIsInstance<Part.ToolCall>().firstOrNull()
-            if (tools.verb(call?.name) in PINNED_VERBS || (anchor >= 0 && k >= anchor && screenRounds[k] != ScreenKind.NONE)) {
+            val calls = round.first().parts.filterIsInstance<Part.ToolCall>()
+            if (calls.any { tools.traits(it.name)?.userInteraction == true } || (anchor >= 0 && k >= anchor && screenRounds[k] != ScreenKind.NONE)) {
                 closeBlock()
                 out += round
                 return@forEachIndexed
             }
             val lines = block ?: mutableListOf<String>().also { block = it; blockAt = out.size }
             out += round.filter { isPinnedContext(it) || it.author == Author.User }.map(ContextBuilder::withoutRuntimeState)
-            if (call != null) {
-                lines += line(k + 1, call, round)
-                folded++
-                if (structured) {
-                    if (steps == null) stepsAt = blockAt
-                    steps = (steps ?: StepSummary(goal(pruned.subList(0, starts.first())))).next(lines.last(), okResults(round), said(round))
+            if (calls.isNotEmpty()) {
+                val results = okResults(round)
+                val text = said(round)
+                calls.forEachIndexed { idx, call ->
+                    lines += line(k + 1, call, round)
+                    if (structured) {
+                        if (steps == null) stepsAt = blockAt
+                        steps = (steps ?: StepSummary(goal(pruned.subList(0, starts.first())))).next(
+                            lines.last(),
+                            if (idx == 0) results else emptyList(),
+                            if (idx == 0) text else null,
+                        )
+                    }
                 }
+                folded++
             }
         }
         closeBlock()
@@ -210,15 +216,15 @@ class ContextCompressor(
 
     private enum class ScreenKind { NONE, FULL, DIFF }
 
-    /** 这一轮的结果里有没有屏幕:observe/list_elements 的完整元素列表或 screen.full 为真算全量,其余 screen 算差异。 */
+    /** 这一轮的结果里有没有屏幕:fullScreenSnapshot 的完整元素列表或 screen.full 为真算全量,其余 screen 算差异。 */
     private fun screenKind(round: List<Message>): ScreenKind {
-        val verbs = round.flatMap { it.parts }.filterIsInstance<Part.ToolCall>().associate { it.id to tools.verb(it.name) }
+        val traits = round.flatMap { it.parts }.filterIsInstance<Part.ToolCall>().associate { it.id to tools.traits(it.name) }
         var kind = ScreenKind.NONE
         for (r in round.flatMap { it.parts }.filterIsInstance<Part.ToolResult>()) {
             val obj = (if ("\"elements\":[" in r.content || "\"screen\":{" in r.content) parse(r.content) else null) ?: continue
             val screen = obj["screen"] as? JsonObject
             when {
-                verbs[r.callId] in OBSERVATIONS && obj["elements"] is JsonArray -> return ScreenKind.FULL
+                traits[r.callId]?.fullScreenSnapshot == true && obj["elements"] is JsonArray -> return ScreenKind.FULL
                 screen != null && screen["full"] == JsonPrimitive(true) -> return ScreenKind.FULL
                 screen != null -> kind = ScreenKind.DIFF
             }
@@ -272,7 +278,7 @@ class ContextCompressor(
         }
         // 读屏留下截图编号,折叠后仍能用 view_past_screens 回看
         // 写操作结果带的屏幕(screen)也有截图编号;没带屏幕时动作后附的画面编号在结果顶层
-        val shot = result?.let { parse(it.content) }?.let { o -> if (tools.verb(call.name) in OBSERVATIONS) o["screenshotId"] else (o["screen"] as? JsonObject)?.get("screenshotId") ?: o["screenshotId"] }
+        val shot = result?.let { parse(it.content) }?.let { o -> if (tools.traits(call.name)?.fullScreenSnapshot == true) o["screenshotId"] else (o["screen"] as? JsonObject)?.get("screenshotId") ?: o["screenshotId"] }
             ?.let { it as? JsonPrimitive }?.contentOrNull?.let { " #$it" }.orEmpty()
         return "Step $step ${clip(call.name)}$target$shot → ${outcome(result)}"
     }
@@ -329,9 +335,6 @@ class ContextCompressor(
         private const val TARGET_LIMIT = 20
         private const val GOAL_LIMIT = 120
         private val CODE = Regex("[a-z][a-z0-9_:]{0,63}")
-        /** 交回、追问与确认的结果(不论回答是工具结果还是随后的用户消息)整段保留。 */
-        private val OBSERVATIONS = setOf(Verb.Observe, Verb.ListElements)
-        private val PINNED_VERBS = setOf(Verb.HandToUser, Verb.AskUser, Verb.RequestConfirmation)
         private val TARGET_KEYS = listOf("target", "text", "package", "query", "direction", "key", "name", "ref", "seconds")
     }
 }

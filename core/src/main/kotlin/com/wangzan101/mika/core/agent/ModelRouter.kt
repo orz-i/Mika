@@ -1,6 +1,9 @@
 package com.wangzan101.mika.core.agent
 
 import com.wangzan101.mika.core.model.ChatModel
+import com.wangzan101.mika.core.tool.ModelTier
+import com.wangzan101.mika.core.tool.ToolIndex
+import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.tool.Verb
 
 /** 决定下一步用哪个模型时看的上一步情况。 */
@@ -49,18 +52,18 @@ class ModelRouter(private val main: ChatModel, private val light: ChatModel?) {
 
     companion object {
         const val TROUBLE_STEPS = 2
-        /** 轻量模型给出这些调用(还有 do_steps)时不执行,这一步改问主模型:放弃、确认、接管、追问、沙箱命令都由主模型决定。 */
-        private val MAIN_ONLY_VERBS = setOf(Verb.EndNotDone, Verb.RequestConfirmation, Verb.HandToUser, Verb.AskUser, Verb.HandleObstacle,
-            Verb.PhoneRun, Verb.Collect, Verb.PhoneFind, Verb.PhoneDialog, Verb.PhoneGesture, Verb.PhoneCommand) +
-            // 沙箱里跑的是模型写的命令:只让主模型写
-            setOf(Verb.RunCommand, Verb.RunBundledScript, Verb.ReadFile, Verb.WriteFile, Verb.SearchFiles, Verb.ShareFile)
-        /** 只能由主模型给出的调用([name] 是工具名,[verb] 是它做的动作)。 */
-        fun mainOnly(name: String, verb: Verb?): Boolean = name == DO_STEPS_TOOL || verb in MAIN_ONLY_VERBS
 
-        /** 这些动作之后的一步算恢复(等过用户)。 */
-        internal val RECOVERY_VERBS = setOf(Verb.HandToUser, Verb.AskUser, Verb.RequestConfirmation)
-        /** 这些动作会换前台 App 或网页(打开网址、换标签);之后的一步不算同一个地方。 */
-        internal val APP_SWITCH_VERBS = setOf(Verb.LaunchApp, Verb.OpenLink, Verb.ShareText, Verb.ShowAlarms, Verb.AddCalendarEvent, Verb.Navigate, Verb.Tabs)
+        /** 只能由主模型给出的调用:按 [ToolTraits.modelTier] 判断(以及 do_steps)。 */
+        fun mainOnly(name: String, traits: ToolTraits): Boolean =
+            name == DO_STEPS_TOOL || traits.modelTier == ModelTier.MainModelOnly
+
+        /** 按工具索引查询是否只能由主模型给出。 */
+        fun mainOnly(name: String, tools: ToolIndex): Boolean =
+            name == DO_STEPS_TOOL || tools.traits(name)?.modelTier == ModelTier.MainModelOnly
+
+        /** 兼容旧调用方:由 [Verb] 推导 [ToolTraits] 后判断。 */
+        fun mainOnly(name: String, verb: Verb?): Boolean =
+            name == DO_STEPS_TOOL || verb?.let { ToolTraits.fromVerb(it).modelTier == ModelTier.MainModelOnly } == true
     }
 }
 
@@ -81,13 +84,19 @@ internal class StepTrack {
     /** 刚从回放交还、批量停止这类状况里恢复:下一步按恢复步算。在 [after] 之后调用。 */
     fun markRecovery() { recovery = true }
 
-    fun after(verb: Verb?, ok: Boolean, guard: Boolean, changed: Boolean?, recovery: Boolean, app: String?) {
+    fun after(traits: ToolTraits, ok: Boolean, guard: Boolean, changed: Boolean?, recovery: Boolean, app: String?) =
+        recordAfter(traits, ok, guard, changed, recovery, app)
+
+    fun after(verb: Verb?, ok: Boolean, guard: Boolean, changed: Boolean?, recovery: Boolean, app: String?) =
+        recordAfter(verb?.let { ToolTraits.fromVerb(it) }, ok, guard, changed, recovery, app)
+
+    private fun recordAfter(traits: ToolTraits?, ok: Boolean, guard: Boolean, changed: Boolean?, recovery: Boolean, app: String?) {
         this.ok = ok
         this.guard = guard
         this.changed = changed
-        this.recovery = recovery || verb in ModelRouter.RECOVERY_VERBS
+        this.recovery = recovery || traits?.userInteraction == true
         appBefore = this.app
         if (app != null) this.app = app
-        switched = verb in ModelRouter.APP_SWITCH_VERBS
+        switched = traits?.switchesPlace == true
     }
 }

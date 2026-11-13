@@ -53,6 +53,8 @@ interface ToolInfo {
     val label: String?
     /** 沙箱里的 `mika phone <操作>` 能调它(手机能力、结果是文字);其余一律拒绝。 */
     val sandboxCallable: Boolean get() = false
+    /** 工具的正交行为特征（作用类别、并发性、上下文保留策略、模型层级、界面类型等）。 */
+    val traits: ToolTraits get() = ToolTraits.fromVerb(verb, capability)
 }
 
 /**
@@ -68,6 +70,9 @@ class ToolIndex(tools: Collection<ToolInfo>, private val former: (String) -> Str
 
     fun verb(name: String?): Verb? = get(name)?.verb
 
+    /** 按工具名查询正交行为特征；不认识的名字为 null。 */
+    fun traits(name: String?): ToolTraits? = get(name)?.traits
+
     /** 做这个动作的工具名:[capability] 给了时只找那个能力的(核心的工具为 null 的那组),没给时取先登记的。 */
     fun nameOf(verb: Verb, capability: String? = null): String? =
         byName.values.firstOrNull { it.verb == verb && (capability == null || it.capability == capability) }?.name
@@ -82,10 +87,12 @@ class ToolIndex(tools: Collection<ToolInfo>, private val former: (String) -> Str
  */
 internal interface AgentTool : ToolInfo {
     val def: ToolDef
+    override val verb: Verb get() = Verb.Query
     override val capability: String? get() = null
     override val batchable: Boolean get() = false
     override val routable: Boolean get() = false
     override val label: String? get() = null
+    override val traits: ToolTraits get() = ToolTraits.fromAgentTool(this)
     /** 不动屏幕(沙箱一类):不过锁屏关卡、不进屏幕守卫,结果里的图是文件不是屏幕画面。 */
     val offScreen: Boolean get() = false
     val risk: Risk

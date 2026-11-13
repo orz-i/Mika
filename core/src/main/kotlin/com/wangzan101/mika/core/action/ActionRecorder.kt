@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import com.wangzan101.mika.core.tool.Verb
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 动作的运行记录:工具结果、确认关卡、画面。截图编号在这里统一发(循环自己存的画面也从这里取号)。
@@ -18,13 +19,13 @@ class ActionRecorder(
     private val clock: () -> Long = System::currentTimeMillis,
     private val saveScreen: ((Int, ByteArray) -> Unit)? = null,
 ) {
-    private var shots = 0
+    private val shots = AtomicInteger(0)
 
     val savesScreens: Boolean get() = saveScreen != null
 
     fun now(): Long = clock()
 
-    fun nextShot(): Int = ++shots
+    fun nextShot(): Int = shots.incrementAndGet()
 
     fun event(e: RunEvent) {
         try {
@@ -43,17 +44,19 @@ class ActionRecorder(
      * 最近一次改了状态的动作(界面上改东西、对外、不可逆,或沙箱里的写操作;报了失败、也没说界面变了的不算)执行之前证据账本的位置;
      * 之后没有重新读过,回答交出前要另请核查(见 AnswerReview)。还没有这样的动作为 null。
      */
+    @Volatile
     var lastChangeMark: Int? = null
         private set
 
     fun noteChange(ledgerMark: Int) { lastChangeMark = ledgerMark }
 
+    private val outward = AtomicInteger(0)
+
     /** 本任务里放行了几个对外或不可逆的动作(发送、提交、下单、删除……);回答交出前据此决定要不要请核查模型。 */
-    var outwardActs = 0
-        private set
+    val outwardActs: Int get() = outward.get()
 
     fun approval(origin: Origin, tool: String, hit: Irreversible, risk: Risk, decision: String) {
-        if (decision == "allowed" && risk.level.outward) outwardActs++
+        if (decision == "allowed" && risk.level.outward) outward.incrementAndGet()
         event(RunEvent.Approval(clock(), origin.step, origin.policy.source, tool, hit.action.name, RunEvent.clip(Redactor.text(hit.matched)),
             risk.level.name, risk.payment, decision))
     }

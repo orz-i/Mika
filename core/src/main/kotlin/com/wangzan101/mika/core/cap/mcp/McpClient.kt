@@ -11,10 +11,15 @@ import com.wangzan101.mika.core.observation.Trust
 import com.wangzan101.mika.core.observation.Untrusted
 import com.wangzan101.mika.core.tool.AgentTool
 import com.wangzan101.mika.core.tool.Args
+import com.wangzan101.mika.core.tool.Concurrency
+import com.wangzan101.mika.core.tool.ContextRetention
+import com.wangzan101.mika.core.tool.EffectKind
+import com.wangzan101.mika.core.tool.ModelTier
 import com.wangzan101.mika.core.tool.Risk
 import com.wangzan101.mika.core.tool.ToolContext
 import com.wangzan101.mika.core.tool.ToolDef
 import com.wangzan101.mika.core.tool.ToolExecution
+import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.tool.Verb
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -103,6 +108,52 @@ fun mcpApprovalRisk(a: McpAnnotations, trust: McpTrust = McpTrust.TrustAnnotatio
     a.openWorldHint == true -> ApprovalRisk(ActionRisk.External)
     a.readOnlyHint == true && trust == McpTrust.TrustAnnotations -> ApprovalRisk(ActionRisk.Read)
     else -> ApprovalRisk(ActionRisk.Change)
+}
+
+/**
+ * 按 MCP 工具注解与服务信任级别映射正交特征 [ToolTraits]：
+ * - [McpAnnotations.destructiveHint] 为真：External + Serial + MainModelOnly；
+ * - [McpAnnotations.openWorldHint] 为真：External + Serial；
+ * - [McpAnnotations.readOnlyHint] 为真且 [trust] == [McpTrust.TrustAnnotations]：ReadOnly + ParallelSafe；
+ * - 其余（默认未标注或受限信任）：WorkspaceWrite + Serial。
+ */
+fun mcpToolTraits(
+    a: McpAnnotations,
+    trust: McpTrust = McpTrust.TrustAnnotations,
+    surfaceKind: String? = null,
+): ToolTraits = when {
+    a.destructiveHint == true -> ToolTraits(
+        effect = EffectKind.External,
+        concurrency = Concurrency.Serial,
+        retention = ContextRetention.ShrinkIfLarge,
+        modelTier = ModelTier.MainModelOnly,
+        surfaceKind = surfaceKind,
+        modifiesScreenState = false,
+    )
+    a.openWorldHint == true -> ToolTraits(
+        effect = EffectKind.External,
+        concurrency = Concurrency.Serial,
+        retention = ContextRetention.ShrinkIfLarge,
+        modelTier = ModelTier.Default,
+        surfaceKind = surfaceKind,
+        modifiesScreenState = false,
+    )
+    a.readOnlyHint == true && trust == McpTrust.TrustAnnotations -> ToolTraits(
+        effect = EffectKind.ReadOnly,
+        concurrency = Concurrency.ParallelSafe,
+        retention = ContextRetention.ShrinkIfLarge,
+        modelTier = ModelTier.Default,
+        surfaceKind = surfaceKind,
+        modifiesScreenState = false,
+    )
+    else -> ToolTraits(
+        effect = EffectKind.WorkspaceWrite,
+        concurrency = Concurrency.Serial,
+        retention = ContextRetention.ShrinkIfLarge,
+        modelTier = ModelTier.Default,
+        surfaceKind = surfaceKind,
+        modifiesScreenState = false,
+    )
 }
 
 internal class McpCapability(connection: McpConnection, override val id: String) : Capability {
@@ -297,6 +348,14 @@ private class McpFailedTool(
     override val risk = Risk.Read
     override val approvalRisk = ApprovalRisk(ActionRisk.Read)
     override val offScreen = true
+    override val traits = ToolTraits(
+        effect = EffectKind.ReadOnly,
+        concurrency = Concurrency.Serial,
+        retention = ContextRetention.ShrinkIfLarge,
+        modelTier = ModelTier.Default,
+        surfaceKind = capability,
+        modifiesScreenState = false,
+    )
 
     override suspend fun execute(a: Args, ctx: ToolContext): ToolExecution = ToolExecution(buildJsonObject {
         put("ok", false)
@@ -338,6 +397,8 @@ private class McpClientTool(
             .mapNotNull { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content },
     )
     override val verb = Verb.Interact
+    override val traits: ToolTraits = mcpToolTraits(descriptor.annotations, trust, capability)
+    override val concurrency: Concurrency get() = traits.concurrency
     override val risk = when (approval.level) {
         ActionRisk.Read -> Risk.Read
         ActionRisk.Change -> Risk.Write
@@ -372,9 +433,18 @@ private class McpSyntheticTool(
 ) : AgentTool {
     override val verb = Verb.Interact
     override val risk = Risk.Read
+    override val concurrency = Concurrency.ParallelSafe
     override val approvalRisk = ApprovalRisk(ActionRisk.Read)
     override val offScreen = true
     override val logged = false
+    override val traits = ToolTraits(
+        effect = EffectKind.ReadOnly,
+        concurrency = Concurrency.ParallelSafe,
+        retention = ContextRetention.ShrinkIfLarge,
+        modelTier = ModelTier.Default,
+        surfaceKind = capability,
+        modifiesScreenState = false,
+    )
 
     override suspend fun execute(a: Args, ctx: ToolContext): ToolExecution = mcpExecution(
         capability = capability,

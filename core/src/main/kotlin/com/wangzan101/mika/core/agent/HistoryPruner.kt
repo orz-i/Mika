@@ -10,8 +10,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import com.wangzan101.mika.core.tool.ContextRetention
 import com.wangzan101.mika.core.tool.ToolIndex
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 
 /**
  * 压缩时裁掉过时的内容:旧的界面早已不是现状,旧的大结果可以按位置重读,留着只会撑大上下文。
@@ -52,13 +53,7 @@ object HistoryPruner {
         ObsForm.UserSaid to Shrink.Never,
     )
 
-    /** 模型照着做的参考资料:不按大小裁。 */
-    private val REFERENCE_VERBS = setOf(Verb.KnowledgeSearch, Verb.KnowledgeRead, Verb.SkillSearch, Verb.SkillRead, Verb.MemorySearch)
-    /** 没带观察的结果:读界面的动作照样按界面状态缩短。 */
-    private val INTERFACE_VERBS = setOf(Verb.Observe, Verb.ListElements, Verb.Diagnose)
     private const val LONG_TEXT = 300
-    /** 全量的界面读取(回看结果里的元素文字同样会过时;回看本身不算一次读取)。 */
-    private val FULL_VERBS = setOf(Verb.Observe, Verb.ListElements)
     private const val SCREEN = "screen"
     /** 缩短时一定留着的结局字段。 */
     private val OUTCOME = setOf("ok", "error", "message", "recoverable", "exitCode")
@@ -74,20 +69,24 @@ object HistoryPruner {
     /** 压缩后仍超:只留最近一次往返原样。 */
     val LAST = Cut(1)
 
-    /** [tools]:按调用的工具名查它做的动作。 */
+    /** [tools]:按调用的工具名查它的正交行为特征 [ToolTraits]。 */
     fun prune(input: List<Message>, tools: ToolIndex, cut: Cut): List<Message> {
         val starts = input.indices.filter { i -> input[i].role == Role.Assistant && input[i].parts.any { it is Part.ToolCall } }
         val k = cut.before(starts.size)
         if (k == 0) return input
         val line = starts[k]
-        val names = callVerbs(input, tools)
+        val traits = callTraits(input, tools)
         val screens = screenResults(input)
-        // 线之前最近的全量界面
-        val anchor = (0 until line).lastOrNull { i ->
-            input[i].parts.any { it is Part.ToolResult && (names[it.callId] in FULL_VERBS || screens[it.callId] == true) }
-        }
+        // 线之前最近的全量界面 (按 callId 精准保留，避免同条并行 ToolResult 被一并豁免)
+        val anchorCallId = (0 until line)
+            .flatMap { input[it].parts }
+            .filterIsInstance<Part.ToolResult>()
+            .lastOrNull { traits[it.callId]?.fullScreenSnapshot == true || screens[it.callId] == true }
+            ?.callId
         // 用户的话(连同照片)不裁
-        return input.mapIndexed { i, m -> if (i >= line || i == anchor || m.author == Author.User) m else shrinkMessage(m, names, screens) }
+        return input.mapIndexed { i, m ->
+            if (i >= line || m.author == Author.User) m else shrinkMessage(m, traits, screens, anchorCallId)
+        }
     }
 
     /**
@@ -99,10 +98,19 @@ object HistoryPruner {
         for (i in out.indices.reversed()) {
             if (fits(out)) break
             val m = out[i]
-            if (m.author == Author.User || m.parts.none { it is Part.ToolResult && TokenEstimate.of(it.content) > BIG_RESULT_TOKENS }) continue
-            out[i] = m.copy(parts = m.parts.map { p ->
-                if (p is Part.ToolResult && TokenEstimate.of(p.content) > BIG_RESULT_TOKENS) withObsIds(p, shrinkRead(p.content)) else p
-            })
+            if (m.author == Author.User) continue
+            val parts = m.parts.toMutableList()
+            var changed = false
+            for (j in parts.indices.reversed()) {
+                if (fits(out)) break
+                val p = parts[j]
+                if (p is Part.ToolResult && TokenEstimate.of(p.content) > BIG_RESULT_TOKENS) {
+                    parts[j] = withObsIds(p, shrinkRead(p.content))
+                    changed = true
+                    out[i] = m.copy(parts = parts.toList())
+                }
+            }
+            if (changed && !fits(out)) out[i] = m.copy(parts = parts.toList())
         }
         return out
     }
@@ -125,24 +133,29 @@ object HistoryPruner {
         }
     }
 
-    private fun shrinkMessage(m: Message, names: Map<String, Verb?>, screens: Map<String, Boolean>): Message {
+    private fun shrinkMessage(
+        m: Message,
+        traits: Map<String, ToolTraits?>,
+        screens: Map<String, Boolean>,
+        anchorCallId: String?,
+    ): Message {
         val parts = m.parts.map { p ->
             when (p) {
                 is Part.Image -> Part.Text(p.screenshotId?.let(::olderImage) ?: OMITTED_IMAGE)
-                is Part.ToolResult -> shrinkResult(p, names[p.callId], screens)
+                is Part.ToolResult -> if (p.callId == anchorCallId) p else shrinkResult(p, traits[p.callId], screens)
                 else -> p
             }
         }
         return if (parts == m.parts) m else m.copy(parts = parts)
     }
 
-    private fun shrinkResult(p: Part.ToolResult, verb: Verb?, screens: Map<String, Boolean>): Part.ToolResult {
+    private fun shrinkResult(p: Part.ToolResult, traits: ToolTraits?, screens: Map<String, Boolean>): Part.ToolResult {
         val ways = p.reads.mapNotNull { BY_FORM[it.form] }.toSet()
         val content = when {
-            Shrink.Never in ways || verb in REFERENCE_VERBS -> p.content
+            Shrink.Never in ways || traits?.retention == ContextRetention.PinReference -> p.content
             p.callId in screens -> shrinkScreen(p.content)
-            Shrink.Interface in ways || verb in INTERFACE_VERBS -> shrinkInterface(p.content)
-            verb == Verb.ViewPastScreens -> shrinkRecall(p.content)
+            Shrink.Interface in ways || traits?.retention == ContextRetention.InterfaceEphemeral -> shrinkInterface(p.content)
+            traits?.recallsPastScreens == true -> shrinkRecall(p.content)
             TokenEstimate.of(p.content) > BIG_RESULT_TOKENS -> shrinkRead(p.content)
             else -> p.content
         }
@@ -167,10 +180,10 @@ object HistoryPruner {
         }).toString()
     }
 
-    private fun callVerbs(messages: List<Message>, tools: ToolIndex): Map<String, Verb?> {
-        val verbs = HashMap<String, Verb?>()
-        messages.forEach { m -> m.parts.filterIsInstance<Part.ToolCall>().forEach { verbs[it.id] = tools.verb(it.name) } }
-        return verbs
+    private fun callTraits(messages: List<Message>, tools: ToolIndex): Map<String, ToolTraits?> {
+        val out = HashMap<String, ToolTraits?>()
+        messages.forEach { m -> m.parts.filterIsInstance<Part.ToolCall>().forEach { out[it.id] = tools.traits(it.name) } }
+        return out
     }
 
     /** 带 screen 对象的工具结果:callId → screen 是不是全量。 */
