@@ -10,8 +10,9 @@ import kotlin.random.Random
 import com.wangzan101.mika.core.action.OutwardPacing
 import com.wangzan101.mika.core.cap.phone.AppPacing
 import com.wangzan101.mika.core.cap.phone.OperatingPace
+import com.wangzan101.mika.core.policy.PacingPolicy
 import com.wangzan101.mika.core.policy.RunProfile
-import com.wangzan101.mika.core.policy.asPacingPolicy
+import com.wangzan101.mika.core.policy.SensitiveUiPacingPolicy
 import com.wangzan101.mika.core.usage.RunUsageTally
 import com.wangzan101.mika.core.shell.AccessibilityRepair
 import com.wangzan101.mika.core.shell.HelperRestart
@@ -787,12 +788,19 @@ class TaskRun(
             val stepLimit = if (conditionCheck) null else FeatureFlags.get(service).taskStepLimit()
             val runCapabilities = if (conditionCheck) setOf("web", "sandbox") else null
             val outwardPacing = if (!conditionCheck && provenance.origin != RunOrigin.Mcp && pace != OperatingPace.FAST) OutwardPacing.human() else OutwardPacing.Off
+            val selectivePacing = if (!conditionCheck && provenance.origin != RunOrigin.Mcp && pace != OperatingPace.FAST) {
+                val uiGapMs = if (pace == OperatingPace.HUMAN) 750L else 300L
+                SensitiveUiPacingPolicy(outwardPacing = outwardPacing, uiActionGapMs = uiGapMs)
+            } else {
+                PacingPolicy.NONE
+            }
             val baseProfile = RunProfile.resolve(
                 capabilities = runCapabilities,
                 readOnly = conditionCheck,
                 paceEnabled = pace != OperatingPace.FAST,
                 remote = provenance.origin == RunOrigin.Mcp,
-                pacing = outwardPacing.asPacingPolicy(),
+                explicitUiTarget = pageLoan != null,
+                pacing = selectivePacing,
             )
             val runSpec = RunSpec(RunId(key), goal, conversationId,
                 priorTurns,
@@ -815,10 +823,13 @@ class TaskRun(
                     }
                 }
             }
-            val runApproval = approvalControl.start(remote = provenance.origin == RunOrigin.Mcp).also { approval = it }
+            val runApproval = approvalControl.start(
+                remote = provenance.origin == RunOrigin.Mcp,
+                storageDir = service.filesDir,
+            ).also { approval = it }
             val runProfile = baseProfile.withPermissions(runApproval.permissionPolicy())
             val runPolicy = runProfile.executionPolicy
-            val childRunner = if (provenance.origin == RunOrigin.Ui && web != null) ChildAgentRunner(
+            val childRunner = if (provenance.origin == RunOrigin.Ui) ChildAgentRunner(
                 create = { childSpec ->
                     val childProfile = RunProfile.resolveForChild(
                         parentProfile = runProfile,
@@ -828,6 +839,12 @@ class TaskRun(
                         explicitProfile = childSpec.profile,
                     )
                     val childPolicy = childProfile.executionPolicy
+                    val childCaps = childSpec.capabilities
+                    val childMcp = if (!conditionCheck && (childCaps == null || childCaps.any { it == "mcp" || it.startsWith("mcp:") })) {
+                        mcpEndpoints()
+                    } else {
+                        emptyList()
+                    }
                     val childTools = toolDispatcher(accessedPhone, model.capabilities.vision,
                         web = web,
                         webPacing = { if (childPolicy.enableAntiCrawlPacing) PagePacing.human() else PagePacing.Off },
@@ -837,6 +854,7 @@ class TaskRun(
                         appPace = { PlacePace.of(catalog.appPace(it)) },
                         appIdleScroll = { if (childPolicy.enableIdleScroll) IdleScroll(Random.Default) else null },
                         sandbox = sandbox, workspace = { conversationId }, runSpec = childSpec.copy(profile = childProfile),
+                        mcpServers = childMcp,
                         conversationId = conversationId, inlineScreen = speed.inlineScreen,
                         adaptiveVision = speed.adaptiveVision)
                     AgentLoop(model, childTools, SystemPrompt.identity(), maxSteps = childSpec.stepBudget ?: AgentLoop.UNLIMITED_STEPS,
