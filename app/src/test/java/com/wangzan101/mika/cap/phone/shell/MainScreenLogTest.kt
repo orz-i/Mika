@@ -1,6 +1,6 @@
 package com.wangzan101.mika.cap.phone.shell
 
-import com.wangzan101.mika.cap.phone.shell.MainScreenLog.Task
+import com.agent.use.common.shell.MainScreenLog.Task
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

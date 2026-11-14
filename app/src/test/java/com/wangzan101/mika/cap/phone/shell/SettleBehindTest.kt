@@ -1,7 +1,7 @@
 package com.wangzan101.mika.cap.phone.shell
 
-import com.wangzan101.mika.cap.phone.shell.SettleBehind.Plan
-import com.wangzan101.mika.cap.phone.shell.SettleBehind.Seen
+import com.agent.use.common.shell.SettleBehind.Plan
+import com.agent.use.common.shell.SettleBehind.Seen
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

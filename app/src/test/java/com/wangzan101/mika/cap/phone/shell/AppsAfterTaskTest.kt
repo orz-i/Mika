@@ -1,6 +1,7 @@
 package com.wangzan101.mika.cap.phone.shell
 
-import com.wangzan101.mika.cap.phone.shell.AppsAfterTask.Why
+import com.agent.use.common.shell.AppsAfterTask.Task
+import com.agent.use.common.shell.AppsAfterTask.Why
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -9,9 +10,9 @@ class AppsAfterTaskTest {
     private val me = 0
 
     private fun task(id: Int, key: String, playing: Boolean? = false, standard: Boolean = true, own: Boolean = false) =
-        AppsAfterTask.Task(id, listOf(key), standard, own, playing)
+        Task(id, listOf(key), standard, own, playing)
 
-    private fun fates(vararg t: AppsAfterTask.Task, keep: Set<String> = emptySet(), close: Set<String> = emptySet()) =
+    private fun fates(vararg t: Task, keep: Set<String> = emptySet(), close: Set<String> = emptySet()) =
         AppsAfterTask.decide(t.toList(), keep, close).associate { it.task.id to (it.keep to it.why) }
 
     @Test fun keepsQuietAppsAndClosesPlayingOnesByDefault() {
@@ -22,7 +23,7 @@ class AppsAfterTaskTest {
 
     @Test fun unknownPlaybackKeepsUnlessMikaIsMutingIt() {
         assertEquals(true to Why.Default, fates(task(1, "a.app", playing = null))[1])
-        val muted = AppsAfterTask.Task(2, listOf("a.music"), standard = true, own = false, playing = null, muted = true)
+        val muted = Task(2, listOf("a.music"), standard = true, own = false, playing = null, muted = true)
         assertEquals(false to Why.PlaybackUnknown, fates(muted)[2])
         assertEquals(true to Why.Marked, fates(muted, keep = setOf("a.music"))[2])
         // 读得到、没在出声的,静着也留下

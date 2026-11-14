@@ -1,8 +1,8 @@
 package com.wangzan101.mika.cap.phone.shell
 
-import com.wangzan101.mika.cap.phone.shell.ShellClip.Now
-import com.wangzan101.mika.cap.phone.shell.ShellClip.Read
-import com.wangzan101.mika.cap.phone.shell.ShellClip.Restore
+import com.agent.use.common.shell.ShellClip.Now
+import com.agent.use.common.shell.ShellClip.Read
+import com.agent.use.common.shell.ShellClip.Restore
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
