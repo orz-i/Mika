@@ -186,6 +186,11 @@
                 android:resource="@xml/accessibility_service" />
         </service>
 
+        <!-- 统一使用 MikaAccessibilityService（继承 AgentAccessibilityService），移除 aau-a11y 自带声明避免双服务冲突 -->
+        <service
+            android:name="com.agent.use.a11y.AgentAccessibilityService"
+            tools:node="remove" />
+
         <service
             android:name=".task.TaskService"
             android:exported="false"
