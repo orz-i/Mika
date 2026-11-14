@@ -160,6 +160,13 @@ class PhoneNetworkManagerTest {
         val bodyText = manager.getResponseBodyForUrl("order/submit")
         assertEquals("{\"status\":\"ok\",\"orderId\":9988}", bodyText)
 
+        // 验证 completed 与 in_flight 状态区分
+        val inspected = manager.inspectNetwork(10, null)
+        assertEquals(2, inspected.size)
+        val byId = inspected.associateBy { it.requestId }
+        assertEquals("completed", byId["req-order"]?.state)
+        assertEquals("in_flight", byId["req-home"]?.state)
+
         // 清空
         manager.clearHistory()
         assertEquals(0, manager.getRecentTraffic().size)

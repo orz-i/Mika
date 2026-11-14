@@ -152,14 +152,19 @@ internal object PhoneInspectNetwork : PhoneTool {
 
         val status = net.captureStatus()
         val requests = net.inspectNetwork(limit, filter)
+        val capturing = status?.capturing ?: true
+        val effectiveError = status?.error ?: if (!capturing) "capture_not_active" else null
         return ToolExecution(buildJsonObject {
-            put("ok", status?.capturing != false || requests.isNotEmpty())
+            put("ok", capturing)
+            if (!capturing && effectiveError != null) {
+                put("error", effectiveError)
+            }
             put("count", requests.size)
             status?.let {
                 put("capturing", it.capturing)
                 put("activeMode", it.activeMode)
                 it.targetPackage?.let { pkg -> put("targetPackage", pkg) }
-                it.error?.let { err -> put("captureError", err) }
+                effectiveError?.let { err -> put("captureError", err) }
             }
             put("requests", JsonArray(requests.map { r ->
                 buildJsonObject {
@@ -169,6 +174,9 @@ internal object PhoneInspectNetwork : PhoneTool {
                     put("statusCode", r.statusCode)
                     put("durationMs", r.durationMs)
                     put("timestamp", r.timestamp)
+                    r.contentType?.let { ct -> put("contentType", ct) }
+                    put("hasResponseBody", r.hasResponseBody)
+                    put("state", r.state)
                 }
             }))
         })

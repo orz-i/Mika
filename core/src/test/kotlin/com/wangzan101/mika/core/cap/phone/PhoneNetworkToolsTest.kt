@@ -20,6 +20,7 @@ class PhoneNetworkToolsTest {
         var waitResult: NetworkResponseInfo? = null,
         var getResult: NetworkResponseBody? = null,
         var inspectResult: List<NetworkRequestSummary> = emptyList(),
+        var statusResult: NetworkCaptureStatus? = null,
     ) : PhoneNetworkPort {
         var lastWaitPattern: String? = null
         var lastWaitTimeout: Long? = null
@@ -45,6 +46,8 @@ class PhoneNetworkToolsTest {
             lastInspectFilter = filter
             return inspectResult
         }
+
+        override suspend fun captureStatus(): NetworkCaptureStatus? = statusResult
     }
 
     private class NetworkScreen(
@@ -143,5 +146,65 @@ class PhoneNetworkToolsTest {
         assertEquals(2, arr.size)
         assertEquals(5, net.lastInspectLimit)
         assertEquals("example", net.lastInspectFilter)
+    }
+
+    @Test
+    fun inspectNetworkReturnsNotOkAndErrorWhenNotCapturingWithStaleHistory() = runTest {
+        val net = FakeNetworkPort(
+            statusResult = NetworkCaptureStatus(
+                enabled = true,
+                capturing = false,
+                activeMode = "NONE",
+                targetPackage = "com.xingin.xhs",
+                error = "perf_event_open_tp:errno=22"
+            ),
+            inspectResult = listOf(
+                NetworkRequestSummary(
+                    requestId = "req-old",
+                    url = "https://unknown-host/api/collect",
+                    method = "POST",
+                    statusCode = 200,
+                    durationMs = 12,
+                    timestamp = 500L,
+                    contentType = "application/json",
+                    hasResponseBody = false
+                )
+            )
+        )
+        val d = toolDispatcher(NetworkScreen(net))
+        val res = d.execute(call("phone_inspect_network", """{"limit": 10}""")).content
+        assertEquals("false", res.s("ok"))
+        assertEquals("perf_event_open_tp:errno=22", res.s("error"))
+        assertEquals("perf_event_open_tp:errno=22", res.s("captureError"))
+        assertEquals("false", res.s("capturing"))
+        assertEquals("1", res.s("count"))
+        val first = (res["requests"] as JsonArray)[0] as JsonObject
+        assertEquals("application/json", first.s("contentType"))
+        assertEquals("false", first.s("hasResponseBody"))
+        assertEquals("completed", first.s("state"))
+    }
+
+    @Test
+    fun inspectNetworkSerializesInFlightState() = runTest {
+        val net = FakeNetworkPort(
+            inspectResult = listOf(
+                NetworkRequestSummary(
+                    requestId = "req-inflight",
+                    url = "https://edith.xiaohongshu.com/api/sns/v10/comment/page",
+                    method = "GET",
+                    statusCode = 0,
+                    durationMs = 0,
+                    timestamp = 600L,
+                    contentType = null,
+                    hasResponseBody = false,
+                    state = "in_flight"
+                )
+            )
+        )
+        val d = toolDispatcher(NetworkScreen(net))
+        val res = d.execute(call("phone_inspect_network", """{"limit": 10}""")).content
+        assertEquals("true", res.s("ok"))
+        val first = (res["requests"] as JsonArray)[0] as JsonObject
+        assertEquals("in_flight", first.s("state"))
     }
 }

@@ -8,6 +8,7 @@ import com.agent.use.common.IAgentShell
 import com.agent.use.common.network.CaptureMode
 import com.agent.use.common.network.HttpRequestEvent
 import com.agent.use.common.network.HttpResponseEvent
+import com.agent.use.common.network.parser.GrpcDecoder
 import com.wangzan101.mika.core.cap.phone.NetworkCaptureStatus
 import com.wangzan101.mika.core.cap.phone.NetworkResponseBody
 import com.wangzan101.mika.core.cap.phone.NetworkResponseInfo
@@ -20,9 +21,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.io.Closeable
+import java.io.File
+import java.security.MessageDigest
+import java.util.Collections
+import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -39,12 +46,18 @@ class PhoneNetworkManager(
     val context: Context,
     private val shellProvider: (() -> IAgentShell?)? = null,
     private val agentManagerFactory: ((Context, IAgentShell?) -> AgentNetworkManager)? = null,
-    coroutineContext: kotlin.coroutines.CoroutineContext = Dispatchers.Default
+    coroutineContext: kotlin.coroutines.CoroutineContext = Dispatchers.Default,
+    private val clockMs: () -> Long = { System.currentTimeMillis() }
 ) : PhoneNetworkPort, Closeable, AutoCloseable {
 
     companion object {
         private const val TAG = "PhoneNetworkManager"
-        const val MAX_HISTORY_ENTRIES = 100
+        const val MAX_HISTORY_ENTRIES = 250
+        const val MAX_LOCAL_BODY_ENTRIES = 250
+        const val MAX_DISK_BODY_FILES = 500
+        const val MAX_PERSISTED_BODY_BYTES = 1024 * 1024
+        const val MIN_REATTACH_INTERVAL_MS = 1000L
+        const val BODY_CACHE_DIR_NAME = "mika_network_bodies"
         const val DEFAULT_TIMEOUT_MS = 5000L
     }
 
@@ -61,7 +74,11 @@ class PhoneNetworkManager(
         val durationMs: Long? = null,
         val mimeType: String? = null,
         val contentLength: Long = -1L,
-        val isTls: Boolean = true
+        val isTls: Boolean = true,
+        val grpcEncoding: String? = null,
+        val grpcStatus: String? = null,
+        val grpcMessage: String? = null,
+        val hasResponseBody: Boolean = false
     )
 
     private val isClosed = AtomicBoolean(false)
@@ -71,11 +88,28 @@ class PhoneNetworkManager(
     @Volatile
     private var internalAgentManager: AgentNetworkManager? = null
 
-    private var eventCollectionJob: Job? = null
+    @Volatile
+    private var desiredTargetPackage: String? = null
+
+    @Volatile
+    private var desiredMode: CaptureMode = CaptureMode.AUTO
+
+    @Volatile
+    private var lastAttachAttemptMs: Long = 0L
+
+    private val subscriptionHandles = CopyOnWriteArrayList<AutoCloseable>()
 
     // 环形缓存与在途请求追踪
     private val trafficHistory = ConcurrentLinkedDeque<CapturedTrafficEntry>()
     private val inFlightRequests = ConcurrentHashMap<String, HttpRequestEvent>()
+    private val pendingChunkBuffers = ConcurrentHashMap<String, ByteArrayOutputStream>()
+    private val localBodyCache = Collections.synchronizedMap(
+        object : LinkedHashMap<String, ByteArray>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?): Boolean {
+                return size > MAX_LOCAL_BODY_ENTRIES
+            }
+        }
+    )
 
     /**
      * 获取或懒加载底层 [AgentNetworkManager] 实例。
@@ -93,16 +127,47 @@ class PhoneNetworkManager(
     }
 
     private fun startEventCollection(manager: AgentNetworkManager) {
-        eventCollectionJob?.cancel()
-        eventCollectionJob = scope.launch {
-            launch {
-                manager.requestFlow.collect { request ->
-                    handleRequestEvent(request)
+        subscriptionHandles.forEach { runCatching { it.close() } }
+        subscriptionHandles.clear()
+
+        subscriptionHandles += manager.onDataChunk { requestId, chunk ->
+            handleBodyChunk(requestId, chunk)
+        }
+        subscriptionHandles += manager.onError { requestId, _ ->
+            if (requestId.isNotBlank()) {
+                inFlightRequests.remove(requestId)
+                pendingChunkBuffers.remove(requestId)
+            }
+        }
+        subscriptionHandles += manager.onRequest { request ->
+            handleRequestEvent(request)
+        }
+        subscriptionHandles += manager.onResponse { response ->
+            handleResponseEvent(response)
+        }
+    }
+
+    private fun handleBodyChunk(requestId: String, chunk: ByteArray) {
+        if (requestId.isBlank() || chunk.isEmpty()) return
+        val buf = pendingChunkBuffers.getOrPut(requestId) { ByteArrayOutputStream() }
+        synchronized(buf) {
+            if (buf.size() < MAX_PERSISTED_BODY_BYTES) {
+                val allowed = (MAX_PERSISTED_BODY_BYTES - buf.size()).coerceAtLeast(0)
+                val toWrite = minOf(chunk.size, allowed)
+                if (toWrite > 0) {
+                    buf.write(chunk, 0, toWrite)
                 }
             }
-            launch {
-                manager.responseFlow.collect { response ->
-                    handleResponseEvent(response)
+        }
+        // 若 chunkFlow 晚于 responseFlow 被调度，补写持久化缓存并刷新条目状态
+        val completedEntry = trafficHistory.firstOrNull { it.requestId == requestId && it.statusCode != null }
+        if (completedEntry != null) {
+            val bytes = synchronized(buf) { buf.toByteArray() }
+            if (bytes.isNotEmpty()) {
+                synchronized(localBodyCache) { localBodyCache[requestId] = bytes }
+                persistBodyToDisk(requestId, bytes)
+                if (!completedEntry.hasResponseBody) {
+                    recordEntry(completedEntry.copy(hasResponseBody = true))
                 }
             }
         }
@@ -125,6 +190,27 @@ class PhoneNetworkManager(
         val startTime = request?.timestamp ?: response.timestamp
         val duration = (response.timestamp - startTime).coerceAtLeast(0L)
 
+        val chunkedBytes = pendingChunkBuffers.remove(response.requestId)?.let { buf ->
+            synchronized(buf) { buf.toByteArray() }
+        }
+        val bodyBytes = when {
+            chunkedBytes != null && chunkedBytes.isNotEmpty() -> chunkedBytes
+            else -> internalAgentManager?.getResponseBody(response.requestId) ?: chunkedBytes
+        }
+        if (bodyBytes != null) {
+            val capped = if (bodyBytes.size > MAX_PERSISTED_BODY_BYTES) {
+                bodyBytes.copyOf(MAX_PERSISTED_BODY_BYTES)
+            } else {
+                bodyBytes
+            }
+            synchronized(localBodyCache) {
+                localBodyCache[response.requestId] = capped
+            }
+            if (capped.isNotEmpty()) {
+                persistBodyToDisk(response.requestId, capped)
+            }
+        }
+
         val updated = CapturedTrafficEntry(
             requestId = response.requestId,
             timestamp = response.timestamp,
@@ -135,7 +221,11 @@ class PhoneNetworkManager(
             durationMs = duration,
             mimeType = response.mimeType,
             contentLength = response.contentLength,
-            isTls = request?.isTls ?: response.url.startsWith("https://", ignoreCase = true)
+            isTls = request?.isTls ?: response.url.startsWith("https://", ignoreCase = true),
+            grpcEncoding = response.headers.lastOrNull { it.name.equals("grpc-encoding", ignoreCase = true) }?.value?.trim(),
+            grpcStatus = response.headers.lastOrNull { it.name.equals("grpc-status", ignoreCase = true) }?.value?.trim(),
+            grpcMessage = response.headers.lastOrNull { it.name.equals("grpc-message", ignoreCase = true) }?.value?.trim(),
+            hasResponseBody = bodyBytes != null && bodyBytes.isNotEmpty()
         )
         recordEntry(updated)
     }
@@ -179,15 +269,38 @@ class PhoneNetworkManager(
             return true
         }
 
+        desiredTargetPackage = target
+        desiredMode = mode
+
         val current = internalAgentManager?.targetPackage
         if (current == target && isCapturing()) {
             Log.d(TAG, "Already capturing for package: $target")
             return true
         }
 
+        lastAttachAttemptMs = clockMs()
         Log.i(TAG, "Attaching network capture to target package: $target (mode=$mode)")
         val manager = getOrCreateAgentManager()
         return manager.enable(target, mode)
+    }
+
+    /**
+     * 若曾经设置过目标包但当前抓取已断开（例如首次 attach 时目标进程尚未加载或临时失败），按冷却间隔自动尝试恢复。
+     */
+    @Synchronized
+    fun ensureCapturing(): Boolean {
+        if (isClosed.get()) return false
+        val target = desiredTargetPackage ?: return isCapturing()
+        if (isCapturing()) return true
+
+        val now = clockMs()
+        if (now - lastAttachAttemptMs < MIN_REATTACH_INTERVAL_MS) {
+            return false
+        }
+        lastAttachAttemptMs = now
+        Log.i(TAG, "Re-attaching dropped network capture for $target (mode=$desiredMode)")
+        val manager = getOrCreateAgentManager()
+        return manager.enable(target, desiredMode)
     }
 
     /**
@@ -196,8 +309,10 @@ class PhoneNetworkManager(
     @Synchronized
     fun detach() {
         Log.i(TAG, "Detaching network capture...")
+        desiredTargetPackage = null
         internalAgentManager?.disable()
         inFlightRequests.clear()
+        pendingChunkBuffers.clear()
     }
 
     // ==========================================
@@ -209,6 +324,7 @@ class PhoneNetworkManager(
      * 超时未收到返回 null。
      */
     override suspend fun waitForResponse(urlPattern: String, timeoutMs: Long): NetworkResponseInfo? {
+        ensureCapturing()
         return try {
             val res = getOrCreateAgentManager().waitForResponse(urlPattern, timeoutMs)
             val entry = findRecentTraffic(urlPattern)
@@ -243,11 +359,27 @@ class PhoneNetworkManager(
         val targetRequestId = requestId ?: urlPattern?.let { findRecentTraffic(it)?.requestId } ?: return null
         val entry = trafficHistory.firstOrNull { it.requestId == targetRequestId }
         val bodyBytes = getResponseBody(targetRequestId)
-        val bodyStr = if (asString) bodyBytes?.toString(Charsets.UTF_8) else bodyBytes?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        val bodyStr = if (asString) {
+            GrpcDecoder.formatResponseBodyAsString(
+                body = bodyBytes,
+                contentType = entry?.mimeType,
+                grpcEncoding = entry?.grpcEncoding,
+                grpcStatus = entry?.grpcStatus,
+                grpcMessage = entry?.grpcMessage
+            )
+        } else {
+            bodyBytes?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        }
         val error = when {
-            bodyBytes != null -> null
+            bodyBytes != null && bodyBytes.isEmpty() && bodyStr == null ->
+                "empty_response_body"
+            bodyBytes != null || bodyStr != null -> null
             entry?.isTls == true && entry.method == "CONNECT" && getActiveMode() == CaptureMode.VPN_SERVICE ->
                 "tls_encrypted_in_vpn_mode_use_root_ebpf"
+            entry != null && entry.statusCode == null ->
+                "response_pending_in_flight"
+            entry != null && (entry.statusCode == 204 || entry.statusCode == 304 || entry.contentLength == 0L) ->
+                "empty_response_body"
             !isCapturing() && entry == null ->
                 lastCaptureError() ?: "capture_not_active"
             else ->
@@ -260,7 +392,7 @@ class PhoneNetworkManager(
             statusCode = entry?.statusCode ?: 0,
             contentType = entry?.mimeType,
             body = bodyStr,
-            isTruncated = false,
+            isTruncated = (bodyBytes?.size ?: 0) >= MAX_PERSISTED_BODY_BYTES,
             error = error
         )
     }
@@ -269,6 +401,7 @@ class PhoneNetworkManager(
      * 查看当前 App 最近捕获的请求与响应列表。
      */
     override suspend fun inspectNetwork(limit: Int, filter: String?): List<NetworkRequestSummary> {
+        ensureCapturing()
         val regex = filter?.let { runCatching { Regex(it) }.getOrNull() }
         val entries = trafficHistory.filter { entry ->
             if (filter == null) true
@@ -283,7 +416,10 @@ class PhoneNetworkManager(
                 method = entry.method,
                 statusCode = entry.statusCode ?: 0,
                 durationMs = entry.durationMs ?: 0L,
-                timestamp = entry.timestamp
+                timestamp = entry.timestamp,
+                contentType = entry.mimeType,
+                hasResponseBody = entry.hasResponseBody || hasCachedResponseBody(entry.requestId),
+                state = if (entry.statusCode != null) "completed" else "in_flight"
             )
         }
     }
@@ -306,22 +442,47 @@ class PhoneNetworkManager(
         )
     }
 
-    fun lastCaptureError(): String? = internalAgentManager?.lastError
+    fun lastCaptureError(): String? = internalAgentManager?.let { it.lastError ?: it.lastEbpfFallbackError }
 
     /**
-     * 按 requestId 获取对应请求的完整响应体字节数组。
+     * 按 requestId 获取对应请求的完整响应体字节数组（优先查本地 LRU、进行中分片、底层引擎、磁盘缓存）。
      */
     fun getResponseBody(requestId: String): ByteArray? {
-        val manager = internalAgentManager ?: return null
-        return manager.getResponseBody(requestId)
+        synchronized(localBodyCache) {
+            localBodyCache[requestId]?.let { return it }
+        }
+        pendingChunkBuffers[requestId]?.let { buf ->
+            val bytes = synchronized(buf) { buf.toByteArray() }
+            if (bytes.isNotEmpty()) return bytes
+        }
+        internalAgentManager?.getResponseBody(requestId)?.let { engineBytes ->
+            val capped = if (engineBytes.size > MAX_PERSISTED_BODY_BYTES) {
+                engineBytes.copyOf(MAX_PERSISTED_BODY_BYTES)
+            } else {
+                engineBytes
+            }
+            synchronized(localBodyCache) {
+                localBodyCache[requestId] = capped
+            }
+            if (capped.isNotEmpty()) {
+                persistBodyToDisk(requestId, capped)
+            }
+            return capped
+        }
+        readBodyFromDisk(requestId)?.let { diskBytes ->
+            synchronized(localBodyCache) {
+                localBodyCache[requestId] = diskBytes
+            }
+            return diskBytes
+        }
+        return null
     }
 
     /**
      * 按 requestId 获取对应请求的响应体文本字符串（如 JSON、HTML、XML）。
      */
     fun getResponseBodyAsString(requestId: String): String? {
-        val manager = internalAgentManager ?: return null
-        return manager.getResponseBodyAsString(requestId)
+        return getResponseBody(requestId)?.toString(Charsets.UTF_8)
     }
 
     /**
@@ -363,11 +524,85 @@ class PhoneNetworkManager(
     }
 
     /**
-     * 清理内存中的历史流量缓存。
+     * 清理内存和磁盘中的历史流量及响应体缓存。
      */
     fun clearHistory() {
         trafficHistory.clear()
         inFlightRequests.clear()
+        pendingChunkBuffers.clear()
+        synchronized(localBodyCache) {
+            localBodyCache.clear()
+        }
+        clearDiskBodyCache()
+    }
+
+    private fun hasCachedResponseBody(requestId: String): Boolean {
+        synchronized(localBodyCache) {
+            val cached = localBodyCache[requestId]
+            if (cached != null) return cached.isNotEmpty()
+        }
+        pendingChunkBuffers[requestId]?.let { buf ->
+            synchronized(buf) {
+                if (buf.size() > 0) return true
+            }
+        }
+        if (internalAgentManager?.getResponseBody(requestId)?.isNotEmpty() == true) {
+            return true
+        }
+        return bodyCacheFile(requestId)?.let { it.exists() && it.length() > 0L } == true
+    }
+
+    private fun bodyCacheDir(): File? {
+        val base = runCatching { context.cacheDir }.getOrNull() ?: return null
+        return File(base, BODY_CACHE_DIR_NAME)
+    }
+
+    private fun bodyCacheFile(requestId: String): File? {
+        val dir = bodyCacheDir() ?: return null
+        val digest = MessageDigest.getInstance("SHA-256").digest(requestId.toByteArray(Charsets.UTF_8))
+        val hex = digest.joinToString("") { "%02x".format(it) }
+        return File(dir, "$hex.bin")
+    }
+
+    private fun persistBodyToDisk(requestId: String, bytes: ByteArray) {
+        if (bytes.isEmpty()) return
+        runCatching {
+            val file = bodyCacheFile(requestId) ?: return
+            val dir = file.parentFile ?: return
+            if (!dir.exists()) {
+                dir.mkdirs()
+            }
+            val tmp = File(dir, "${file.name}.tmp")
+            tmp.writeBytes(bytes)
+            if (!tmp.renameTo(file)) {
+                file.writeBytes(bytes)
+                tmp.delete()
+            }
+            pruneDiskCacheIfNeeded(dir)
+        }
+    }
+
+    private fun readBodyFromDisk(requestId: String): ByteArray? {
+        return runCatching {
+            val file = bodyCacheFile(requestId) ?: return null
+            if (file.isFile && file.length() > 0L) file.readBytes() else null
+        }.getOrNull()
+    }
+
+    private fun pruneDiskCacheIfNeeded(dir: File) {
+        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".bin") } ?: return
+        if (files.size <= MAX_DISK_BODY_FILES) return
+        val excess = files.size - MAX_DISK_BODY_FILES
+        files.sortedBy { it.lastModified() }
+            .take(excess)
+            .forEach { it.delete() }
+    }
+
+    private fun clearDiskBodyCache() {
+        runCatching {
+            val dir = bodyCacheDir() ?: return
+            dir.listFiles()?.forEach { it.delete() }
+        }
     }
 
     /**
@@ -416,12 +651,18 @@ class PhoneNetworkManager(
     override fun close() {
         if (isClosed.compareAndSet(false, true)) {
             Log.i(TAG, "Closing PhoneNetworkManager...")
-            eventCollectionJob?.cancel()
+            desiredTargetPackage = null
+            subscriptionHandles.forEach { runCatching { it.close() } }
+            subscriptionHandles.clear()
             detach()
             internalAgentManager?.close()
             internalAgentManager = null
             trafficHistory.clear()
             inFlightRequests.clear()
+            pendingChunkBuffers.clear()
+            synchronized(localBodyCache) {
+                localBodyCache.clear()
+            }
             supervisorJob.cancel()
         }
     }

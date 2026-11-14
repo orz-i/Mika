@@ -44,6 +44,9 @@ data class NetworkRequestSummary(
     val statusCode: Int,
     val durationMs: Long,
     val timestamp: Long,
+    val contentType: String? = null,
+    val hasResponseBody: Boolean = false,
+    val state: String = "completed",
 )
 
 /**
