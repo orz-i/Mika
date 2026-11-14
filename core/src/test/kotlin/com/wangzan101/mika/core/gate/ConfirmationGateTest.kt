@@ -1,9 +1,12 @@
 package com.wangzan101.mika.core.gate
 
+import com.wangzan101.mika.core.action.ConfirmChoice
 import com.wangzan101.mika.core.risk.IrrevAction
+import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.uistate.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.UiElement
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.wangzan101.mika.core.testing.verb
@@ -139,14 +142,24 @@ class ConfirmationGateTest {
     @Test fun approvalExpiresOnOtherWritesAndAfterThreeSteps() {
         for (t in listOf("phone_tap", "phone_swipe", "phone_scroll", "phone_back", "phone_launch_app", "phone_press_key")) {
             val g = approved(req(IrrevAction.send, "com.a"))
-            g.noteWrite(verb(t))
+            g.noteWrite(ToolTraits.fromVerb(requireNotNull(verb(t))))
             assertEquals(t, Permit.NoGrant, g.permits(hit(IrrevAction.send), chat(), 2))
         }
         val typing = approved(req(IrrevAction.send, "com.a"))
-        typing.noteWrite(verb("phone_clear_text")); typing.noteWrite(verb("phone_type_text"))
+        typing.noteWrite(ToolTraits.fromVerb(requireNotNull(verb("phone_clear_text"))))
+        typing.noteWrite(ToolTraits.fromVerb(requireNotNull(verb("phone_type_text"))))
         assertEquals(Permit.Allowed, typing.permits(hit(IrrevAction.send), chat(), 2))
         assertEquals(Permit.Allowed, approved(req(IrrevAction.send, "com.a"), step = 1).permits(hit(IrrevAction.send), chat(), 4))
         assertTrue(approved(req(IrrevAction.send, "com.a"), step = 1).permits(hit(IrrevAction.send), chat(), 5) is Permit.Mismatch)
+    }
+
+    @Test fun clearPendingDoesNotLeaveSingleUseGrant() {
+        val g = ConfirmationGate()
+        assertEquals(DeclareResult.Pending, g.declare(req(IrrevAction.send, "com.a"), "com.a"))
+        g.clearPending()
+        assertFalse(g.hasGrant)
+        assertEquals(Permit.NoGrant, g.permits(hit(IrrevAction.send), chat(), 1))
+        assertEquals(DeclareResult.Pending, g.declare(req(IrrevAction.send, "com.a"), "com.a"))
     }
 
     // I1 / M2

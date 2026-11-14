@@ -2,8 +2,11 @@ package com.wangzan101.mika.core.policy
 
 import com.wangzan101.mika.core.action.ActionRisk
 import com.wangzan101.mika.core.action.Risk
+import com.wangzan101.mika.core.run.Attendance
+import com.wangzan101.mika.core.run.RunOrigin
 import com.wangzan101.mika.core.run.RunProvenance
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.EffectKind
+import com.wangzan101.mika.core.tool.ToolTraits
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -95,7 +98,7 @@ sealed interface ArgMatcher {
 }
 
 /**
- * Declarative permission rule matching tool name, capability, verb, argument patterns, and risk.
+ * Declarative permission rule matching tool name, capability, target app, effect kinds, provenance, argument patterns, and risk.
  * When [hard] is true and [effect] is [PermissionEffect.Deny], the rule represents a non-bypassable
  * safety baseline that even `autonomous` mode or `Allow` grants cannot override.
  */
@@ -103,7 +106,10 @@ data class PermissionRule(
     val id: String,
     val tool: NameMatcher = NameMatcher.Any,
     val capability: NameMatcher = NameMatcher.Any,
-    val verb: Verb? = null,
+    val targetApp: NameMatcher = NameMatcher.Any,
+    val effects: Set<EffectKind>? = null,
+    val origins: Set<RunOrigin>? = null,
+    val unattendedOnly: Boolean? = null,
     val argPatterns: Map<String, ArgMatcher> = emptyMap(),
     val risks: Set<ActionRisk>? = null,
     val paymentOnly: Boolean? = null,
@@ -116,7 +122,10 @@ data class PermissionRule(
     fun matches(ctx: PermissionContext): Boolean {
         if (!tool.matches(ctx.tool)) return false
         if (!capability.matches(ctx.capability)) return false
-        if (verb != null && verb != ctx.verb) return false
+        if (!targetApp.matches(ctx.targetApp)) return false
+        if (effects != null && (ctx.traits == null || ctx.traits.effect !in effects)) return false
+        if (origins != null && ctx.provenance.origin !in origins) return false
+        if (unattendedOnly != null && (ctx.provenance.attendance == Attendance.Unattended) != unattendedOnly) return false
         if (risks != null && ctx.risk.level !in risks) return false
         if (paymentOnly != null && ctx.risk.payment != paymentOnly) return false
         for ((key, matcher) in argPatterns) {
@@ -130,30 +139,73 @@ data class PermissionRule(
             id: String,
             tool: NameMatcher = NameMatcher.Any,
             capability: NameMatcher = NameMatcher.Any,
-            verb: Verb? = null,
+            targetApp: NameMatcher = NameMatcher.Any,
+            effects: Set<EffectKind>? = null,
+            origins: Set<RunOrigin>? = null,
+            unattendedOnly: Boolean? = null,
             argPatterns: Map<String, ArgMatcher> = emptyMap(),
+            risks: Set<ActionRisk>? = null,
+            paymentOnly: Boolean? = null,
             scope: ApprovalScope = ApprovalScope.Session,
             priority: Int = 0,
             reason: String? = null,
-        ) = PermissionRule(id, tool, capability, verb, argPatterns, null, null, PermissionEffect.Allow, scope, false, priority, reason)
+        ) = PermissionRule(
+            id = id,
+            tool = tool,
+            capability = capability,
+            targetApp = targetApp,
+            effects = effects,
+            origins = origins,
+            unattendedOnly = unattendedOnly,
+            argPatterns = argPatterns,
+            risks = risks,
+            paymentOnly = paymentOnly,
+            effect = PermissionEffect.Allow,
+            scope = scope,
+            hard = false,
+            priority = priority,
+            reason = reason,
+        )
 
         fun ask(
             id: String,
             tool: NameMatcher = NameMatcher.Any,
             capability: NameMatcher = NameMatcher.Any,
-            verb: Verb? = null,
+            targetApp: NameMatcher = NameMatcher.Any,
+            effects: Set<EffectKind>? = null,
+            origins: Set<RunOrigin>? = null,
+            unattendedOnly: Boolean? = null,
             argPatterns: Map<String, ArgMatcher> = emptyMap(),
             risks: Set<ActionRisk>? = null,
             paymentOnly: Boolean? = null,
             priority: Int = 0,
             reason: String? = null,
-        ) = PermissionRule(id, tool, capability, verb, argPatterns, risks, paymentOnly, PermissionEffect.Ask, ApprovalScope.Session, false, priority, reason)
+        ) = PermissionRule(
+            id = id,
+            tool = tool,
+            capability = capability,
+            targetApp = targetApp,
+            effects = effects,
+            origins = origins,
+            unattendedOnly = unattendedOnly,
+            argPatterns = argPatterns,
+            risks = risks,
+            paymentOnly = paymentOnly,
+            effect = PermissionEffect.Ask,
+            scope = ApprovalScope.Session,
+            hard = false,
+            priority = priority,
+            reason = reason,
+        )
 
         fun deny(
             id: String,
             tool: NameMatcher = NameMatcher.Any,
             capability: NameMatcher = NameMatcher.Any,
-            verb: Verb? = null,
+            targetApp: NameMatcher = NameMatcher.Any,
+            effects: Set<EffectKind>? = null,
+            origins: Set<RunOrigin>? = null,
+            unattendedOnly: Boolean? = null,
             argPatterns: Map<String, ArgMatcher> = emptyMap(),
             risks: Set<ActionRisk>? = null,
             paymentOnly: Boolean? = null,
@@ -161,18 +213,53 @@ data class PermissionRule(
             scope: ApprovalScope = ApprovalScope.Session,
             priority: Int = 0,
             reason: String? = null,
-        ) = PermissionRule(id, tool, capability, verb, argPatterns, risks, paymentOnly, PermissionEffect.Deny, scope, hard, priority, reason)
+        ) = PermissionRule(
+            id = id,
+            tool = tool,
+            capability = capability,
+            targetApp = targetApp,
+            effects = effects,
+            origins = origins,
+            unattendedOnly = unattendedOnly,
+            argPatterns = argPatterns,
+            risks = risks,
+            paymentOnly = paymentOnly,
+            effect = PermissionEffect.Deny,
+            scope = scope,
+            hard = hard,
+            priority = priority,
+            reason = reason,
+        )
 
         fun hardDeny(
             id: String,
             tool: NameMatcher = NameMatcher.Any,
             capability: NameMatcher = NameMatcher.Any,
-            verb: Verb? = null,
+            targetApp: NameMatcher = NameMatcher.Any,
+            effects: Set<EffectKind>? = null,
+            origins: Set<RunOrigin>? = null,
+            unattendedOnly: Boolean? = null,
             argPatterns: Map<String, ArgMatcher> = emptyMap(),
             risks: Set<ActionRisk>? = null,
             paymentOnly: Boolean? = null,
             reason: String? = null,
-        ) = PermissionRule(id, tool, capability, verb, argPatterns, risks, paymentOnly, PermissionEffect.Deny, ApprovalScope.Persistent, hard = true, priority = Int.MAX_VALUE, reason = reason)
+        ) = PermissionRule(
+            id = id,
+            tool = tool,
+            capability = capability,
+            targetApp = targetApp,
+            effects = effects,
+            origins = origins,
+            unattendedOnly = unattendedOnly,
+            argPatterns = argPatterns,
+            risks = risks,
+            paymentOnly = paymentOnly,
+            effect = PermissionEffect.Deny,
+            scope = ApprovalScope.Persistent,
+            hard = true,
+            priority = Int.MAX_VALUE,
+            reason = reason,
+        )
     }
 }
 
@@ -180,7 +267,7 @@ data class PermissionRule(
 data class PermissionContext(
     val tool: String,
     val capability: String? = null,
-    val verb: Verb? = null,
+    val traits: ToolTraits? = null,
     val args: JsonObject = JsonObject(emptyMap()),
     val risk: Risk = Risk(ActionRisk.Read),
     val provenance: RunProvenance = RunProvenance(),
@@ -189,6 +276,83 @@ data class PermissionContext(
     val selfPackage: String? = null,
     val writesScreen: Boolean = false,
 )
+
+/**
+ * Configurable default safety baseline rules enforced by [RuleBasedPermissionPolicy].
+ */
+data class SafetyBaselineConfig(
+    /** Hard-denies catastrophic shell commands (e.g. `rm -rf /`, `mkfs /dev/...`, `dd ... of=/dev/...`, fork bombs). */
+    val blockDestructiveShellCommands: Boolean = true,
+    /** When true, protects against unattended or unapproved external-write tool invocations via lower-priority rules. */
+    val guardUnauthorizedExternalWrites: Boolean = false,
+    /** Additional caller-supplied hard-deny safety rules. */
+    val extraHardDenyRules: List<PermissionRule> = emptyList(),
+) {
+    fun toRules(): List<PermissionRule> = buildList {
+        if (blockDestructiveShellCommands) {
+            addAll(DESTRUCTIVE_COMMAND_RULES)
+        }
+        if (guardUnauthorizedExternalWrites) {
+            addAll(EXTERNAL_WRITE_GUARD_RULES)
+        }
+        addAll(extraHardDenyRules)
+    }
+
+    companion object {
+        val DEFAULT = SafetyBaselineConfig()
+        val STRICT = SafetyBaselineConfig(
+            blockDestructiveShellCommands = true,
+            guardUnauthorizedExternalWrites = true,
+        )
+
+        private val DESTRUCTIVE_SHELL_CAPABILITY = NameMatcher.RegexMatch(Regex("^(sandbox|root)$"))
+        private val DESTRUCTIVE_COMMAND_PATTERNS: List<Pair<String, Regex>> = listOf(
+            "root_wipe" to Regex("""(^|\s|[;&|])rm\s+-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*\s+(/($|\s)|/\*)"""),
+            "root_wipe_no_preserve" to Regex("""(^|\s|[;&|])rm\b.*--no-preserve-root\b.*\s/($|\s)"""),
+            "disk_format" to Regex("""(^|\s|[;&|])mkfs(\.[a-z0-9_]+)?\s+.*\s?/dev/"""),
+            "raw_disk_dd" to Regex("""(^|\s|[;&|])dd\s+.*\bof=/dev/(sd|nvme|mmcblk|vd|hd|loop)"""),
+            "fork_bomb" to Regex(""":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:"""),
+        )
+        private val COMMAND_ARG_KEYS = listOf("command", "cmd", "script")
+
+        private val DESTRUCTIVE_COMMAND_RULES: List<PermissionRule> =
+            DESTRUCTIVE_COMMAND_PATTERNS.flatMap { (slug, regex) ->
+                COMMAND_ARG_KEYS.map { argKey ->
+                    PermissionRule.hardDeny(
+                        id = "baseline.destructive.$slug.$argKey",
+                        capability = DESTRUCTIVE_SHELL_CAPABILITY,
+                        argPatterns = mapOf(argKey to ArgMatcher.RegexMatch(regex)),
+                        reason = "destructive_command:$slug",
+                    )
+                }
+            }
+
+        private val EXTERNAL_WRITE_GUARD_RULES: List<PermissionRule> = listOf(
+            PermissionRule.deny(
+                id = "baseline.external_write.unattended",
+                effects = setOf(EffectKind.External),
+                unattendedOnly = true,
+                scope = ApprovalScope.Persistent,
+                priority = -50,
+                reason = "unauthorized_unattended_external_write",
+            ),
+            PermissionRule.ask(
+                id = "baseline.external_write.mcp_ask",
+                capability = NameMatcher.Glob("mcp*"),
+                effects = setOf(EffectKind.External),
+                priority = -100,
+                reason = "confirm_external_mcp_write",
+            ),
+            PermissionRule.ask(
+                id = "baseline.external_write.root_ask",
+                capability = NameMatcher.Exact("root"),
+                effects = setOf(EffectKind.External),
+                priority = -100,
+                reason = "confirm_external_root_write",
+            ),
+        )
+    }
+}
 
 /** Outcome of evaluating [PermissionPolicy]. */
 sealed interface PermissionDecision {
@@ -226,12 +390,29 @@ interface PermissionPolicy {
     fun evaluate(ctx: PermissionContext): PermissionDecision
     /** Non-consuming evaluation for pre-checks (e.g., hard-deny baseline before full classification). */
     fun peek(ctx: PermissionContext): PermissionDecision = evaluate(ctx)
-    fun grant(rule: PermissionRule) {}
+    /** Registers a runtime rule grant; returns `false` on read-only policies such as [DEFAULT]. */
+    fun grant(rule: PermissionRule): Boolean = false
     fun revoke(ruleId: String): Boolean = false
     fun consumeOnce(ruleId: String): Boolean = false
 
     companion object {
-        val DEFAULT: PermissionPolicy = RuleBasedPermissionPolicy()
+        /**
+         * Immutable default permission policy enforcing built-in `ownApp` and default safety baseline rules
+         * without retaining mutable per-session grants across runs or tests.
+         */
+        val DEFAULT: PermissionPolicy = object : PermissionPolicy {
+            private val baseline = RuleBasedPermissionPolicy(staticRules = SafetyBaselineConfig.DEFAULT.toRules())
+            override fun evaluate(ctx: PermissionContext): PermissionDecision = baseline.evaluate(ctx)
+            override fun peek(ctx: PermissionContext): PermissionDecision = baseline.peek(ctx)
+        }
+
+        fun createDefault(
+            safetyBaseline: SafetyBaselineConfig = SafetyBaselineConfig.DEFAULT,
+            persistentStore: PersistentPermissionStore = InMemoryPermissionStore(),
+        ): RuleBasedPermissionPolicy = RuleBasedPermissionPolicy(
+            staticRules = safetyBaseline.toRules(),
+            persistentStore = persistentStore,
+        )
     }
 }
 
@@ -295,12 +476,13 @@ class RuleBasedPermissionPolicy(
     }
 
     @Synchronized
-    override fun grant(rule: PermissionRule) {
+    override fun grant(rule: PermissionRule): Boolean {
         when (rule.scope) {
             ApprovalScope.Once -> onceRules[rule.id] = rule
             ApprovalScope.Session -> sessionRules[rule.id] = rule
             ApprovalScope.Persistent -> persistentStore.save(rule)
         }
+        return true
     }
 
     @Synchronized

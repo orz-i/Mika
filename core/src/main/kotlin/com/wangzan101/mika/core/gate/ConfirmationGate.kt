@@ -7,7 +7,7 @@ import com.wangzan101.mika.core.uistate.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.UiElement
 import java.math.BigDecimal
 import kotlin.math.abs
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 
 /** 模型申报的一次要花钱的操作;字段已去首尾空白、截短,界面上照此显示。[app] 是包名。 */
 data class ConfirmationRequest(val action: IrrevAction, val target: String, val content: String, val amount: String?, val app: String)
@@ -69,6 +69,11 @@ class ConfirmationGate {
         grant = Grant(req, step)
     }
 
+    /** 清空待确认申报而不写入单次一次性授权（用于 Session/Persistent 规则接管时）。 */
+    @Synchronized fun clearPending() {
+        pending = null
+    }
+
     /**
      * [screen] 是此刻的一屏;[typing] 是这一步要输入并回车的文字(type_text 时)。
      * [seen] 是看图找到的点复看确认过的所见文字:读屏里没有文字(自绘界面)时,对象可以对它核,
@@ -121,9 +126,9 @@ class ConfirmationGate {
     /** 用户同意了、还没被用掉的那次操作;没有为 null。 */
     val granted: ConfirmationRequest? @Synchronized get() = grant?.request
 
-    /** [verb]:刚执行的写操作做的动作;输入、清空不作废同意(同意的就是要输入的这一步)。 */
-    @Synchronized fun noteWrite(verb: Verb?) {
-        if (verb !in KEEPS_GRANT) grant = null
+    /** [traits]:刚执行的写操作特征;聚焦可编辑输入框写入/清空不作废同意(同意的就是要输入的这一步)。 */
+    @Synchronized fun noteWrite(traits: ToolTraits) {
+        if (!traits.usesFocusedEditable) grant = null
     }
 
     @Synchronized fun reset() {
@@ -234,6 +239,5 @@ class ConfirmationGate {
         private val TOTAL_LABELS = IrreversibleDetector.TOTAL_LABELS
         private val DISCOUNTS = listOf("优惠", "减", "抵扣", "运费", "券", "红包", "已省")
         private const val DISCOUNT_WINDOW = 4
-        private val KEEPS_GRANT = setOf(Verb.TypeText, Verb.ClearText)
     }
 }

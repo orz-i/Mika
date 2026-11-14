@@ -64,10 +64,11 @@ class ActionRecorder(
     /** 一次调用的结果;[content] 是交给模型(或调用方)的那份,[extra] 是只进运行记录的字段。 */
     fun result(
         step: Int, tool: String, verb: Verb?, content: JsonObject, extra: JsonObject, changed: Boolean?, shotId: Int?, durationMs: Long,
-        source: String, callId: String, waitMs: Long = 0,
+        source: String, callId: String, waitMs: Long = 0, traits: com.wangzan101.mika.core.tool.ToolTraits? = null,
     ) {
+        val resolvedTraits = traits ?: verb?.let { com.wangzan101.mika.core.tool.ToolTraits.fromVerb(it) }
         // 用户的回答可能是验证码一类,不进运行记录
-        val shown = if (verb == Verb.AskUser && content.containsKey("answer")) JsonObject(content + ("answer" to JsonPrimitive(HIDDEN_ANSWER))) else content
+        val shown = if (resolvedTraits?.hidesAnswerInRecord == true && content.containsKey("answer")) JsonObject(content + ("answer" to JsonPrimitive(HIDDEN_ANSWER))) else content
         val recorded = Redactor.result(verb, shown).let { if (extra.isEmpty()) it else JsonObject(it + extra) }
         event(RunEvent.ToolResult(clock(), step, tool, RunEvent.clipResult(Redactor.text(recorded.toString())), changed, shotId, durationMs,
             waitMs = waitMs, source = source, callId = callId))

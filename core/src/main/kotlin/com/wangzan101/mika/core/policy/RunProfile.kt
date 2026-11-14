@@ -95,15 +95,19 @@ sealed interface RunProfile {
 
         /**
          * Resolves the appropriate [RunProfile] for a run based on allowed [capabilities],
-         * optional subagent [role], [readOnly] mode, [remote] origin, and whether human-like pacing is enabled ([paceEnabled]).
+         * optional subagent [role], [readOnly] mode, [remote] origin, [explicitUiTarget] marker,
+         * and whether human-like pacing is enabled ([paceEnabled]).
          *
-         * Returns [General] (zero anti-crawl / idle-scroll delay) when:
+         * Returns [General] (zero blanket anti-crawl / idle-scroll delay) when:
          * - [paceEnabled] is false (e.g., `OperatingPace.FAST`),
          * - [readOnly] is true (e.g., background condition check or read-only inspection),
          * - [remote] is true (e.g., programmatic MCP invocation),
          * - [role] is in [GENERAL_ROLES] (`coder`, `reviewer`, `researcher`),
-         * - [capabilities] is explicitly restricted and contains no UI surface (`phone` / `web`) — e.g., pure `sandbox` or `mcp`.
+         * - [capabilities] omits UI surfaces (`phone` / `web`) or [capabilities] is `null` without [explicitUiTarget].
          *
+         * When [capabilities] is `null` and [explicitUiTarget] is `false` (mixed general tasks), the profile
+         * stays [General] while preserving a selective [pacing] policy (such as [SensitiveUiPacingPolicy])
+         * so general/sandbox/MCP/read tasks run at full speed.
          * Otherwise returns [DeviceOperator].
          */
         fun resolve(
@@ -112,15 +116,22 @@ sealed interface RunProfile {
             readOnly: Boolean = false,
             paceEnabled: Boolean = true,
             remote: Boolean = false,
+            explicitUiTarget: Boolean = false,
             pacing: PacingPolicy = PacingPolicy.NONE,
             permissions: PermissionPolicy = PermissionPolicy.DEFAULT,
             guardMode: GuardMode = GuardMode.SOFT,
         ): RunProfile {
-            val hasUiCapability = capabilities == null || capabilities.any { it in UI_CAPABILITIES }
+            val hasUiCapability = explicitUiTarget || (capabilities != null && capabilities.any { it in UI_CAPABILITIES })
             val generalRole = role != null && role.trim().lowercase() in GENERAL_ROLES
             return if (!paceEnabled || readOnly || remote || !hasUiCapability || generalRole) {
+                val generalPacing = if (paceEnabled && !readOnly && !remote && !generalRole && capabilities == null) {
+                    pacing
+                } else {
+                    PacingPolicy.NONE
+                }
                 General(
                     ExecutionPolicy.GENERAL.copy(
+                        pacing = generalPacing,
                         permissions = permissions,
                         guardMode = guardMode,
                     ),
@@ -148,9 +159,17 @@ sealed interface RunProfile {
             readOnly: Boolean = false,
             explicitProfile: RunProfile? = null,
         ): RunProfile {
+            val generalRole = role != null && role.trim().lowercase() in GENERAL_ROLES
+            val isNonUiChild = capabilities != null && capabilities.none { it in UI_CAPABILITIES }
             if (parentProfile is General) {
+                val childPacing = if (readOnly || generalRole || isNonUiChild) {
+                    PacingPolicy.NONE
+                } else {
+                    parentProfile.executionPolicy.pacing
+                }
                 return General(
                     ExecutionPolicy.GENERAL.copy(
+                        pacing = childPacing,
                         permissions = parentProfile.executionPolicy.permissions,
                         guardMode = explicitProfile?.guardMode ?: parentProfile.guardMode,
                     ),
@@ -161,6 +180,7 @@ sealed interface RunProfile {
                 role = role,
                 readOnly = readOnly,
                 paceEnabled = parentProfile.enableAntiCrawlPacing,
+                explicitUiTarget = false,
                 pacing = parentProfile.executionPolicy.pacing,
                 permissions = parentProfile.executionPolicy.permissions,
                 guardMode = explicitProfile?.guardMode ?: parentProfile.guardMode,

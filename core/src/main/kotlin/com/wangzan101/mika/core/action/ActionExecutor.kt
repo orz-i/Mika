@@ -10,6 +10,11 @@ import com.wangzan101.mika.core.guard.GuardScope
 import com.wangzan101.mika.core.guard.elementsHash
 import com.wangzan101.mika.core.guard.resultFingerprint
 import com.wangzan101.mika.core.model.Part
+import com.wangzan101.mika.core.observation.PlaceKind
+import com.wangzan101.mika.core.policy.PacingContext
+import com.wangzan101.mika.core.policy.PacingDirective
+import com.wangzan101.mika.core.policy.PacingPolicy
+import com.wangzan101.mika.core.policy.asPacingPolicy
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.replay.Anchors
@@ -40,6 +45,7 @@ import com.wangzan101.mika.core.guard.OffScreenGuard
 import com.wangzan101.mika.core.run.RunProvenance
 import com.wangzan101.mika.core.run.SKIPPED_FOR_NEW_MESSAGE
 import com.wangzan101.mika.core.run.waitOrSteer
+import com.wangzan101.mika.core.tool.fail
 import com.wangzan101.mika.core.tool.failCode
 import com.wangzan101.mika.core.capability.Paced
 
@@ -62,6 +68,8 @@ class ActionExecutor(
     autonomous: Boolean = false,
     /** 同一网站、App 里连着做对外动作(发送、提交)时两次之间的间隔(见 [OutwardPacing]);默认不等。 */
     private val pacing: OutwardPacing = OutwardPacing.Off,
+    /** 统一动作节拍策略（未传且旧 [pacing] 开启时自动桥接为 [com.wangzan101.mika.core.policy.OutwardPacingPolicy]）。 */
+    private val pacingPolicy: PacingPolicy = pacing.asPacingPolicy(),
 ) {
     private val decision = ConfirmDecision(tools, confirmations, approvals, recorder = recorder, provenance = provenance, selfPackage = selfPackage, autonomous = autonomous)
     private val decisionMutex = Mutex()
@@ -72,6 +80,11 @@ class ActionExecutor(
 
     /** 不动屏幕的工具的守卫叫停的结论;没叫停为 null。 */
     val offScreenStop: GuardVerdict? get() = offScreen?.stop
+
+    /** 用户回答追问或交回控制权后通知节拍策略重置连续等待窗口。 */
+    fun onUserAnswered() {
+        pacingPolicy.onUserAnswered()
+    }
 
     suspend fun run(call: Part.ToolCall, origin: Origin, followUp: FollowUp = FollowUp.NONE): ActionOutcome =
         run(call, origin, followUp, reads = null)
@@ -122,12 +135,17 @@ class ActionExecutor(
         }
         // 单步:作为这次工具调用的结果交给模型,让它换路线或向用户说明;批和脚本按 Refused 自己处理
         if (origin.policy.recordsRefusal) followUp.refused(content)
-        recorder.result(origin.step, call.name, verb, content, content, null, null, 0, origin.policy.source, call.id)
+        recorder.result(origin.step, call.name, verb, content, content, null, null, 0, origin.policy.source, call.id, traits = tools.traits(call.name))
         return ActionOutcome.Refused(e.code, content, emptyList())
     }
 
-    private suspend fun judge(name: String, args: JsonObject, origin: Origin): Pair<Decision, String?> =
-        decisionMutex.withLock { decision.judge(name, args, origin) to decision.outwardSite }
+    private suspend fun judge(
+        name: String,
+        args: JsonObject,
+        origin: Origin,
+        exactAsk: com.wangzan101.mika.core.gate.ConfirmationRequest? = null,
+    ): Pair<Decision, String?> =
+        decisionMutex.withLock { decision.judge(name, args, origin, exactAsk) to decision.outwardSite }
 
     private suspend fun aimed(
         given: Part.ToolCall, origin: Origin, followUp: FollowUp, reads: GuardScope?, givenArgs: JsonObject,
@@ -164,13 +182,23 @@ class ActionExecutor(
         var (d, site) = judge(call.name, args, origin)
         // 不在屏上、工具声明要问的一步(会改动东西的 root 命令):调用方问得到人就当场问,同意了按这次同意再判一次;
         // 问不到人(这次运行不能问、调用方不是模型单步)就不做,照被拦下记
-        val ask = if (d is Decision.Required || d is Decision.Denied) tools.approvalRisk(call.name, args)?.ask else null
+        val ask = if (d is Decision.Required || d is Decision.Denied) {
+            tools.approvalRisk(call.name, args)?.ask ?: if (d is Decision.Required && offScreen) {
+                d.ask ?: com.wangzan101.mika.core.gate.ConfirmationRequest(
+                    action = d.hit.action,
+                    target = call.name,
+                    content = d.hit.matched.ifBlank { Redactor.args(verb, call.argsJson, false) }.take(200),
+                    amount = null,
+                    app = tools.declared(call.name)?.capability ?: call.name,
+                )
+            } else null
+        } else null
         if (ask != null) {
             val hit = Irreversible(ask.action, ask.content)
             val answer = (if (d is Decision.Required) followUp.approve(ask) else null)
                 ?: return declined(call, args, origin, before, hit, ToolExecution(Refusals.unavailable()), followUp, "approval_unavailable")
             if (answer.content["ok"] != JsonPrimitive(true)) return declined(call, args, origin, before, hit, answer, followUp, "confirmation_declined")
-            val rejudged = judge(call.name, args, origin)
+            val rejudged = judge(call.name, args, origin, exactAsk = ask.takeIf { (d as? Decision.Required)?.ask == null })
             d = rejudged.first
             site = rejudged.second
         }
@@ -182,8 +210,24 @@ class ActionExecutor(
             Decision.OwnApp -> return ownApp(call, args, origin, before, followUp)
             else -> Unit
         }
-        // 对外动作:和同一网站、App 里的上一次隔开(等的时候任务还能取消,动作还没开始)
-        val paced = site?.let { pacing.waitBefore(it, recorder.now()) }?.takeIf { it > 0 } ?: 0L
+        // 动作执行前的统一节拍策略（含对外动作间隔、站点/页面反爬节拍、风控熔断停止）
+        val pacingCtx = if (pacingPolicy.enabled) {
+            PacingContext(
+                tool = call.name,
+                capability = tools.declared(call.name)?.capability,
+                traits = traits,
+                site = site,
+                outward = site != null,
+                writesScreen = writing && !offScreen,
+                nowMs = recorder.now(),
+            )
+        } else null
+        val directive = pacingCtx?.let(pacingPolicy::beforeAction) ?: PacingDirective.NONE
+        directive.stopReason?.let { stopReason ->
+            return ran(Step(call, args, origin, before, writing = false, offScreen, verb, traits, null, followUp, reads,
+                preset = fail("paced_stop", stopReason, recoverable = false), skipSurface = skipSurface))
+        }
+        val paced = directive.waitMs.takeIf { it > 0L } ?: 0L
         // 等间隔时用户插了话:这次不做,先让模型读那句话。间隔从上一次做完算起,下次再做时余下的照样补上
         if (paced > 0 && waitOrSteer { delay(paced) } == null) {
             return ran(Step(call, args, origin, before, writing = false, offScreen, verb, traits, null, followUp, reads, preset = failCode(SKIPPED_FOR_NEW_MESSAGE), skipSurface = skipSurface))
@@ -199,8 +243,9 @@ class ActionExecutor(
             synchronized(guards) { guards.noteAction() }
             decision.noteWrite(call.name)
         }
+        val idleScrolls = dwelt.idleScrolls + if (directive.idleScroll) 1 else 0
         val step = Step(call, args, origin, before, writing, offScreen, verb, traits, (d as? Decision.Traced)?.detail, followUp, reads, note = note,
-            pacedMs = paced + dwelt.waitMs, idleScrolls = dwelt.idleScrolls, outward = site != null, skipSurface = skipSurface)
+            pacedMs = paced + dwelt.waitMs, idleScrolls = idleScrolls, outward = site != null, skipSurface = skipSurface)
         // 动作一旦开始就做完并记下:脚本超时、任务取消都不能把它掐在半中间、漏掉记录
         // 对外动作告诉这块屏的能力(网页的页数上限只管浏览,见 PageDwell)
         site?.let(tools::outwardStart)
@@ -208,9 +253,21 @@ class ActionExecutor(
         try {
             val outcome = if (policy.actionCapMs == null) ran(step) else withContext(NonCancellable) { ran(step) }
             if (screenPaced && outcome is ActionOutcome.Ran) tools.afterWrite(call.name, outcome.exec.content)
-            if (site != null && outcome is ActionOutcome.Ran && outcome.exec.content["ok"] != JsonPrimitive(false)) {
+            val succeeded = outcome is ActionOutcome.Ran && outcome.exec.content["ok"] != JsonPrimitive(false)
+            if (pacingCtx != null) {
+                pacingPolicy.afterAction(pacingCtx.copy(nowMs = recorder.now()), succeeded)
+            }
+            if (outcome is ActionOutcome.Ran && succeeded) {
+                val place = outcome.exec.place
+                if (place != null && place.kind == PlaceKind.Site) {
+                    pacingPolicy.onSiteLoaded(place.name, recorder.now())
+                }
+                if (traits.userInteraction) {
+                    pacingPolicy.onUserAnswered()
+                }
+            }
+            if (site != null && succeeded) {
                 done = true
-                pacing.noteDone(site, recorder.now())
             }
             return outcome
         } finally {
@@ -306,7 +363,7 @@ class ActionExecutor(
             Frames.WhenChanged -> (exec.image ?: exec.frame)?.takeIf { exec.changed != false }?.let(recorder::saveFrame)
             Frames.None -> null
         }
-        recorder.result(n, call.name, s.verb, content, exec.record, exec.changed, shotId, durationMs, policy.source, call.id, exec.waitMs)
+        recorder.result(n, call.name, s.verb, content, exec.record, exec.changed, shotId, durationMs, policy.source, call.id, exec.waitMs, traits = s.traits)
         ActivityRecord.of(tools, call.name, s.args, exec, n, policy.source, call.id, recorder.now(), s.outward)?.let(recorder::event)
         if (policy.frames == Frames.WhenChanged && shotId != null) recorder.event(RunEvent.Media(recorder.now(), shotId, n, RunEvent.placeLabel(exec.place)))
         val seen = if (policy.routeTargets) routeTarget(call, s.verb, s.origin, exec) else null
@@ -354,7 +411,7 @@ class ActionExecutor(
         val content = Refusals.content(Refusals.OWN_APP, origin.policy.refusals, before, null, null)
         if (origin.policy.recordsRefusal) {
             followUp.refused(content)
-            recorder.result(origin.step, call.name, tools.verb(call.name), content, tools.portRecord(call.name, args), null, null, 0, origin.policy.source, call.id)
+            recorder.result(origin.step, call.name, tools.verb(call.name), content, tools.portRecord(call.name, args), null, null, 0, origin.policy.source, call.id, traits = tools.traits(call.name))
         }
         return ActionOutcome.Refused(Refusals.OWN_APP, content, before)
     }
@@ -369,7 +426,7 @@ class ActionExecutor(
         val content = Refusals.content(code, origin.policy.refusals, before, hit, null)
         if (origin.policy.recordsRefusal) {
             followUp.refused(content)
-            recorder.result(origin.step, call.name, tools.verb(call.name), content, tools.portRecord(call.name, args), null, null, 0, origin.policy.source, call.id)
+            recorder.result(origin.step, call.name, tools.verb(call.name), content, tools.portRecord(call.name, args), null, null, 0, origin.policy.source, call.id, traits = tools.traits(call.name))
         }
         return ActionOutcome.Refused(code, content, before, hit)
     }
@@ -382,7 +439,7 @@ class ActionExecutor(
         recorder.confirmation(hit, if (code == "confirmation_declined") "declined" else "denied")
         if (origin.policy.recordsRefusal) {
             followUp.refused(answer.content)
-            recorder.result(origin.step, call.name, tools.verb(call.name), answer.content, tools.portRecord(call.name, args), null, null, 0, origin.policy.source, call.id)
+            recorder.result(origin.step, call.name, tools.verb(call.name), answer.content, tools.portRecord(call.name, args), null, null, 0, origin.policy.source, call.id, traits = tools.traits(call.name))
         }
         return ActionOutcome.Refused(code, answer.content, before, hit)
     }
@@ -395,7 +452,7 @@ class ActionExecutor(
         val content = Refusals.content(code, origin.policy.refusals, before, hit, reason)
         if (origin.policy.recordsRefusal) {
             followUp.refused(content)
-            recorder.result(origin.step, call.name, tools.verb(call.name), content, tools.portRecord(call.name, args), null, null, 0, origin.policy.source, call.id)
+            recorder.result(origin.step, call.name, tools.verb(call.name), content, tools.portRecord(call.name, args), null, null, 0, origin.policy.source, call.id, traits = tools.traits(call.name))
         }
         return ActionOutcome.Refused(code, content, before, hit)
     }

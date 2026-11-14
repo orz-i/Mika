@@ -73,4 +73,19 @@ class ClassifiedRiskTest {
     @Test fun coordinateTapsUseTheSmallestElementThere() {
         assertEquals("修改密码", ClassifiedRisk.target(verb("phone_tap"), buildJsonObject { put("x", 500); put("y", 250) }, screen)?.name)
     }
+
+    @Test fun assessAndTargetOperateDirectlyOnToolTraitsWithoutVerb() {
+        val mutating = com.wangzan101.mika.core.tool.ToolTraits(modifiesScreenState = true)
+        val readOnly = com.wangzan101.mika.core.tool.ToolTraits(modifiesScreenState = false)
+        val focusedInput = com.wangzan101.mika.core.tool.ToolTraits(modifiesScreenState = true, usesFocusedEditable = true)
+
+        assertEquals(Risk(ActionRisk.Change), ClassifiedRisk.assess(mutating, null) { screen })
+        assertEquals(Risk(ActionRisk.Read), ClassifiedRisk.assess(readOnly, null) { screen })
+        assertEquals(
+            Risk(ActionRisk.External, payment = true),
+            ClassifiedRisk.assess(mutating, Irreversible(IrrevAction.submit, "提交")) { shop },
+        )
+        assertEquals("@e4", ClassifiedRisk.target(focusedInput, buildJsonObject {}, screen)?.ref)
+        assertEquals("修改密码", ClassifiedRisk.target(mutating, buildJsonObject { put("x", 500); put("y", 250) }, screen)?.name)
+    }
 }

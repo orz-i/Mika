@@ -1,17 +1,25 @@
 package com.wangzan101.mika.core.policy
 
 import com.wangzan101.mika.core.action.ActionRisk
+import com.wangzan101.mika.core.action.Approval
+import com.wangzan101.mika.core.action.ApprovalPolicy
 import com.wangzan101.mika.core.action.ApprovalSettings
 import com.wangzan101.mika.core.action.ConfirmChoice
 import com.wangzan101.mika.core.action.ConfirmDecision
 import com.wangzan101.mika.core.action.Decision
 import com.wangzan101.mika.core.action.Origin
 import com.wangzan101.mika.core.action.Risk
+import com.wangzan101.mika.core.gate.ConfirmationRequest
+import com.wangzan101.mika.core.risk.IrrevAction
 import com.wangzan101.mika.core.assembly.toolDispatcher
 import com.wangzan101.mika.core.gate.ConfirmationGate
 import com.wangzan101.mika.core.model.Part
+import com.wangzan101.mika.core.run.Attendance
+import com.wangzan101.mika.core.run.RunOrigin
+import com.wangzan101.mika.core.run.RunProvenance
+import com.wangzan101.mika.core.tool.EffectKind
 import com.wangzan101.mika.core.tool.FakeScreen
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.tool.execute
 import com.wangzan101.mika.core.uistate.ScreenPort
 import com.wangzan101.mika.core.uistate.ScreenSnapshot
@@ -20,11 +28,16 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PermissionPolicyTest {
-    @Test fun matchesByToolCapabilityVerbAndArgPatterns() {
+    private val readTraits = ToolTraits(effect = EffectKind.ReadOnly)
+    private val workspaceWriteTraits = ToolTraits(effect = EffectKind.WorkspaceWrite)
+    private val externalTraits = ToolTraits(effect = EffectKind.External)
+
+    @Test fun matchesByToolCapabilityEffectsTargetAppAndArgPatterns() {
         val policy = RuleBasedPermissionPolicy(
             staticRules = listOf(
                 PermissionRule.deny(
@@ -41,8 +54,12 @@ class PermissionPolicyTest {
                     reason = "confirm external mcp",
                 ),
                 PermissionRule.allow(
-                    id = "allow-read-file",
-                    verb = Verb.ReadFile,
+                    id = "allow-read-effects",
+                    effects = setOf(EffectKind.ReadOnly),
+                ),
+                PermissionRule.allow(
+                    id = "allow-shop-app",
+                    targetApp = NameMatcher.Exact("com.shop"),
                 ),
             ),
         )
@@ -51,7 +68,7 @@ class PermissionPolicyTest {
             PermissionContext(
                 tool = "run_command",
                 capability = "sandbox",
-                verb = Verb.RunCommand,
+                traits = workspaceWriteTraits,
                 args = buildJsonObject { put("command", "rm -rf /workspace/data") },
             ),
         )
@@ -61,7 +78,7 @@ class PermissionPolicyTest {
             PermissionContext(
                 tool = "run_command",
                 capability = "sandbox",
-                verb = Verb.RunCommand,
+                traits = workspaceWriteTraits,
                 args = buildJsonObject { put("command", "ls -la") },
             ),
         )
@@ -70,8 +87,11 @@ class PermissionPolicyTest {
         val mcp = policy.evaluate(PermissionContext(tool = "mcp_github__create_issue", capability = "mcp_github"))
         assertTrue(mcp is PermissionDecision.Ask && mcp.ruleId == "ask-mcp-glob")
 
-        val read = policy.evaluate(PermissionContext(tool = "read_file", capability = "sandbox", verb = Verb.ReadFile))
-        assertTrue(read is PermissionDecision.Allow && read.ruleId == "allow-read-file")
+        val read = policy.evaluate(PermissionContext(tool = "read_file", capability = "sandbox", traits = readTraits))
+        assertTrue(read is PermissionDecision.Allow && read.ruleId == "allow-read-effects")
+
+        val shop = policy.evaluate(PermissionContext(tool = "phone_tap", capability = "phone", targetApp = "com.shop"))
+        assertTrue(shop is PermissionDecision.Allow && shop.ruleId == "allow-shop-app")
     }
 
     @Test fun supportsOnceSessionAndPersistentScopes() {
@@ -233,5 +253,116 @@ class PermissionPolicyTest {
         val nextRunPolicy = RuleBasedPermissionPolicy(persistentStore = store)
         val nextRunDecision = ConfirmDecision(tools, ConfirmationGate(), ApprovalSettings.of(autonomous = false, policy = nextRunPolicy))
         assertEquals(Decision.Clear, nextRunDecision.judge("phone_tap", tapOrder, Origin.Model(1)))
+    }
+
+    @Test fun defaultPolicyIsImmutableAndEnforcesDestructiveShellBaseline() {
+        val granted = PermissionPolicy.DEFAULT.grant(
+            PermissionRule.allow("try-mutate-default", tool = NameMatcher.Exact("sandbox_exec"), scope = ApprovalScope.Session),
+        )
+        assertFalse(granted)
+
+        val rmRoot = PermissionPolicy.DEFAULT.evaluate(
+            PermissionContext(
+                tool = "sandbox_exec",
+                capability = "sandbox",
+                traits = workspaceWriteTraits,
+                autonomous = true,
+                args = buildJsonObject { put("command", "rm -rf /") },
+            ),
+        )
+        assertTrue(rmRoot is PermissionDecision.Deny && rmRoot.hard)
+
+        val mkfsDev = PermissionPolicy.DEFAULT.evaluate(
+            PermissionContext(
+                tool = "root_run_command",
+                capability = "root",
+                autonomous = true,
+                args = buildJsonObject { put("command", "mkfs.ext4 /dev/sda1") },
+            ),
+        )
+        assertTrue(mkfsDev is PermissionDecision.Deny && mkfsDev.hard)
+
+        val ddDev = PermissionPolicy.DEFAULT.evaluate(
+            PermissionContext(
+                tool = "sandbox_exec",
+                capability = "sandbox",
+                autonomous = true,
+                args = buildJsonObject { put("command", "dd if=/dev/zero of=/dev/nvme0n1 bs=1M") },
+            ),
+        )
+        assertTrue(ddDev is PermissionDecision.Deny && ddDev.hard)
+
+        val safeWorkspaceRm = PermissionPolicy.DEFAULT.evaluate(
+            PermissionContext(
+                tool = "sandbox_exec",
+                capability = "sandbox",
+                traits = workspaceWriteTraits,
+                args = buildJsonObject { put("command", "rm -rf /workspace/tmp") },
+            ),
+        )
+        assertEquals(PermissionDecision.Abstain, safeWorkspaceRm)
+    }
+
+    @Test fun strictSafetyBaselineGuardsUnauthorizedExternalWritesUnlessExplicitlyAllowed() {
+        val strict = PermissionPolicy.createDefault(safetyBaseline = SafetyBaselineConfig.STRICT)
+
+        val unattendedMcp = strict.evaluate(
+            PermissionContext(
+                tool = "mcp_slack__post_message",
+                capability = "mcp:slack",
+                traits = externalTraits,
+                provenance = RunProvenance(RunOrigin.Channel, Attendance.Unattended),
+            ),
+        )
+        assertTrue(unattendedMcp is PermissionDecision.Deny && !unattendedMcp.hard)
+
+        val interactiveMcp = strict.evaluate(
+            PermissionContext(
+                tool = "mcp_slack__post_message",
+                capability = "mcp:slack",
+                traits = externalTraits,
+                provenance = RunProvenance(RunOrigin.Ui, Attendance.Present),
+            ),
+        )
+        assertTrue(interactiveMcp is PermissionDecision.Ask)
+
+        assertTrue(
+            strict.grant(
+                PermissionRule.allow(
+                    id = "allow-slack-post",
+                    tool = NameMatcher.Exact("mcp_slack__post_message"),
+                    scope = ApprovalScope.Session,
+                ),
+            ),
+        )
+        val allowedAfterGrant = strict.evaluate(
+            PermissionContext(
+                tool = "mcp_slack__post_message",
+                capability = "mcp:slack",
+                traits = externalTraits,
+                provenance = RunProvenance(RunOrigin.Ui, Attendance.Present),
+            ),
+        )
+        assertTrue(allowedAfterGrant is PermissionDecision.Allow && allowedAfterGrant.ruleId == "allow-slack-post")
+    }
+
+    @Test fun approvalPolicyAllowsChildEscalationForNonPaymentButDeniesPaymentAndPlainUnattendedChild() {
+        val plainChild = RunProvenance(RunOrigin.Child, Attendance.Unattended, canEscalateApproval = false)
+        val escalatingChild = RunProvenance(RunOrigin.Child, Attendance.Unattended, canEscalateApproval = true)
+        val nonPayAskRisk = Risk(
+            ActionRisk.External,
+            payment = false,
+            ask = ConfirmationRequest(IrrevAction.other, "sandbox", "run command", null, "sandbox"),
+        )
+        val payRisk = Risk(ActionRisk.Irreversible, payment = true)
+
+        assertEquals(Approval.Deny, ApprovalPolicy.decide(PermissionDecision.Ask("confirm"), Risk(ActionRisk.External), plainChild))
+        assertEquals(Approval.Ask, ApprovalPolicy.decide(PermissionDecision.Ask("confirm"), Risk(ActionRisk.External), escalatingChild))
+        assertEquals(Approval.Deny, ApprovalPolicy.decide(nonPayAskRisk, plainChild))
+        assertEquals(Approval.Ask, ApprovalPolicy.decide(nonPayAskRisk, escalatingChild))
+
+        // Payments are strictly denied in child runs even with canEscalateApproval = true
+        assertEquals(Approval.Deny, ApprovalPolicy.decide(payRisk, escalatingChild))
+        assertEquals(Approval.Deny, ApprovalPolicy.decide(PermissionDecision.Ask("pay"), payRisk, escalatingChild))
     }
 }

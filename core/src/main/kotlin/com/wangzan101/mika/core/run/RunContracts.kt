@@ -2,7 +2,20 @@ package com.wangzan101.mika.core.run
 
 import com.wangzan101.mika.core.action.ConfirmChoice
 import com.wangzan101.mika.core.agent.Turn
+import com.wangzan101.mika.core.gate.ConfirmationRequest
 import com.wangzan101.mika.core.policy.RunProfile
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
+
+/**
+ * 协程上下文中传递的父会话交互确认冒泡钩子。
+ * 仅交互式 UI 且在场、非只读的父任务注入；非只读子任务遇到确认请求时通过它向父会话弹窗确认。
+ */
+class ConfirmEscalator(
+    val escalate: suspend (ConfirmationRequest) -> ConfirmChoice,
+) : AbstractCoroutineContextElement(Key) {
+    companion object Key : CoroutineContext.Key<ConfirmEscalator>
+}
 
 @JvmInline value class RunId(val value: String) {
     init { require(value.isNotBlank()) }

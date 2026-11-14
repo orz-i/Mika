@@ -11,7 +11,7 @@ import com.wangzan101.mika.core.policy.PermissionPolicy
 import com.wangzan101.mika.core.risk.IrrevAction
 import com.wangzan101.mika.core.run.RunProvenance
 import com.wangzan101.mika.core.tool.ToolDispatcher
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.uistate.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.interfaces
 import kotlinx.serialization.json.JsonObject
@@ -65,7 +65,7 @@ class ConfirmDecision(
         private set
 
     /** 判定放在锁屏等待之后:按此刻重新读的一屏判。 */
-    suspend fun judge(tool: String, args: JsonObject, origin: Origin): Decision {
+    suspend fun judge(tool: String, args: JsonObject, origin: Origin, exactAsk: ConfirmationRequest? = null): Decision {
         outwardSite = null
         val policy = origin.policy
         val target = tools.gateTarget(tool)
@@ -73,7 +73,7 @@ class ConfirmDecision(
         // 这一步落在哪里由界面一侧给出;点看图找到的 @vN 时参数已换成它登记的坐标和找的文字
         val aim = tools.interfaces.actionTarget(declared, args)
         val checked = aim.args
-        val verb = tools.verb(tool)
+        val traits = tools.traits(tool) ?: declared?.traits ?: ToolTraits()
         val isAutonomous = autonomous || approvals.autonomous()
 
         // 1. 硬性安全底线(不因 autonomous 绕过):ownApp 边界
@@ -82,12 +82,12 @@ class ConfirmDecision(
         val declaredRisk = tools.approvalRisk(tool, checked)
         val needsIrrev = declaredRisk == null && IrreversibleDetector.needsCheck(target, args)
         val snapHit = if (needsIrrev) IrreversibleDetector.classify(target, checked, aim.aimed) else null
-        val preliminaryRisk = declaredRisk ?: risks.assess(verb, snapHit) { aim.aimed }
+        val preliminaryRisk = declaredRisk ?: risks.assess(traits, snapHit) { aim.aimed }
 
         val basePermCtx = PermissionContext(
             tool = tool,
             capability = declared?.capability,
-            verb = verb,
+            traits = traits,
             args = checked,
             risk = preliminaryRisk,
             provenance = provenance,
@@ -120,25 +120,25 @@ class ConfirmDecision(
 
         // 4. 非自主模式:工具声明自身风险(如 root / mcp)
         if (declaredRisk != null) {
-            return approve(tool, checked, origin, null, declaredRisk, null, null, null, permissionPolicy.evaluate(basePermCtx)) ?: Decision.Clear
+            return approve(tool, checked, origin, null, declaredRisk, null, null, null, permissionPolicy.evaluate(basePermCtx), exactAsk) ?: Decision.Clear
         }
 
         // 5. 普通动作或未配确认关卡:若命中声明式权限规则仍按规则裁决,未命中则直接放行
         if (!needsIrrev || (confirmations == null && !policy.judgeWithoutGate)) {
-            return evaluateNonIrrevRule(tool, origin, basePermCtx, aim.aimed) ?: Decision.Clear
+            return evaluateNonIrrevRule(tool, origin, basePermCtx, aim.aimed, exactAsk) ?: Decision.Clear
         }
 
-        val typing = if (verb == Verb.TypeText) (args["text"] as? JsonPrimitive)?.contentOrNull else null
+        val typing = if (traits.textInput) (args["text"] as? JsonPrimitive)?.contentOrNull else null
         val snap = aim.aimed
         val fresh = aim.now()
         if (ownApp(tool, args, fresh)) return Decision.OwnApp
         // 复看确认过的所见文字(@vN 才有):读屏里没有文字时(自绘界面)付款的同意按它核对象
         val seen = aim.seen
         val hit = IrreversibleDetector.classify(target, checked, snap, fresh)
-        val risk = risks.assess(verb, hit) { fresh ?: snap }
+        val risk = risks.assess(traits, hit) { fresh ?: snap }
         outwardSite = outward(hit, fresh ?: snap)
         val fullPermCtx = basePermCtx.copy(risk = risk, targetApp = (fresh ?: snap)?.packageName)
-        approve(tool, checked, origin, hit, risk, fresh ?: snap, typing, seen, permissionPolicy.evaluate(fullPermCtx))?.let { return it }
+        approve(tool, checked, origin, hit, risk, fresh ?: snap, typing, seen, permissionPolicy.evaluate(fullPermCtx), exactAsk)?.let { return it }
         if (hit != null || !IrreversibleDetector.unresolved(target, checked, snap, fresh)) return Decision.Clear
         return if (policy.refuseUnresolved) Decision.Unresolved else Decision.Traced(unresolvedDetail(args, aim.readAgeMs, fresh != null))
     }
@@ -157,20 +157,22 @@ class ConfirmDecision(
 
     private fun evaluateNonIrrevRule(
         tool: String, origin: Origin, permCtx: PermissionContext, screen: ScreenSnapshot?,
+        exactAsk: ConfirmationRequest? = null,
     ): Decision? = when (val decision = permissionPolicy.evaluate(permCtx)) {
         PermissionDecision.Abstain -> null
-        else -> approve(tool, permCtx.args, origin, null, permCtx.risk, screen, null, null, decision)
+        else -> approve(tool, permCtx.args, origin, null, permCtx.risk, screen, null, null, decision, exactAsk)
     }
 
     /** 按来源与权限规则判;要花钱或规则要求确认时核对用户同意。放行为 null。 */
     private fun approve(
         tool: String, checked: JsonObject, origin: Origin, hit: Irreversible?, risk: Risk, screen: ScreenSnapshot?,
         typing: String?, seen: String?, policyDecision: PermissionDecision = PermissionDecision.Abstain,
+        exactAsk: ConfirmationRequest? = null,
     ): Decision? {
         val policy = origin.policy
         // 没命中不可逆判定的(工具自己声明的风险或规则命中):有申报按申报记,否则按动作落在的元素记成「其他」
         val asked = hit ?: risk.ask?.let { Irreversible(it.action, it.content) } ?: Irreversible(IrrevAction.other,
-            screen?.let { ClassifiedRisk.target(tools.verb(tool), checked, it) }?.name?.trim()?.takeIf { it.isNotEmpty() } ?: tool)
+            screen?.let { ClassifiedRisk.target(tools.traits(tool), checked, it) }?.name?.trim()?.takeIf { it.isNotEmpty() } ?: tool)
         // 对外、要花钱和没放行的都记下;界面上的改动不记
         fun audit(decision: String) {
             if (decision != "allowed" || risk.level.outward || risk.payment) recorder?.approval(origin, tool, asked, risk, decision)
@@ -182,7 +184,8 @@ class ConfirmDecision(
         }
         val required = Decision.Required(asked, risk.ask)
         val gate = confirmations?.takeIf { policy.usesGrant } ?: return required.also { audit("required") }
-        val permit = risk.ask?.let { gate.permitsExactly(it, origin.step) } ?: gate.permits(asked, screen, origin.step, typing, listOfNotNull(seen))
+        val exact = risk.ask ?: exactAsk
+        val permit = exact?.let { gate.permitsExactly(it, origin.step) } ?: gate.permits(asked, screen, origin.step, typing, listOfNotNull(seen))
         return when (val p = permit) {
             Permit.Allowed -> null.also { audit("allowed") }
             Permit.NoGrant -> required.also { audit("required") }
@@ -192,7 +195,7 @@ class ConfirmDecision(
 
     /** 执行了一个写操作:同意按它的规则作废或保留。 */
     fun noteWrite(tool: String) {
-        confirmations?.noteWrite(tools.verb(tool))
+        confirmations?.noteWrite(tools.traits(tool) ?: ToolTraits())
     }
 
     /** 留痕:点的是哪个编号、那次读屏多久以前,或点的坐标。 */

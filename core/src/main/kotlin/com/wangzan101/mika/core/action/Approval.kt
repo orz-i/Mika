@@ -65,14 +65,20 @@ sealed interface Approval {
 }
 
 /**
- * 审批判定:纯函数。付款和工具声明要问的(见 [Risk.ask])要问;问不到人(无人值守、子任务)或不在手机上
- * (渠道、定时、MCP 发起的)时这些都不做。
+ * 审批判定:纯函数。付款和工具声明要问的(见 [Risk.ask])要问;问不到人(无人值守、普通子任务)或不在手机上
+ * (渠道、定时、MCP 发起的)时这些都不做;交互式父任务下允许冒泡的子任务([RunProvenance.canEscalateApproval])可对非付款操作询问。
  */
 object ApprovalPolicy {
+    private fun canAsk(run: RunProvenance, payment: Boolean): Boolean = when {
+        run.origin == RunOrigin.Ui && run.attendance != Attendance.Unattended -> true
+        run.origin == RunOrigin.Child && run.canEscalateApproval && !payment -> true
+        else -> false
+    }
+
     fun decide(risk: Risk, run: RunProvenance = RunProvenance()): Approval = when {
         !risk.payment && risk.ask == null -> Approval.Allow
-        run.attendance == Attendance.Unattended || run.origin != RunOrigin.Ui -> Approval.Deny
-        else -> Approval.Ask
+        canAsk(run, payment = risk.payment) -> Approval.Ask
+        else -> Approval.Deny
     }
 
     /** 结合规则式 [PermissionDecision] 与默认审批策略得出最终 [Approval]。 */
@@ -80,7 +86,7 @@ object ApprovalPolicy {
         is PermissionDecision.Allow -> Approval.Allow
         is PermissionDecision.Deny -> Approval.Deny
         is PermissionDecision.Ask ->
-            if (run.attendance == Attendance.Unattended || run.origin != RunOrigin.Ui) Approval.Deny else Approval.Ask
+            if (canAsk(run, payment = risk.payment)) Approval.Ask else Approval.Deny
         PermissionDecision.Abstain -> decide(risk, run)
     }
 }
