@@ -8,7 +8,7 @@ import com.wangzan101.mika.core.run.Attendance
 import com.wangzan101.mika.core.run.RunOrigin
 import com.wangzan101.mika.core.tool.AgentTool
 import com.wangzan101.mika.core.tool.Args
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.MemoryAccess
 import com.wangzan101.mika.core.tool.Risk
 import com.wangzan101.mika.core.tool.ToolConfig
 import com.wangzan101.mika.core.tool.ToolContext
@@ -138,11 +138,21 @@ internal class RunAssembler(private val providers: List<CapabilityProvider>) {
                 spec.capabilities == null || RunSpec.isCapabilityAllowed(provider.id, spec.capabilities)
             }
         }.mapNotNull { it.open(spec) }
-        val general = GeneralGroup.tools.filterNot { (effectiveReadOnly || child) && it.verb == Verb.MemoryEdit }
-            .filterNot { spec.provenance.attendance == Attendance.Unattended &&
-            it.verb in setOf(Verb.AskUser, Verb.RequestConfirmation, Verb.HandToUser, Verb.ScheduleTask, Verb.ProfileEdit, Verb.SkillSave, Verb.MemoryEdit) }
-            .filterNot { child && it.verb in setOf(Verb.SpawnAgent, Verb.MemorySave, Verb.MemoryEdit, Verb.ProfileEdit, Verb.ScheduleTask, Verb.SkillSave,
-                Verb.AskUser, Verb.RequestConfirmation, Verb.HandToUser) }
+        val general = GeneralGroup.tools
+            .filterNot { (effectiveReadOnly || child) && it.traits.memoryAccess == MemoryAccess.Edit }
+            .filterNot {
+                spec.provenance.attendance == Attendance.Unattended && (
+                    it.traits.userInteraction || it.traits.schedulesTask || it.traits.modifiesProfile ||
+                        it.traits.writesSkill || it.traits.memoryAccess == MemoryAccess.Edit
+                    )
+            }
+            .filterNot {
+                child && (
+                    it.traits.delegatesTask || it.traits.memoryAccess == MemoryAccess.Save ||
+                        it.traits.memoryAccess == MemoryAccess.Edit || it.traits.modifiesProfile ||
+                        it.traits.schedulesTask || it.traits.writesSkill || it.traits.userInteraction
+                    )
+            }
             .filter { !(effectiveReadOnly || child) || it.risk == Risk.Read }
         val workspaceScope = if (child) {
             spec.normalizedWorkspaceScope() ?: if (!effectiveReadOnly) "subagents/${spec.id.value}" else null
@@ -152,13 +162,13 @@ internal class RunAssembler(private val providers: List<CapabilityProvider>) {
         val capabilityTools = capabilities.flatMap { it.tools() }
             .filter { tool ->
                 if (!child) {
-                    !effectiveReadOnly || tool.risk == Risk.Read || (tool.capability == "web" && tool.verb == Verb.Navigate)
+                    !effectiveReadOnly || tool.risk == Risk.Read || (tool.capability == "web" && tool.traits.navigable)
                 } else if (effectiveReadOnly) {
-                    tool.risk == Risk.Read || (tool.capability == "web" && tool.verb == Verb.Navigate)
+                    tool.risk == Risk.Read || (tool.capability == "web" && tool.traits.navigable)
                 } else {
                     when {
                         tool.capability == "sandbox" -> true
-                        tool.capability == "web" -> tool.risk == Risk.Read || tool.verb == Verb.Navigate
+                        tool.capability == "web" -> tool.risk == Risk.Read || tool.traits.navigable
                         tool.capability == "mcp" || tool.capability?.startsWith("mcp:") == true -> tool.risk != Risk.External
                         else -> tool.risk == Risk.Read
                     }

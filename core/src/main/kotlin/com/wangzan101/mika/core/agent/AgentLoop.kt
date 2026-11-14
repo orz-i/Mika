@@ -4,8 +4,10 @@ import com.wangzan101.mika.core.trace.RunTrace
 import com.wangzan101.mika.core.guard.OperationGuards
 import com.wangzan101.mika.core.guard.GuardVerdict
 import com.wangzan101.mika.core.policy.GuardMode
+import com.wangzan101.mika.core.policy.PacingPolicy
 import com.wangzan101.mika.core.policy.PermissionPolicy
 import com.wangzan101.mika.core.policy.RunProfile
+import com.wangzan101.mika.core.policy.asPacingPolicy
 import com.wangzan101.mika.core.observation.Place
 import com.wangzan101.mika.core.observation.PlaceKind
 import com.wangzan101.mika.core.observation.tag
@@ -47,6 +49,8 @@ import com.wangzan101.mika.core.model.ToolSpec
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
+import com.wangzan101.mika.core.run.Attendance
+import com.wangzan101.mika.core.run.ConfirmEscalator
 import com.wangzan101.mika.core.run.RunEventBus
 import com.wangzan101.mika.core.run.RunInbox
 import com.wangzan101.mika.core.run.RunSpec
@@ -58,10 +62,12 @@ import com.wangzan101.mika.core.run.Delivery
 import com.wangzan101.mika.core.usage.RunUsageTally
 import com.wangzan101.mika.core.tool.HandBack
 import com.wangzan101.mika.core.tool.HandBackOutcome
+import com.wangzan101.mika.core.tool.InteractionKind
+import com.wangzan101.mika.core.tool.MemoryAccess
 import com.wangzan101.mika.core.tool.Outcome
 import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.ToolExecution
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.replay.RouteMatcher
 import com.wangzan101.mika.core.verify.Verifier
 import kotlin.coroutines.EmptyCoroutineContext
@@ -72,6 +78,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -106,11 +113,6 @@ private fun cleanReplyParts(parts: List<Part>, text: String): List<Part> {
     }
 }
 
-private val MEMORY_VERBS = setOf(Verb.MemorySearch, Verb.MemorySave, Verb.MemoryEdit)
-/** 讨论历史时仍可查本地记忆与技能资料、之前几轮的记录；这些调用不会打开 App 或网站。 */
-private val DISCUSSION_LOOKUP_VERBS = setOf(Verb.MemorySearch, Verb.KnowledgeSearch, Verb.KnowledgeRead, Verb.SkillSearch, Verb.SkillRead, Verb.HistoryRead)
-/** 在同一波次/回合早先改变了可见界面后,重新读取新界面状态(不依赖旧界面元素/快照)的动词集合。 */
-private val FRESH_READ_VERBS = setOf(Verb.Observe, Verb.Screenshot, Verb.Capture, Verb.ReadPage, Verb.Wait, Verb.WaitFor)
 private val OLD_SCREEN_ARG_KEYS = setOf("id", "element", "ref", "snapshotId", "nodeId", "target", "x", "y")
 private const val DEFAULT_UI_SURFACE = "_default_ui"
 
@@ -120,7 +122,9 @@ private const val DEFAULT_UI_SURFACE = "_default_ui"
  * 结局:不带工具调用的回复就是给用户的最终回答(核对见 [AnswerReview],来源由代码从证据账本里找);
  * 随调用写的文字是进度说明([TaskState.Running.narration])。做不成、要问用户、要用户亲手做,各走 end_not_done、
  * ask_user、hand_to_user。只有空回复(或被输出上限截断的回复)会被提醒,而且只提醒一次。
- * 每轮只执行第一个工具调用,写操作前过 [gate](能力的前置条件不满足时挂起,如手机锁屏),守卫结论放进工具结果的 guard 字段。
+ * 一轮返回多个工具调用时按并发安全连续波次调度:连续 `ParallelSafe` 工具并发执行并按原 `call.id` 顺序汇总,
+ * `Serial` 工具按波次顺序执行;若 `Serial` 工具改变可见界面,仅对其后依赖旧界面的同界面调用返回界面已变化提示。
+ * 写操作前过 [gate](能力的前置条件不满足时挂起,如手机锁屏),守卫结论放进工具结果的 guard 字段。
  * gate 挂起前用 setWaiting 报告原因(能力给的 [TaskState.Held]),放行时传 null;
  * 等待期间对外显示该状态,结束后恢复 Running。
  * 运行过程以 [RunEvent] 交给 [sink](已脱敏、大字段截短),存下的画面经 [RunSink.media] 交出。
@@ -186,6 +190,8 @@ class AgentLoop(
     val runProfile: RunProfile = RunProfile.GENERAL,
     /** 守卫反应模式(默认取 [runProfile] 中的 [ExecutionPolicy.guardMode])。 */
     private val guardMode: GuardMode = runProfile.executionPolicy.guardMode,
+    /** 子任务向交互式父会话冒泡确认的可选回调（未传时自动从协程上下文继承 [ConfirmEscalator]）。 */
+    private val confirmEscalator: (suspend (ConfirmationRequest) -> ConfirmChoice)? = null,
 ) {
     init {
         require(maxSteps > 0) { "maxSteps must be positive" }
@@ -232,7 +238,13 @@ class AgentLoop(
     /** 用户本次说的话(memory_save、skill_save 的引文校验用);给了就收集,只在内存里、每个任务开始清空。 */
     private val utterances get() = tools.utterances
 
-    private val user = UserExchange(tools, confirmations, confirmTimeoutMs, inputTimeoutMs, { utterances }, { _state.value = it }, ::emit, ::now)
+    private val user = UserExchange(
+        tools, confirmations, confirmTimeoutMs, inputTimeoutMs,
+        { utterances }, { _state.value = it }, ::emit, ::now,
+        permissionPolicy = { activeProfile.executionPolicy.permissions },
+        defaultConfirmEscalator = confirmEscalator,
+        currentState = { _state.value },
+    )
     private val replay = routes?.let { RouteReplay(it, tools, ::awaitGate, { r -> gateState = r; _state.value = r }, ::emit, clock) }
 
     @Volatile private var job: Job? = null
@@ -257,7 +269,8 @@ class AgentLoop(
     /** 新入口:同一对话里的插话和控制经 [inbox] 进入;旧入口继续使用相同的执行路径。 */
     suspend fun run(spec: RunSpec, inbox: RunInbox): TaskState {
         val profile = if (runProfile != RunProfile.GENERAL) runProfile else spec.profile
-        suspend fun start() = runInternal(spec.goal, spec.priorTurns, inbox, spec.provenance, spec.threadId, spec.tokenBudget, profile)
+        val readOnly = spec.readOnly || spec.parentReadOnly
+        suspend fun start() = runInternal(spec.goal, spec.priorTurns, inbox, spec.provenance, spec.threadId, spec.tokenBudget, profile, readOnly)
         // App 在整个运行外层装好共享 tally,子任务也沿用;直接走核心入口时由这里保证 RunSpec 的预算生效。
         if (spec.tokenBudget == null || currentCoroutineContext()[RunUsageTally] != null) return start()
         return withContext(RunUsageTally(spec.tokenBudget)) { start() }
@@ -268,12 +281,17 @@ class AgentLoop(
 
     private suspend fun runInternal(
         task: String, priorTurns: List<Turn>, inbox: RunInbox?, runProvenance: RunProvenance, threadId: String,
-        tokenBudget: Long? = null, profile: RunProfile = runProfile,
+        tokenBudget: Long? = null, profile: RunProfile = runProfile, readOnly: Boolean = false,
     ): TaskState {
         cancelRequested = false
         provenance = runProvenance
         activeProfile = profile
-        user.begin(threadId, runProvenance, interaction)
+        val childEscalator = if (runProvenance.origin == RunOrigin.Child && !readOnly && runProvenance.canEscalateApproval) {
+            confirmEscalator ?: currentCoroutineContext()[ConfirmEscalator]?.escalate
+        } else {
+            null
+        }
+        user.begin(threadId, runProvenance, interaction, childEscalator)
         inbox?.bind(object : RunInbox.Handler {
             override suspend fun answer(text: String, askId: String?) = user.answerInput(text, askId)
             override suspend fun confirm(choice: ConfirmChoice, askId: String?) = user.answerConfirmation(choice, askId)
@@ -291,7 +309,12 @@ class AgentLoop(
         replay?.reset()
         lastEnd = null
         try {
-            end = runLoop(task, priorTurns, inbox)
+            val escalatorContext = if (runProvenance.origin == RunOrigin.Ui && runProvenance.attendance == Attendance.Present && !readOnly) {
+                ConfirmEscalator { req -> user.escalateConfirm(req) }
+            } else {
+                EmptyCoroutineContext
+            }
+            end = withContext(escalatorContext) { runLoop(task, priorTurns, inbox) }
             lastEnd = end
             return end
         } catch (e: CancellationException) {
@@ -401,11 +424,12 @@ class AgentLoop(
         }
         // 开局预先展开:上一轮用过的组,和这次的话一定用得上的(见 ToolDispatcher.preload)
         tools.preload(task, priorTurns.lastOrNull()?.groups.orEmpty()).forEach { emit(RunEvent.State(now(), "tools_preloaded", it)) }
-        var openGroups = tools.expanded
+        var openGroups = tools.openedGroups
         val batchSpec = BatchRunner.spec(tools.batchable()).takeIf { flags.batchSteps }
         fun keep(s: ToolSpec): Boolean {
-            val verb = tools.verb(s.name)
-            return (confirmations != null || verb != Verb.RequestConfirmation) && (memory != null || verb !in MEMORY_VERBS)
+            val traits = tools.traits(s.name)
+            return (confirmations != null || traits?.interactionKind != InteractionKind.RequestConfirmation) &&
+                (memory != null || traits?.memoryOp != true)
         }
         // 提示词版本按每组都展开的样子算:同一版提示词不因这次展开了哪几组而不同
         val everything = tools.offeredNow(listOfNotNull(batchSpec), all = true).filter(::keep)
@@ -417,8 +441,8 @@ class AgentLoop(
             if (offer == specs) return
             specs = offer
             caller.systemPrompt = SystemPrompt.assemble(basePrompt, tools.promptSections(specs))
-            (tools.expanded - openGroups).forEach { emit(RunEvent.State(now(), "tools_opened", it)) }
-            openGroups = tools.expanded
+            (tools.openedGroups - openGroups).forEach { emit(RunEvent.State(now(), "tools_opened", it)) }
+            openGroups = tools.openedGroups
         }
         refreshOffer()
         val activeGuardMode = if (guardMode != GuardMode.SOFT) guardMode else activeProfile.executionPolicy.guardMode
@@ -429,10 +453,15 @@ class AgentLoop(
         } else {
             approvals
         }
+        val effectivePacing = if (activeProfile.executionPolicy.pacing != PacingPolicy.NONE) {
+            activeProfile.executionPolicy.pacing
+        } else {
+            outwardPacing.asPacingPolicy()
+        }
         val recorder = ActionRecorder(sink, clock, saveScreen = { id, png -> sink.media(id, png) })
         val executor = ActionExecutor(tools, guards, confirmations, gate = ::awaitGate, recorder = recorder, offScreen = tools.offScreenGuard(), approvals = effectiveApprovals,
             provenance = provenance,
-            selfPackage = selfPackage, autonomous = autonomous, pacing = outwardPacing)
+            selfPackage = selfPackage, autonomous = autonomous, pacing = outwardPacing, pacingPolicy = effectivePacing)
         var emptyNudged = false
         // 调过工具才有可核对的材料;交给用户付款和放行过对外动作一样,回答要另请核查
         var acted = false
@@ -545,7 +574,7 @@ class AgentLoop(
             var (reply, used) = routed
             val proposed = reply.parts.filterIsInstance<Part.ToolCall>().firstOrNull()
             if (flags.strictIntentGate && provenance.origin == RunOrigin.Ui && intentGate != null && proposed != null &&
-                tools.verb(proposed.name) !in DISCUSSION_LOOKUP_VERBS) {
+                tools.traits(proposed.name)?.lookupRead != true) {
                 if (!intentAssessed) intent = assessIntent()
                 if (intent == IntentGate.Intent.Discuss) {
                     // 提议的调用尚未写进历史、也没有执行；重问一次，只给直接回答的机会。
@@ -581,7 +610,7 @@ class AgentLoop(
             ))
 
             if (calls.isEmpty()) {
-                track.after(null, ok = false, guard = false, changed = null, recovery = false, app = null)
+                track.after(ToolTraits(), ok = false, guard = false, changed = null, recovery = false, app = null)
                 recordReply(null)
                 // 模型给出最终回答时,先收下在途的用户插话,再决定是否交出回答。
                 if (keepFinished(history, inbox)) continue
@@ -618,7 +647,7 @@ class AgentLoop(
                 val currentFacts = facts()
                 if (!reviewFinalAnswer && currentFacts.unreadChange && !resultReadNudged) {
                     resultReadNudged = true
-                    history += ctx.notice("operation_result", "The result of the last action has not been read yet. Look at the current screen first to confirm the actual state, then answer; if it cannot be read, say so plainly.")
+                    history += ctx.notice("operation_result", unreadChangeNotice(specs))
                     continue
                 }
                 // 默认关闭语言打回以尊重跨语言输入/输出;仅在开启 enforceReplyLanguage 回退开关时退回一次整段改写
@@ -681,6 +710,7 @@ class AgentLoop(
             suspend fun runSingleCall(idx: Int, call: Part.ToolCall): SingleCallResult {
                 trace?.toolStarted(step, call.name, call.id, now())
                 val callVerb = tools.verb(call.name)
+                val callTraits = tools.traits(call.name)
                 val callArgs = parseArgs(call.argsJson)
 
                 // 用户刚同意的那一步要单独做:批里的步不带同意,混进去会被关卡拦下,同意也可能被别的步用掉或作废
@@ -690,17 +720,17 @@ class AgentLoop(
                     }
                     recordReplyOnce(replyArgsJson(secretField = true))
                     recorder.result(step, call.name, callVerb, content, JsonObject(emptyMap()), null, null, 0, "model", call.id)
-                    return SingleCallResult.ApprovedStepFirst(idx, call, Part.ToolResult(call.id, content.toString(), isError = true), callVerb)
+                    return SingleCallResult.ApprovedStepFirst(idx, call, Part.ToolResult(call.id, content.toString(), isError = true))
                 }
                 if (flags.batchSteps && call.name == DO_STEPS_TOOL) {
                     val outcome = batch(call, guards, executor, track, step, note, tool, reason, narration,
                         recordReply = { argsJson -> recordReplyOnce(argsJson) },
                         app = { place = it }, steerWaiting = { inbox?.hasSteers() == true },
                         noteVerdicts = { s, sub, v ->
-                            val typed = StuckAdvice.typedText(tools.verb(s.tool), parseArgs(s.argsJson), sub?.content)
+                            val typed = StuckAdvice.typedText(tools.traits(s.tool), parseArgs(s.argsJson), sub?.content)
                             stuckAdvice(v, typed)
                         })
-                    return SingleCallResult.Batch(idx, call, outcome.result, callVerb, outcome.lookNote, outcome.end)
+                    return SingleCallResult.Batch(idx, call, outcome.result, outcome.lookNote, outcome.end)
                 }
 
                 val offScreen = tools.offScreen(call.name)
@@ -712,7 +742,9 @@ class AgentLoop(
                 val action = executor.run(call, Origin.Model(step), object : FollowUp {
                     override suspend fun resolve(exec: ToolExecution): ToolExecution? {
                         var e = exec
-                        (e.outcome as? Outcome.Confirm)?.let { e = user.confirm(it, step, running) }
+                        (e.outcome as? Outcome.Confirm)?.let {
+                            e = user.confirm(it, step, running, tool = call.name, capability = tools.declared(call.name)?.capability ?: callTraits?.surfaceKind)
+                        }
                         // 要等用户的(追问、接管):等之前先记下这次回复,等待中取消任务,运行记录里也留得住
                         waitsForUser = e.outcome is Outcome.Input || e.outcome is Outcome.Takeover
                         if (waitsForUser) recordReplyOnce(replyArgsJson(secretField = true))
@@ -728,7 +760,7 @@ class AgentLoop(
 
                     override suspend fun present(exec: ToolExecution, verdicts: List<GuardVerdict>): Presented {
                         val e = exec
-                        val a = adviceMutex.withLock { stuckAdvice(verdicts, StuckAdvice.typedText(callVerb, callArgs, e.content)) }
+                        val a = adviceMutex.withLock { stuckAdvice(verdicts, StuckAdvice.typedText(callTraits, callArgs, e.content)) }
                         advice = a
                         val content = if (verdicts.isEmpty() && a == null) e.content
                         else JsonObject(e.content +
@@ -747,9 +779,9 @@ class AgentLoop(
                         recordReplyOnce(replyArgsJson(secretField = true))
                     }
 
-                    // 不在屏上、要问的一步(会改动东西的 root 命令):用和付款同一张确认卡片当场问,申报就是这一步本身
+                    // 不在屏上、要问的一步(会改动东西的命令/MCP/规则审批):用确认卡片当场问,申报就是这一步本身
                     override suspend fun approve(request: ConfirmationRequest): ToolExecution =
-                        user.confirm(Outcome.Confirm(request, request.app), step, running)
+                        user.confirm(Outcome.Confirm(request, request.app), step, running, tool = call.name, capability = tools.declared(call.name)?.capability ?: callTraits?.surfaceKind)
                 })
                 return when (action) {
                     is ActionOutcome.Cancelled -> SingleCallResult.Cancelled(idx, call, toolResult)
@@ -767,7 +799,7 @@ class AgentLoop(
                                 check(action.hit != null || action.code == Refusals.OWN_APP) { "unexpected refusal ${action.code} for ${call.name}" }
                             }
                             val guardHit = !AppAccessDenied.isAppAccessCode(action.code) && action.before.isNotEmpty()
-                            SingleCallResult.Refused(idx, call, fallbackResult, callVerb, guardHit)
+                            SingleCallResult.Refused(idx, call, fallbackResult, guardHit)
                         }
                     }
                     is ActionOutcome.Ran -> {
@@ -777,7 +809,7 @@ class AgentLoop(
                             (action.exec.content["ok"] as? JsonPrimitive)?.booleanOrNull == false,
                             action.exec.observations.map { it.tag },
                         )
-                        SingleCallResult.Ran(idx, call, callArgs, callVerb, offScreen, result, action, advice)
+                        SingleCallResult.Ran(idx, call, callArgs, callTraits, offScreen, result, action, advice)
                     }
                 }
             }
@@ -797,18 +829,18 @@ class AgentLoop(
                 val runnable = mutableListOf<IndexedValue<Part.ToolCall>>()
                 for (item in waveItems) {
                     val call = item.value
-                    val callVerb = tools.verb(call.name)
+                    val callTraits = tools.traits(call.name)
                     val callArgs = parseArgs(call.argsJson)
                     val surface = uiSurfaceFor(call.name, callArgs)
-                    if (surface != null && surface in changedSurfaces && !isFreshScreenRead(callVerb, callArgs)) {
+                    if (surface != null && surface in changedSurfaces && !isFreshScreenRead(callTraits, callArgs)) {
                         val content = buildJsonObject {
                             put("ok", false)
                             put("error", "screen_changed")
                             put("message", "The visible screen changed after an earlier action in this turn; re-observe the current screen before acting on it (界面已变化需重新读取).")
                             put("recoverable", true)
                         }
-                        recorder.result(step, call.name, callVerb, content, JsonObject(emptyMap()), null, null, 0, "model", call.id)
-                        screenBlocked += SingleCallResult.ScreenChanged(item.index, call, Part.ToolResult(call.id, content.toString(), isError = true), callVerb)
+                        recorder.result(step, call.name, tools.verb(call.name), content, JsonObject(emptyMap()), null, null, 0, "model", call.id)
+                        screenBlocked += SingleCallResult.ScreenChanged(item.index, call, Part.ToolResult(call.id, content.toString(), isError = true))
                     } else {
                         runnable += item
                     }
@@ -832,13 +864,13 @@ class AgentLoop(
                             break@waveLoop
                         }
                         is SingleCallResult.ApprovedStepFirst -> {
-                            track.after(res.verb, ok = false, guard = false, changed = null, recovery = false, app = null)
+                            track.after(tools.traits(res.call.name) ?: ToolTraits(), ok = false, guard = false, changed = null, recovery = false, app = null)
                         }
                         is SingleCallResult.ScreenChanged -> {
-                            track.after(res.verb, ok = false, guard = false, changed = null, recovery = false, app = null)
+                            track.after(tools.traits(res.call.name) ?: ToolTraits(), ok = false, guard = false, changed = null, recovery = false, app = null)
                         }
                         is SingleCallResult.Refused -> {
-                            track.after(res.verb, ok = false, guard = res.guardHit, changed = null, recovery = false, app = null)
+                            track.after(tools.traits(res.call.name) ?: ToolTraits(), ok = false, guard = res.guardHit, changed = null, recovery = false, app = null)
                         }
                         is SingleCallResult.Batch -> {
                             res.lookNote?.let { followUpMessages += it }
@@ -849,18 +881,18 @@ class AgentLoop(
                         }
                         is SingleCallResult.Ran -> {
                             val exec = res.ran.exec
-                            val callVerb = res.verb
-                            if (newData.after(callVerb, exec)) hitNoNewData = true
-                            if (callVerb == Verb.HandToUser && (res.args["reason"] as? JsonPrimitive)?.contentOrNull == PAYMENT) paymentHandedOver = true
+                            val callTraits = res.traits
+                            if (newData.after(callTraits, exec)) hitNoNewData = true
+                            if (callTraits?.interactionKind == InteractionKind.HandToUser && (res.args["reason"] as? JsonPrimitive)?.contentOrNull == PAYMENT) paymentHandedOver = true
                             val isError = (exec.content["ok"] as? JsonPrimitive)?.booleanOrNull == false
-                            noteResultEvents(callVerb, exec.content)
+                            noteResultEvents(callTraits, exec.content)
                             exec.place?.let { place = it }
-                            track.after(callVerb, !isError, res.ran.verdicts.isNotEmpty() || res.advice != null, exec.changed, false, exec.place?.name)
+                            track.after(callTraits ?: ToolTraits(), !isError, res.ran.verdicts.isNotEmpty() || res.advice != null, exec.changed, false, exec.place?.name)
                             if (!isError && wave is ToolWave.Serial) {
                                 val surface = uiSurfaceFor(res.call.name, res.args)
                                 if (tools.writesScreen(res.call.name) && exec.changed != false) {
                                     changedSurfaces += (surface ?: DEFAULT_UI_SURFACE)
-                                } else if (surface != null && isFreshScreenRead(callVerb, res.args)) {
+                                } else if (surface != null && isFreshScreenRead(callTraits, res.args)) {
                                     changedSurfaces.remove(surface)
                                 }
                             }
@@ -873,10 +905,10 @@ class AgentLoop(
                             }
                             if (exec.images.isNotEmpty()) {
                                 // 读到的图片文件不是屏幕画面,不带 screenshotId
-                                followUpMessages += Message(Role.User, listOf(Part.Text(NoticePolicy.imageNote(callVerb, res.offScreen))) +
+                                followUpMessages += Message(Role.User, listOf(Part.Text(NoticePolicy.imageNote(callTraits, res.offScreen))) +
                                     exec.images.mapIndexed { i, img -> tools.modelImage(img, if (res.offScreen) null else exec.imageIds.getOrNull(i)) }, Author.Mika)
                             }
-                            pendingLookups += NoticePolicy.knowledgeAfter(callVerb, exec.place, !isError)
+                            pendingLookups += NoticePolicy.knowledgeAfter(callTraits, exec.place, !isError)
                             val stopNow = guards.stop ?: executor.offScreenStop
                             val end = StopRules.afterAction(exec.outcome, stopNow)
                             if (end != null) {
@@ -931,12 +963,12 @@ class AgentLoop(
     }
 
     /** 运行记录里按结果另记的事:报告的障碍(供评测按 barrier 类归因;参数不对被拒的不算)、看过的个人技能、存下的记忆。 */
-    private fun noteResultEvents(verb: Verb?, content: JsonObject) {
-        if (verb == Verb.HandleObstacle && content["ok"] == JsonPrimitive(true)) {
+    private fun noteResultEvents(traits: ToolTraits?, content: JsonObject) {
+        if (traits?.interactionKind == InteractionKind.HandleObstacle && content["ok"] == JsonPrimitive(true)) {
             (content["kind"] as? JsonPrimitive)?.contentOrNull?.let { emit(RunEvent.Barrier(now(), it)) }
         }
-        GuideRecommender.viewedPersonal(verb, content)?.let { emit(RunEvent.SkillUsed(now(), it, "viewed")) }
-        if (verb == Verb.MemorySave && content["ok"] == JsonPrimitive(true)) emit(RunEvent.MemorySaved(now(),
+        GuideRecommender.viewedPersonal(traits, content)?.let { emit(RunEvent.SkillUsed(now(), it, "viewed")) }
+        if (traits?.memoryAccess == MemoryAccess.Save && content["ok"] == JsonPrimitive(true)) emit(RunEvent.MemorySaved(now(),
             content["id"]?.jsonPrimitive?.content ?: "", content["kind"]?.jsonPrimitive?.content ?: "", content["status"]?.jsonPrimitive?.content ?: ""))
     }
 
@@ -1071,11 +1103,11 @@ class AgentLoop(
 
         class Cancelled(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult?) : SingleCallResult
         class GuardStop(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val state: TaskState) : SingleCallResult
-        class ApprovedStepFirst(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val verb: Verb?) : SingleCallResult
-        class ScreenChanged(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val verb: Verb?) : SingleCallResult
-        class Refused(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val verb: Verb?, val guardHit: Boolean) : SingleCallResult
-        class Batch(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val verb: Verb?, val lookNote: Message?, val end: TaskState?) : SingleCallResult
-        class Ran(override val index: Int, override val call: Part.ToolCall, val args: JsonObject, val verb: Verb?, val offScreen: Boolean, override val toolResult: Part.ToolResult, val ran: ActionOutcome.Ran, val advice: String?) : SingleCallResult
+        class ApprovedStepFirst(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult) : SingleCallResult
+        class ScreenChanged(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult) : SingleCallResult
+        class Refused(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val guardHit: Boolean) : SingleCallResult
+        class Batch(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val lookNote: Message?, val end: TaskState?) : SingleCallResult
+        class Ran(override val index: Int, override val call: Part.ToolCall, val args: JsonObject, val traits: ToolTraits?, val offScreen: Boolean, override val toolResult: Part.ToolResult, val ran: ActionOutcome.Ran, val advice: String?) : SingleCallResult
     }
 
     private class BatchOutcome(val result: Part.ToolResult, val lookNote: Message?, val end: TaskState?)
@@ -1113,8 +1145,24 @@ class AgentLoop(
         return null
     }
 
-    private fun isFreshScreenRead(verb: Verb?, args: JsonObject): Boolean =
-        verb in FRESH_READ_VERBS && OLD_SCREEN_ARG_KEYS.none { it in args }
+    private fun isFreshScreenRead(traits: ToolTraits?, args: JsonObject): Boolean =
+        traits?.freshRead == true && OLD_SCREEN_ARG_KEYS.none { it in args }
+
+    private fun unreadChangeNotice(specs: List<ToolSpec>): String {
+        val offeredTraits = specs.mapNotNull { tools.traits(it.name) }
+        val hasPhoneSurface = offeredTraits.any { it.surfaceKind == "phone" }
+        val hasWebSurface = offeredTraits.any { it.surfaceKind == "web" }
+        return when {
+            hasPhoneSurface ->
+                "The result of the last action has not been read yet. Look at the current screen first to confirm the actual state, then answer; if it cannot be read, say so plainly."
+            hasWebSurface ->
+                "The result of the last action has not been read yet. Read the current page or state first to confirm the actual result, then answer; if it cannot be read, say so plainly."
+            activeProfile.isDeviceOperator ->
+                "The result of the last action has not been read yet. Look at the current screen first to confirm the actual state, then answer; if it cannot be read, say so plainly."
+            else ->
+                "The result of the last action has not been read yet. Check the resulting file, workspace, or tool output state first to confirm the actual result, then answer; if it cannot be verified, say so plainly."
+        }
+    }
 
     private suspend fun batch(
         first: Part.ToolCall, guards: OperationGuards,
@@ -1158,7 +1206,7 @@ class AgentLoop(
         // 要确认不算失败(和单步被拦一样不进失败熔断),但同样交给主模型
         // 为新插话停下的批同样不算失败
         val confirm = exec.content["error"] == JsonPrimitive("confirmation_required") || exec.content["reason"] == JsonPrimitive(BatchRunner.NEW_MESSAGE)
-        track.after(tools.verb(first.name), !isError || confirm, runner?.verdicts?.isNotEmpty() == true || exec.content["advice"] != null, exec.changed, false, currentPlace?.name)
+        track.after(tools.traits(first.name) ?: ToolTraits(), !isError || confirm, runner?.verdicts?.isNotEmpty() == true || exec.content["advice"] != null, exec.changed, false, currentPlace?.name)
         // 批停下(核对没过、要确认):下一步交给主模型
         if (isError) track.markRecovery()
         if (picture != null && shotId != null) {
@@ -1227,7 +1275,7 @@ class AgentLoop(
             _state.value = TaskState.Running(step, "")
             val asked = now()
             val reply = try {
-                caller.ask(history, TurnPolicy.finalTools(specs, tools::verb), step, onText = previewFor(step))
+                caller.ask(history, TurnPolicy.finalTools(specs, tools::traits), step, onText = previewFor(step))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ModelError.TaskBudgetExceeded) {
@@ -1240,7 +1288,7 @@ class AgentLoop(
             val text = CompletionPlanBlock.extract(reply.parts.filterIsInstance<Part.Text>().joinToString("") { it.text }.trim()).text
             history += Message(Role.Assistant, cleanReplyParts(reply.parts, text), Author.Mika)
             val calls = reply.parts.filterIsInstance<Part.ToolCall>()
-            val call = calls.firstOrNull { tools.verb(it.name) in TurnPolicy.FINAL_VERBS }
+            val call = calls.firstOrNull { TurnPolicy.isFinalTool(tools.traits(it.name)) }
             val retryWaitMs = caller.lastRetryWaitMs
             val repliedAtMs = now()
             val latencyMs = repliedAtMs - asked - retryWaitMs

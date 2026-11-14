@@ -4,7 +4,7 @@ import com.wangzan101.mika.core.observation.ObsKind
 import com.wangzan101.mika.core.observation.Observation
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.tool.ToolExecution
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -165,8 +165,8 @@ internal class NewDataTracker {
         private set
 
     /** 返回 true 表示已到连续无新数据上限。失败、没有文字的调用不打断也不增加计数。 */
-    fun after(verb: Verb?, exec: ToolExecution): Boolean {
-        if (verb !in COLLECTION_VERBS || exec.content["ok"] != JsonPrimitive(true)) return false
+    fun after(traits: ToolTraits?, exec: ToolExecution): Boolean {
+        if (traits?.collectionOp != true || exec.content["ok"] != JsonPrimitive(true)) return false
         val reads = exec.observations.filter { it.kind != ObsKind.Fact && it.text.isNotBlank() }
         if (reads.isEmpty()) return false
         val fresh = reads.map { seen.add(fingerprint(it)) }.any { it }
@@ -187,9 +187,5 @@ internal class NewDataTracker {
 
     companion object {
         const val LIMIT = 3
-        private val COLLECTION_VERBS = setOf(
-            Verb.Observe, Verb.ListElements, Verb.Query, Verb.Collect, Verb.PhoneExtract,
-            Verb.ReadPage, Verb.EvaluateJs, Verb.SiteCommand, Verb.Scroll, Verb.Swipe,
-        )
     }
 }

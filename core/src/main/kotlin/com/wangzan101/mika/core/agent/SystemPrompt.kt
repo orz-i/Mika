@@ -2,6 +2,7 @@ package com.wangzan101.mika.core.agent
 
 import com.wangzan101.mika.core.capability.PromptEnv
 import com.wangzan101.mika.core.capability.PromptSections
+import com.wangzan101.mika.core.policy.RunProfile
 import com.wangzan101.mika.core.prompt.Prompts
 
 /**
@@ -12,6 +13,14 @@ import com.wangzan101.mika.core.prompt.Prompts
  */
 object SystemPrompt {
     fun identity(): String = listOf(Prompts.system("identity"), Prompts.system("principles"), read(GENERAL)).joinToString("\n\n")
+
+    /**
+     * 按运行画像 [profile] 装配基础系统提示词;保留无参 [identity] 兼容所有既有调用方。
+     */
+    fun identity(profile: RunProfile): String = when (profile) {
+        is RunProfile.General -> identity()
+        is RunProfile.DeviceOperator -> identity() + "\n\nSession mode: device/browser operator profile (${profile.name})."
+    }
 
     fun assemble(identity: String, sections: List<String>): String = (listOf(identity) + sections).joinToString("\n\n")
 

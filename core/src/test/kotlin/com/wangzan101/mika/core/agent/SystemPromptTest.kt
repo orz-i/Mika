@@ -173,6 +173,18 @@ class SystemPromptTest {
         assertTrue(SandboxCapability.NETWORK_OFF in off && SandboxCapability.NETWORK_ON !in off)
         assertTrue(SandboxCapability.NETWORK_ON in on && SandboxCapability.NETWORK_OFF !in on)
     }
+
+    @Test fun identityIsGeneralAndSupportsRunProfile() {
+        val general = SystemPrompt.identity(com.wangzan101.mika.core.policy.RunProfile.General())
+        assertEquals(SystemPrompt.identity(), general)
+        assertFalse("personal assistant on their phone" in general)
+        assertTrue("workspace" in general && "connected services" in general)
+        val device = SystemPrompt.identity(com.wangzan101.mika.core.policy.RunProfile.DeviceOperator())
+        assertTrue(device.startsWith(general))
+        assertTrue("device/browser operator" in device)
+        val groups = SystemPrompt.read("groups")
+        assertTrue("tool_search" in groups && "tool_activate" in groups)
+    }
 }
 
 /**

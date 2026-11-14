@@ -9,9 +9,14 @@ import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.model.Role
 import com.wangzan101.mika.core.model.StopReason
 import com.wangzan101.mika.core.model.ToolSpec
+import com.wangzan101.mika.core.cap.web.FakeWebPort
+import com.wangzan101.mika.core.policy.RunProfile
 import com.wangzan101.mika.core.prompt.Feedback
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
+import com.wangzan101.mika.core.run.RunId
+import com.wangzan101.mika.core.run.RunInbox
+import com.wangzan101.mika.core.run.RunSpec
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.testing.answerReply
 import com.wangzan101.mika.core.tool.FakeScreen
@@ -282,5 +287,36 @@ class AgentLoopVerifyTest {
         val main = FakeModel(observe(), answerReply(forged), answerReply(forged))
         val r = loop(main, FakeModel(text(PASS), text(PASS))).run("找搜索")
         assertTrue("$r", r is TaskState.Succeeded && !r.verified)
+    }
+
+    @Test fun unreadChangeNoticeAdaptsToDeviceVsWebCapabilities() = runTest {
+        val screen = FakeScreen().apply { result = ActionResult.Ok(changed = true) }
+        val phoneModel = FakeModel(observe(), tools(call("phone_tap", """{"x":1,"y":1}""")), answerReply("点好了"), answerReply("点好了"))
+        AgentLoop(
+            phoneModel,
+            toolDispatcher(screen),
+            "BASE",
+            reviewFinalAnswer = false,
+            runProfile = RunProfile.DEVICE_OPERATOR,
+        ).run("点一下")
+        val phoneNotice = phoneModel.lastNotice(3)
+        assertTrue(phoneNotice, "Look at the current screen" in phoneNotice)
+
+        val webSpec = RunSpec(RunId("web-only"), "点网页", "t", capabilities = setOf("web"))
+        val webModel = FakeModel(
+            tools(call("web_navigate", """{"url":"https://example.com"}""")),
+            tools(call("web_interact", """{"action":"key","key":"Enter"}""")),
+            answerReply("点好了"),
+            answerReply("点好了"),
+        )
+        AgentLoop(
+            webModel,
+            toolDispatcher(FakeScreen(), web = FakeWebPort(), runSpec = webSpec),
+            "BASE",
+            reviewFinalAnswer = false,
+        ).run(webSpec, RunInbox())
+        val webNotice = webModel.lastNotice(3)
+        assertTrue(webNotice, "Read the current page or state" in webNotice)
+        assertFalse(webNotice, "Look at the current screen" in webNotice)
     }
 }

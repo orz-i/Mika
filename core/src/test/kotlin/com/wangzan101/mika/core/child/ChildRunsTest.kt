@@ -12,10 +12,25 @@ import com.wangzan101.mika.core.run.RunId
 import com.wangzan101.mika.core.run.RunOrigin
 import com.wangzan101.mika.core.run.RunProvenance
 import com.wangzan101.mika.core.run.RunSpec
+import com.wangzan101.mika.core.action.ConfirmChoice
+import com.wangzan101.mika.core.cap.sandbox.FakeSandbox
+import com.wangzan101.mika.core.gate.ConfirmationGate
+import com.wangzan101.mika.core.policy.NameMatcher
+import com.wangzan101.mika.core.policy.PermissionRule
+import com.wangzan101.mika.core.policy.RuleBasedPermissionPolicy
+import com.wangzan101.mika.core.policy.RunProfile
+import com.wangzan101.mika.core.run.Delivery
+import com.wangzan101.mika.core.run.DeliveryState
+import com.wangzan101.mika.core.run.Interaction
+import com.wangzan101.mika.core.run.RunInbox
+import com.wangzan101.mika.core.run.RunInput
 import com.wangzan101.mika.core.testing.answerReply
 import com.wangzan101.mika.core.tool.ActionPass
 import com.wangzan101.mika.core.tool.FakeScreen
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -166,5 +181,186 @@ class ChildRunsTest {
             childHost = ChildRunHost { _, _ -> error("must not spawn") })
         val r = tools.execute(Part.ToolCall("s", "spawn_agent", """{"goal":"g","maxSteps":2.5}"""), ActionPass())
         assertEquals("invalid_arguments", r.content["error"].toString().trim('"'))
+    }
+
+    @Test fun interactiveParentBubblesChildConfirmationAndProceedsOnApproval() = runBlocking {
+        val sb = FakeSandbox()
+        val policy = RuleBasedPermissionPolicy(staticRules = listOf(PermissionRule.ask("ask_run", tool = NameMatcher.Exact("run_command"))))
+        val parentProfile = RunProfile.GENERAL.withPermissions(policy)
+        val parentInbox = RunInbox()
+        val asked = CompletableDeferred<Delivery.Ask>()
+        val interaction = object : Interaction {
+            override suspend fun publish(ask: Delivery.Ask): DeliveryState {
+                asked.complete(ask)
+                return DeliveryState.Delivered
+            }
+            override fun resolved(askId: String) = Unit
+        }
+        val childModel = FakeModel(
+            com.wangzan101.mika.core.model.ModelReply(
+                listOf(Part.ToolCall("r1", "run_command", """{"command":"echo ok","cwd":"workers/a"}""")),
+                com.wangzan101.mika.core.model.StopReason.ToolUse, null,
+            ),
+            answerReply("命令已执行"),
+        )
+        val parentModel = FakeModel(
+            com.wangzan101.mika.core.model.ModelReply(
+                listOf(Part.ToolCall("s1", "spawn_agent", """{"goal":"执行命令","role":"coder","capabilities":["sandbox"],"workspaceScope":"workers/a"}""")),
+                com.wangzan101.mika.core.model.StopReason.ToolUse, null,
+            ),
+            answerReply("子任务已完成执行"),
+        )
+        val store = MemoryChildRunStore()
+        val runner = ChildAgentRunner({ childSpec ->
+            AgentLoop(
+                childModel,
+                toolDispatcher(FakeScreen(), sandbox = sb, runSpec = childSpec),
+                "BASE",
+                confirmations = ConfirmationGate(),
+                runProfile = childSpec.profile,
+            )
+        }, store)
+        val parentSpec = RunSpec(
+            RunId("parent"), "执行命令", "thread",
+            provenance = RunProvenance(RunOrigin.Ui, Attendance.Present),
+            profile = parentProfile,
+        )
+        val parentTools = toolDispatcher(FakeScreen(), sandbox = sb, runSpec = parentSpec, childHost = runner)
+        val parentLoop = AgentLoop(
+            parentModel, parentTools, "BASE",
+            confirmations = ConfirmationGate(),
+            interaction = interaction,
+            runProfile = parentProfile,
+        )
+        val running = async { parentLoop.run(parentSpec, parentInbox) }
+        val card = withTimeout(10_000) { asked.await() }
+        assertEquals(Delivery.Ask.Kind.Confirm, card.kind)
+        assertTrue(card.text.contains("run_command"))
+        parentInbox.send(RunInput.Confirm(ConfirmChoice.Once, card.askId))
+        val end = withTimeout(10_000) { running.await() }
+        assertTrue(end.toString(), end is com.wangzan101.mika.core.agent.TaskState.Succeeded)
+        val childToolResults = childModel.requests.last().filter { it.role == com.wangzan101.mika.core.model.Role.Tool }
+            .flatMap { it.parts.filterIsInstance<Part.ToolResult>() }
+        assertTrue(childToolResults.toString(), childToolResults.any { "\"ok\":true" in it.content })
+        assertEquals("命令已执行", store.all().single().result)
+        assertEquals(1, sb.runs.size)
+        assertEquals("workers/a", sb.runs.single().cwd)
+    }
+
+    @Test fun interactiveParentCanDenyChildConfirmation() = runBlocking {
+        val sb = FakeSandbox()
+        val policy = RuleBasedPermissionPolicy(staticRules = listOf(PermissionRule.ask("ask_run", tool = NameMatcher.Exact("run_command"))))
+        val parentProfile = RunProfile.GENERAL.withPermissions(policy)
+        val parentInbox = RunInbox()
+        val asked = CompletableDeferred<Delivery.Ask>()
+        val interaction = object : Interaction {
+            override suspend fun publish(ask: Delivery.Ask): DeliveryState {
+                asked.complete(ask)
+                return DeliveryState.Delivered
+            }
+            override fun resolved(askId: String) = Unit
+        }
+        val childModel = FakeModel(
+            com.wangzan101.mika.core.model.ModelReply(
+                listOf(Part.ToolCall("r1", "run_command", """{"command":"echo no","cwd":"workers/a"}""")),
+                com.wangzan101.mika.core.model.StopReason.ToolUse, null,
+            ),
+            answerReply("用户拒绝了执行"),
+        )
+        val parentModel = FakeModel(
+            com.wangzan101.mika.core.model.ModelReply(
+                listOf(Part.ToolCall("s1", "spawn_agent", """{"goal":"执行命令","role":"coder","capabilities":["sandbox"],"workspaceScope":"workers/a"}""")),
+                com.wangzan101.mika.core.model.StopReason.ToolUse, null,
+            ),
+            answerReply("已转告拒绝"),
+        )
+        val store = MemoryChildRunStore()
+        val runner = ChildAgentRunner({ childSpec ->
+            AgentLoop(
+                childModel,
+                toolDispatcher(FakeScreen(), sandbox = sb, runSpec = childSpec),
+                "BASE",
+                confirmations = ConfirmationGate(),
+                runProfile = childSpec.profile,
+            )
+        }, store)
+        val parentSpec = RunSpec(
+            RunId("parent-deny"), "执行命令", "thread",
+            provenance = RunProvenance(RunOrigin.Ui, Attendance.Present),
+            profile = parentProfile,
+        )
+        val parentTools = toolDispatcher(FakeScreen(), sandbox = sb, runSpec = parentSpec, childHost = runner)
+        val parentLoop = AgentLoop(
+            parentModel, parentTools, "BASE",
+            confirmations = ConfirmationGate(),
+            interaction = interaction,
+            runProfile = parentProfile,
+        )
+        val running = async { parentLoop.run(parentSpec, parentInbox) }
+        val card = withTimeout(10_000) { asked.await() }
+        parentInbox.send(RunInput.Confirm(ConfirmChoice.Deny, card.askId))
+        val end = withTimeout(10_000) { running.await() }
+        assertTrue(end.toString(), end is com.wangzan101.mika.core.agent.TaskState.Succeeded)
+        val childToolResults = childModel.requests.last().filter { it.role == com.wangzan101.mika.core.model.Role.Tool }
+            .flatMap { it.parts.filterIsInstance<Part.ToolResult>() }
+        assertTrue(childToolResults.toString(), childToolResults.any { "confirmation_declined" in it.content })
+        assertTrue(sb.runs.isEmpty())
+    }
+
+    @Test fun unattendedParentDeniesChildConfirmationWithoutEscalation() = runBlocking {
+        val sb = FakeSandbox()
+        val policy = RuleBasedPermissionPolicy(staticRules = listOf(PermissionRule.ask("ask_run", tool = NameMatcher.Exact("run_command"))))
+        val parentProfile = RunProfile.GENERAL.withPermissions(policy)
+        var published = 0
+        val interaction = object : Interaction {
+            override suspend fun publish(ask: Delivery.Ask): DeliveryState {
+                published++
+                return DeliveryState.Delivered
+            }
+            override fun resolved(askId: String) = Unit
+        }
+        val childModel = FakeModel(
+            com.wangzan101.mika.core.model.ModelReply(
+                listOf(Part.ToolCall("r1", "run_command", """{"command":"echo no","cwd":"workers/a"}""")),
+                com.wangzan101.mika.core.model.StopReason.ToolUse, null,
+            ),
+            answerReply("后台不允许执行"),
+        )
+        val parentModel = FakeModel(
+            com.wangzan101.mika.core.model.ModelReply(
+                listOf(Part.ToolCall("s1", "spawn_agent", """{"goal":"执行命令","role":"coder","capabilities":["sandbox"],"workspaceScope":"workers/a"}""")),
+                com.wangzan101.mika.core.model.StopReason.ToolUse, null,
+            ),
+            answerReply("完成"),
+        )
+        val store = MemoryChildRunStore()
+        val runner = ChildAgentRunner({ childSpec ->
+            AgentLoop(
+                childModel,
+                toolDispatcher(FakeScreen(), sandbox = sb, runSpec = childSpec),
+                "BASE",
+                confirmations = ConfirmationGate(),
+                runProfile = childSpec.profile,
+            )
+        }, store)
+        val parentSpec = RunSpec(
+            RunId("parent-bg"), "执行命令", "thread",
+            provenance = RunProvenance(RunOrigin.Trigger, Attendance.Unattended),
+            profile = parentProfile,
+        )
+        val parentTools = toolDispatcher(FakeScreen(), sandbox = sb, runSpec = parentSpec, childHost = runner)
+        val parentLoop = AgentLoop(
+            parentModel, parentTools, "BASE",
+            confirmations = ConfirmationGate(),
+            interaction = interaction,
+            runProfile = parentProfile,
+        )
+        val end = parentLoop.run(parentSpec, RunInbox())
+        assertTrue(end.toString(), end is com.wangzan101.mika.core.agent.TaskState.Succeeded)
+        assertEquals(0, published)
+        val childToolResults = childModel.requests.last().filter { it.role == com.wangzan101.mika.core.model.Role.Tool }
+            .flatMap { it.parts.filterIsInstance<Part.ToolResult>() }
+        assertTrue(childToolResults.toString(), childToolResults.any { "approval_unavailable" in it.content })
+        assertTrue(sb.runs.isEmpty())
     }
 }

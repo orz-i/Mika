@@ -6,6 +6,10 @@ import com.wangzan101.mika.core.model.Role
 import com.wangzan101.mika.core.model.StopReason
 import com.wangzan101.mika.core.cap.sandbox.CommandResult
 import com.wangzan101.mika.core.cap.sandbox.FakeSandbox
+import com.wangzan101.mika.core.policy.PacingContext
+import com.wangzan101.mika.core.policy.PacingDirective
+import com.wangzan101.mika.core.policy.PacingPolicy
+import com.wangzan101.mika.core.policy.RunProfile
 import com.wangzan101.mika.core.tool.FakeScreen
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -93,5 +97,30 @@ class AgentLoopSandboxTest {
         assertEquals(300_000L, sb.runs[1].timeoutMs)
         // 50 分钟后不再运行
         assertEquals(2, sb.runs.size)
+    }
+
+    @Test fun profilePacingPolicyIsPassedToActionExecutor() = runTest {
+        val seenBefore = mutableListOf<String>()
+        val seenAfter = mutableListOf<Pair<String, Boolean>>()
+        val policy = object : PacingPolicy {
+            override val enabled: Boolean = true
+            override fun beforeAction(context: PacingContext): PacingDirective {
+                seenBefore += context.tool
+                return PacingDirective()
+            }
+            override fun afterAction(context: PacingContext, succeeded: Boolean) {
+                seenAfter += context.tool to succeeded
+            }
+        }
+        val m = FakeModel(cmd("echo hi"), finish())
+        val r = AgentLoop(
+            m,
+            toolDispatcher(FakeScreen(), sandbox = sb),
+            "BASE",
+            runProfile = RunProfile.GENERAL.withPacing(policy),
+        ).run("跑一下")
+        assertTrue(r.toString(), r is TaskState.Succeeded)
+        assertEquals(listOf("run_command"), seenBefore)
+        assertEquals(listOf("run_command" to true), seenAfter)
     }
 }

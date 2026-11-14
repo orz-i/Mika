@@ -5,7 +5,7 @@ import com.wangzan101.mika.core.observation.Observation
 import com.wangzan101.mika.core.observation.Place
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.tool.ToolExecution
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -68,24 +68,28 @@ class TaskProgressTest {
 
     @Test fun onlyRealNewDataResetsTheStreak() {
         val tracker = NewDataTracker()
-        fun seen(text: String, verb: Verb = Verb.Observe) = tracker.after(verb, exec(text))
+        val observeTraits = ToolTraits(collectionOp = true)
+        val scrollTraits = ToolTraits(collectionOp = true)
+        val tapTraits = ToolTraits(collectionOp = false)
+        fun seen(text: String, traits: ToolTraits = observeTraits) = tracker.after(traits, exec(text))
         assertFalse(seen("第 1 条"))
         assertFalse(seen("第 1 条"))
         assertEquals(1, tracker.stale)
-        assertFalse(seen("第 1 条", Verb.Tap)) // 非采集调用既不清零也不递增
+        assertFalse(seen("第 1 条", tapTraits)) // 非采集调用既不清零也不递增
         assertEquals(1, tracker.stale)
-        assertFalse(seen("第 2 条", Verb.Scroll))
+        assertFalse(seen("第 2 条", scrollTraits))
         assertEquals(0, tracker.stale)
-        assertFalse(seen("第 2 条", Verb.Scroll))
-        assertFalse(seen("第 2 条", Verb.Scroll))
-        assertTrue(seen("第 2 条", Verb.Scroll))
+        assertFalse(seen("第 2 条", scrollTraits))
+        assertFalse(seen("第 2 条", scrollTraits))
+        assertTrue(seen("第 2 条", scrollTraits))
         assertEquals(NewDataTracker.LIMIT, tracker.stale)
     }
 
     @Test fun overlappingScreensWithAnyNewContentAreProgress() {
         val tracker = NewDataTracker()
-        assertFalse(tracker.after(Verb.Scroll, exec("旧条目\n新条目 1")))
-        assertFalse(tracker.after(Verb.Scroll, exec("新条目 1\n新条目 2")))
+        val scrollTraits = ToolTraits(collectionOp = true)
+        assertFalse(tracker.after(scrollTraits, exec("旧条目\n新条目 1")))
+        assertFalse(tracker.after(scrollTraits, exec("新条目 1\n新条目 2")))
         assertEquals(0, tracker.stale)
     }
 

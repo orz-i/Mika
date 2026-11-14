@@ -101,11 +101,14 @@ internal object SpawnAgent : AgentTool {
         // 只校验是整数;超出范围的拉回范围内,不当错误(子任务照样能派)
         val steps = (a.int("maxSteps", Int.MIN_VALUE, Int.MAX_VALUE) ?: DEFAULT_STEPS).coerceIn(1, MAX_STEPS)
         val limit = (a.int("maxResultChars", Int.MIN_VALUE, Int.MAX_VALUE) ?: DEFAULT_RESULT_CHARS).coerceIn(MIN_RESULT_CHARS, MAX_RESULT_CHARS)
+        val canEscalateApproval = !effectiveReadOnly &&
+            parent.provenance.origin == RunOrigin.Ui &&
+            parent.provenance.attendance == Attendance.Present
         val child = RunSpec(
             id = childId,
             goal = goal,
             threadId = parent.threadId,
-            provenance = RunProvenance(RunOrigin.Child, Attendance.Unattended),
+            provenance = RunProvenance(RunOrigin.Child, Attendance.Unattended, canEscalateApproval = canEscalateApproval),
             capabilities = attenuatedCaps,
             readOnly = effectiveReadOnly,
             parent = parent.id,

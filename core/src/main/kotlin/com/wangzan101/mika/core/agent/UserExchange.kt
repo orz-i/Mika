@@ -3,9 +3,14 @@ package com.wangzan101.mika.core.agent
 import com.wangzan101.mika.core.action.ConfirmChoice
 import com.wangzan101.mika.core.action.Refusals
 import com.wangzan101.mika.core.gate.ConfirmationGate
+import com.wangzan101.mika.core.gate.ConfirmationRequest
 import com.wangzan101.mika.core.gate.DeclareResult
 import com.wangzan101.mika.core.general.RequestConfirmation
 import com.wangzan101.mika.core.memory.UserUtterances
+import com.wangzan101.mika.core.policy.ApprovalScope
+import com.wangzan101.mika.core.policy.NameMatcher
+import com.wangzan101.mika.core.policy.PermissionPolicy
+import com.wangzan101.mika.core.policy.PermissionRule
 import com.wangzan101.mika.core.prompt.Feedback
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
@@ -22,6 +27,8 @@ import com.wangzan101.mika.core.run.LocalInteraction
 import com.wangzan101.mika.core.run.RunOrigin
 import com.wangzan101.mika.core.run.RunProvenance
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -42,10 +49,15 @@ internal class UserExchange(
     private val setState: (TaskState) -> Unit,
     private val emit: (RunEvent) -> Unit,
     private val now: () -> Long,
+    private val permissionPolicy: () -> PermissionPolicy = { PermissionPolicy.DEFAULT },
+    private val defaultConfirmEscalator: (suspend (ConfirmationRequest) -> ConfirmChoice)? = null,
+    private val currentState: () -> TaskState = { TaskState.Running(0, "") },
 ) {
     private var threadId = "local"
     private var provenance = RunProvenance()
     private var interaction: Interaction = LocalInteraction
+    private var confirmEscalator: (suspend (ConfirmationRequest) -> ConfirmChoice)? = defaultConfirmEscalator
+    private val confirmMutex = Mutex()
     @Volatile var activeAsk: Delivery.Ask? = null
         private set
     @Volatile private var takeoverReply: CompletableDeferred<HandBack>? = null
@@ -54,10 +66,16 @@ internal class UserExchange(
     /** 回答换成给模型的样子(带着用户屏幕时换成说明,见 [UserScreenTurns.asText]);默认原样。 */
     var answerText: suspend (String) -> String = { it }
 
-    fun begin(thread: String, run: RunProvenance, channel: Interaction = LocalInteraction) {
+    fun begin(
+        thread: String,
+        run: RunProvenance,
+        channel: Interaction = LocalInteraction,
+        confirmEscalator: (suspend (ConfirmationRequest) -> ConfirmChoice)? = defaultConfirmEscalator,
+    ) {
         threadId = thread
         provenance = run
         interaction = channel
+        this.confirmEscalator = confirmEscalator
         activeAsk = null
     }
 
@@ -100,6 +118,7 @@ internal class UserExchange(
         takeoverReply = null
         inputReply = null
         confirmationReply = null
+        confirmEscalator = defaultConfirmEscalator
         activeAsk = null
     }
 
@@ -169,66 +188,155 @@ internal class UserExchange(
         })
     }
 
+    /** 供子任务向上冒泡请求交互确认；串行化等待用户确认卡片。非交互式 UI 父任务一律拒绝。 */
+    suspend fun escalateConfirm(request: ConfirmationRequest): ConfirmChoice {
+        if (provenance.attendance == Attendance.Unattended || provenance.origin != RunOrigin.Ui) {
+            return ConfirmChoice.Deny
+        }
+        val (choice, timedOut) = promptConfirmation(request, currentState())
+        emit(
+            RunEvent.Confirmation(
+                now(),
+                request.action.name,
+                detail(request.target),
+                detail(request.content),
+                request.amount?.let(::detail),
+                when {
+                    timedOut -> "timed_out"
+                    choice.approved -> "approved"
+                    else -> "declined"
+                },
+            ),
+        )
+        return choice
+    }
+
     /** 申报和前台对得上就等用户回答(到时限按不同意,可取消);工具结果就是用户的决定。 */
-    suspend fun confirm(o: Outcome.Confirm, step: Int, running: TaskState): ToolExecution {
-        val g = confirmations ?: return ToolExecution(buildJsonObject {
-            put("ok", false); put("error", "unknown_tool"); put("tool", RequestConfirmation.name)
-            put("message", Feedback["confirmation_unavailable"]); put("recoverable", true)
-        })
+    suspend fun confirm(
+        o: Outcome.Confirm,
+        step: Int,
+        running: TaskState,
+        tool: String? = null,
+        capability: String? = null,
+    ): ToolExecution {
+        val g = confirmations
+        if (g == null && tool == null) {
+            return ToolExecution(buildJsonObject {
+                put("ok", false); put("error", "unknown_tool"); put("tool", RequestConfirmation.name)
+                put("message", Feedback["confirmation_unavailable"]); put("recoverable", true)
+            })
+        }
         val r = o.request
         fun event(decision: String?) = RunEvent.Confirmation(now(), r.action.name, detail(r.target), detail(r.content), r.amount?.let(::detail), decision)
         fun error(code: String, message: String, recoverable: Boolean) = ToolExecution(buildJsonObject {
             put("ok", false); put("error", code); put("message", message)
             put("recoverable", recoverable); put("counts_as_failure", false)
         })
-        when (g.declare(r, o.foregroundApp)) {
-            DeclareResult.Mismatch -> {
-                emit(event("mismatch"))
-                return ToolExecution(buildJsonObject {
-                    put("ok", false); put("error", "confirmation_mismatch")
-                    put("message", Feedback.format("confirm_app_mismatch", "app" to r.app, "foreground" to (o.foregroundApp ?: "unknown")))
-                    put("recoverable", true)
-                })
+        if (g != null) {
+            when (g.declare(r, o.foregroundApp)) {
+                DeclareResult.Mismatch -> {
+                    emit(event("mismatch"))
+                    return ToolExecution(buildJsonObject {
+                        put("ok", false); put("error", "confirmation_mismatch")
+                        put("message", Feedback.format("confirm_app_mismatch", "app" to r.app, "foreground" to (o.foregroundApp ?: "unknown")))
+                        put("recoverable", true)
+                    })
+                }
+                DeclareResult.Declined -> {
+                    emit(event("declined_before"))
+                    return error("confirmation_declined", CONFIRMATION_DECLINED, recoverable = false)
+                }
+                DeclareResult.Unsupported -> return error("payment_requires_takeover", Refusals.PAYMENT_TAKEOVER, recoverable = true)
+                DeclareResult.Pending -> Unit
             }
-            DeclareResult.Declined -> {
-                emit(event("declined_before"))
+        }
+        val (choice, timedOut) = when {
+            provenance.origin == RunOrigin.Child -> {
+                val esc = confirmEscalator
+                if (esc == null) {
+                    g?.decide(ConfirmChoice.Deny, step)
+                    emit(event("declined_unattended"))
+                    return error("confirmation_declined", CONFIRMATION_DECLINED, recoverable = false)
+                }
+                esc(r) to false
+            }
+            provenance.attendance == Attendance.Unattended -> {
+                g?.decide(ConfirmChoice.Deny, step)
+                emit(event("declined_unattended"))
                 return error("confirmation_declined", CONFIRMATION_DECLINED, recoverable = false)
             }
-            DeclareResult.Unsupported -> return error("payment_requires_takeover", Refusals.PAYMENT_TAKEOVER, recoverable = true)
-            DeclareResult.Pending -> Unit
+            // 付款只在手机上同意:渠道、定时、MCP 发起的任务不问
+            provenance.origin != RunOrigin.Ui -> {
+                g?.decide(ConfirmChoice.Deny, step)
+                emit(event("declined_remote"))
+                return error("confirmation_declined", CONFIRMATION_DECLINED, recoverable = false)
+            }
+            else -> promptConfirmation(r, running)
         }
-        if (provenance.attendance == Attendance.Unattended || provenance.origin == RunOrigin.Child) {
-            g.decide(ConfirmChoice.Deny, step)
-            emit(event("declined_unattended"))
-            return error("confirmation_declined", CONFIRMATION_DECLINED, recoverable = false)
+        when {
+            !choice.approved -> g?.decide(ConfirmChoice.Deny, step)
+            choice == ConfirmChoice.Session || choice == ConfirmChoice.Persistent -> {
+                val scope = choice.scope ?: ApprovalScope.Session
+                val granted = permissionPolicy().grant(buildGrantRule(scope, r, tool, capability))
+                if (granted) g?.clearPending() else g?.decide(ConfirmChoice.Once, step)
+            }
+            else -> g?.decide(ConfirmChoice.Once, step)
         }
-        // 付款只在手机上同意:渠道、定时、MCP 发起的任务不问
-        if (provenance.origin != RunOrigin.Ui) {
-            g.decide(ConfirmChoice.Deny, step)
-            emit(event("declined_remote"))
-            return error("confirmation_declined", CONFIRMATION_DECLINED, recoverable = false)
-        }
-        val pending = CompletableDeferred<ConfirmChoice>().also { confirmationReply = it }
-        val ask = ask(Delivery.Ask.Kind.Confirm, "${r.action.name}: ${r.target} ${r.content}")
-        activeAsk = ask
-        setState(TaskState.WaitingConfirmation(r))
-        emit(event(null))
-        // 没人回答(不在手机旁)就按不同意,绝不自动同意
-        val timeout = if (provenance.attendance == Attendance.Reachable) confirmTimeoutMs ?: 15 * 60_000L else confirmTimeoutMs
-        val answer = try {
-            if (announce(ask) == DeliveryState.Failed) null
-            else if (timeout == null) pending.await() else withTimeoutOrNull(timeout) { pending.await() }
-        } finally { confirmationReply = null; resolve(ask) }
-        val choice = answer ?: ConfirmChoice.Deny
-        g.decide(choice, step)
-        setState(running)
         emit(event(when {
-            answer == null -> "timed_out"
+            timedOut -> "timed_out"
             choice.approved -> "approved"
             else -> "declined"
         }))
         return if (choice.approved) ToolExecution(buildJsonObject { put("ok", true); put("approved", true); put("message", CONFIRMATION_APPROVED) })
         else error("confirmation_declined", CONFIRMATION_DECLINED, recoverable = false)
+    }
+
+    private suspend fun promptConfirmation(r: ConfirmationRequest, restoreState: TaskState): Pair<ConfirmChoice, Boolean> =
+        confirmMutex.withLock {
+            val pending = CompletableDeferred<ConfirmChoice>().also { confirmationReply = it }
+            val ask = ask(Delivery.Ask.Kind.Confirm, "${r.action.name}: ${r.target} ${r.content}")
+            activeAsk = ask
+            setState(TaskState.WaitingConfirmation(r))
+            emit(RunEvent.Confirmation(now(), r.action.name, detail(r.target), detail(r.content), r.amount?.let(::detail), null))
+            // 没人回答(不在手机旁)就按不同意,绝不自动同意
+            val timeout = if (provenance.attendance == Attendance.Reachable) confirmTimeoutMs ?: 15 * 60_000L else confirmTimeoutMs
+            val answer = try {
+                if (announce(ask) == DeliveryState.Failed) null
+                else if (timeout == null) pending.await() else withTimeoutOrNull(timeout) { pending.await() }
+            } finally {
+                confirmationReply = null
+                resolve(ask)
+                setState(restoreState)
+            }
+            (answer ?: ConfirmChoice.Deny) to (answer == null)
+        }
+
+    private fun buildGrantRule(
+        scope: ApprovalScope,
+        req: ConfirmationRequest,
+        tool: String?,
+        capability: String?,
+    ): PermissionRule {
+        val cleanTool = tool?.takeIf { it.isNotBlank() }
+        val cleanCap = capability?.takeIf { it.isNotBlank() }
+        return if (cleanTool != null || cleanCap != null) {
+            PermissionRule.allow(
+                id = "user.${scope.name.lowercase()}.tool.${cleanTool ?: "*"}.${cleanCap ?: "*"}",
+                tool = cleanTool?.let(NameMatcher::Exact) ?: NameMatcher.Any,
+                capability = cleanCap?.let(NameMatcher::Exact) ?: NameMatcher.Any,
+                paymentOnly = false,
+                scope = scope,
+                reason = "user_confirmed_${scope.name.lowercase()}",
+            )
+        } else {
+            PermissionRule.allow(
+                id = "user.${scope.name.lowercase()}.app.${req.app}",
+                targetApp = NameMatcher.Exact(req.app),
+                paymentOnly = false,
+                scope = scope,
+                reason = "user_confirmed_${scope.name.lowercase()}",
+            )
+        }
     }
 
     private fun detail(s: String) = RunEvent.clip(Redactor.text(s))

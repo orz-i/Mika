@@ -1,13 +1,18 @@
 package com.wangzan101.mika.core.child
 
+import com.wangzan101.mika.core.action.ConfirmChoice
 import com.wangzan101.mika.core.agent.AgentLoop
 import com.wangzan101.mika.core.agent.TaskState
+import com.wangzan101.mika.core.gate.ConfirmationRequest
+import com.wangzan101.mika.core.run.ConfirmEscalator
 import com.wangzan101.mika.core.run.RunId
 import com.wangzan101.mika.core.run.RunInbox
 import com.wangzan101.mika.core.run.RunSpec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -39,6 +44,7 @@ class ChildAgentRunner(
     private val store: ChildRunStore,
     private val ownerAlive: (RunId) -> Boolean = { true },
     private val clock: () -> Long = System::currentTimeMillis,
+    private val confirmEscalator: (suspend (ConfirmationRequest) -> ConfirmChoice)? = null,
 ) : ChildRunHost {
     private val active = HashMap<RunId, MutableSet<AgentLoop>>()
 
@@ -49,7 +55,12 @@ class ChildAgentRunner(
         synchronized(active) { active.getOrPut(parent) { mutableSetOf() } += agent }
         store.save(ChildRecord(spec.id.value, parent.value, ChildPhase.Running, atMs = clock()))
         try {
-            val end = agent.run(spec, RunInbox())
+            val childEscalatorContext = when {
+                spec.readOnly || spec.parentReadOnly -> EmptyCoroutineContext
+                confirmEscalator != null -> ConfirmEscalator(confirmEscalator)
+                else -> currentCoroutineContext()[ConfirmEscalator] ?: EmptyCoroutineContext
+            }
+            val end = withContext(childEscalatorContext) { agent.run(spec, RunInbox()) }
             val raw = when (end) {
                 is TaskState.Succeeded -> end.answer
                 is TaskState.Failed -> end.reason

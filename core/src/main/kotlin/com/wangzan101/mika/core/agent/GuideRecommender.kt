@@ -10,7 +10,7 @@ import com.wangzan101.mika.core.knowledge.GuideInfo
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 
 internal const val SKILL_INDEX_HEADER = "All skills you have, one line each (when one fits this task, read its full text with skill_read before acting on it):"
 internal const val KNOWLEDGE_INDEX_HEADER = "App and website knowledge you can refer to (read the full text with knowledge_read when needed):"
@@ -36,8 +36,8 @@ internal object GuideRecommender {
     }
 
     /** skill_read 成功读了个人技能时给出技能名。 */
-    fun viewedPersonal(verb: Verb?, content: JsonObject): String? {
-        if (verb != Verb.SkillRead || content["ok"] != JsonPrimitive(true)) return null
+    fun viewedPersonal(traits: ToolTraits?, content: JsonObject): String? {
+        if (traits?.readsSkill != true || content["ok"] != JsonPrimitive(true)) return null
         if ((content["kind"] as? JsonPrimitive)?.contentOrNull != PERSONAL_KIND) return null
         return (content["name"] as? JsonPrimitive)?.contentOrNull
     }

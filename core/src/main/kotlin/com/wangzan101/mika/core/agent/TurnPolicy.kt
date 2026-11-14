@@ -2,7 +2,7 @@ package com.wangzan101.mika.core.agent
 
 import com.wangzan101.mika.core.model.ToolSpec
 import com.wangzan101.mika.core.prompt.Feedback
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 
 /** 循环发给模型的一条提醒:来源标签和正文(由 [ContextBuilder.notice] 包成上下文)。 */
 internal data class Notice(val source: String, val text: String)
@@ -25,8 +25,9 @@ internal object TurnPolicy {
     /** 中途自查:步数用到这些比例时提醒一次,找遍了就如实放弃。步数太少的任务不提醒。 */
     private val PROGRESS_CHECKS = listOf(0.5, 0.75)
     private const val PROGRESS_CHECK_MIN_STEPS = 10
-    /** 步数用完后的最后一轮只给放弃这一个工具,回答用文字写。 */
-    val FINAL_VERBS = setOf(Verb.EndNotDone)
+
+    /** 判断某工具是否为步数用完后最后一轮仍保留的终结工具。 */
+    fun isFinalTool(traits: ToolTraits?): Boolean = traits?.terminatesRun == true
 
     /** 这一步发给模型之前先加的提醒;没有为 null。 */
     fun beforeStep(s: TurnSnapshot): Notice? {
@@ -91,5 +92,5 @@ internal object TurnPolicy {
     }
 
     /** 最后一轮给模型的工具:只有放弃;做完了就直接用文字回答。 */
-    fun finalTools(specs: List<ToolSpec>, verbOf: (String) -> Verb?): List<ToolSpec> = specs.filter { verbOf(it.name) in FINAL_VERBS }
+    fun finalTools(specs: List<ToolSpec>, traitsOf: (String) -> ToolTraits?): List<ToolSpec> = specs.filter { isFinalTool(traitsOf(it.name)) }
 }

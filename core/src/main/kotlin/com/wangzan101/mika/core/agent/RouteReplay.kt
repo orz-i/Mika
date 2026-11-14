@@ -15,7 +15,6 @@ import com.wangzan101.mika.core.replay.Replayer
 import com.wangzan101.mika.core.replay.Route
 import com.wangzan101.mika.core.replay.RouteMatcher
 import com.wangzan101.mika.core.tool.ToolDispatcher
-import com.wangzan101.mika.core.tool.Verb
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,7 +44,7 @@ internal class RouteReplay(
     fun reset() { replayed = null }
 
     /** 交还时读屏用最近操作的那块屏的读元素工具(回放的路线落在哪块屏就读哪块)。 */
-    private val dumpTool: String get() = tools.index.nameOf(Verb.ListElements, tools.surface)!!
+    private val dumpTool: String get() = tools.index.nameWhere(tools.surface) { it.elementSnapshot }!!
 
     /**
      * 找路线并回放;回放过就把经过(做了哪几步、在哪对不上)和一份当前全量读屏交给模型,返回读屏里的前台 App。

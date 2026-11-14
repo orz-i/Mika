@@ -7,7 +7,9 @@ import com.wangzan101.mika.core.guard.Severity
 import com.wangzan101.mika.core.model.ModelError
 import com.wangzan101.mika.core.model.ToolSpec
 import com.wangzan101.mika.core.prompt.Feedback
+import com.wangzan101.mika.core.tool.InteractionKind
 import com.wangzan101.mika.core.tool.Outcome
+import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.tool.Verb
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -58,8 +60,12 @@ class LoopPoliciesTest {
 
     @Test fun finalTurnOffersOnlyReportFailure() {
         val specs = listOf("ask_user", "end_not_done", "phone_tap").map { ToolSpec(it, "", "{}") }
-        val verbs = mapOf("ask_user" to Verb.AskUser, "end_not_done" to Verb.EndNotDone, "phone_tap" to Verb.Tap)
-        assertEquals(listOf("end_not_done"), TurnPolicy.finalTools(specs, verbs::get).map { it.name })
+        val traits = mapOf(
+            "ask_user" to ToolTraits(interactionKind = InteractionKind.AskUser, userInteraction = true),
+            "end_not_done" to ToolTraits(interactionKind = InteractionKind.EndNotDone),
+            "phone_tap" to ToolTraits(modifiesScreenState = true),
+        )
+        assertEquals(listOf("end_not_done"), TurnPolicy.finalTools(specs, traits::get).map { it.name })
         assertEquals(Feedback["final_turn"], TurnPolicy.finalTurn().text)
     }
 
@@ -133,31 +139,36 @@ class LoopPoliciesTest {
     @Test fun typedTextOnlyForSucceededNonSecretInput() {
         val args = buildJsonObject { put("text", " 咖啡 ") }
         val ok = buildJsonObject { put("ok", true); put("secret", false) }
-        assertEquals("咖啡", StuckAdvice.typedText(Verb.TypeText, args, ok))
-        assertNull(StuckAdvice.typedText(Verb.TypeText, args, buildJsonObject { put("ok", true) }))
-        assertNull(StuckAdvice.typedText(Verb.TypeText, args, buildJsonObject { put("ok", false); put("secret", false) }))
-        assertNull(StuckAdvice.typedText(Verb.Tap, args, ok))
-        assertNull(StuckAdvice.typedText(Verb.TypeText, args, null))
+        val textTrait = ToolTraits(textInput = true)
+        val tapTrait = ToolTraits(modifiesScreenState = true)
+        assertEquals("咖啡", StuckAdvice.typedText(textTrait, args, ok))
+        assertNull(StuckAdvice.typedText(textTrait, args, buildJsonObject { put("ok", true) }))
+        assertNull(StuckAdvice.typedText(textTrait, args, buildJsonObject { put("ok", false); put("secret", false) }))
+        assertNull(StuckAdvice.typedText(tapTrait, args, ok))
+        assertNull(StuckAdvice.typedText(textTrait, args, null))
     }
 
     // ---- 结果之后的说明 ----
 
     @Test fun imageNotes() {
-        assertEquals(Feedback["recalled_note"], NoticePolicy.imageNote(Verb.ViewPastScreens, false))
-        assertEquals(Feedback["file_image_note"], NoticePolicy.imageNote(Verb.ReadFile, true))
-        assertEquals(Feedback["screenshot_note"], NoticePolicy.imageNote(Verb.Observe, false))
-        assertEquals(Feedback["action_frame_note"], NoticePolicy.imageNote(Verb.Tap, false))
+        assertEquals(Feedback["recalled_note"], NoticePolicy.imageNote(ToolTraits(recallsPastScreens = true, diagnosticRead = true), false))
+        assertEquals(Feedback["file_image_note"], NoticePolicy.imageNote(ToolTraits(), true))
+        assertEquals(Feedback["screenshot_note"], NoticePolicy.imageNote(ToolTraits(diagnosticRead = true), false))
+        assertEquals(Feedback["action_frame_note"], NoticePolicy.imageNote(ToolTraits(modifiesScreenState = true), false))
     }
 
     @Test fun knowledgeLookups() {
-        assertEquals(listOf(KnowledgeLookup.App("com.x")), NoticePolicy.knowledgeAfter(Verb.Observe, Place.app("com.x"), true))
-        assertEquals(listOf(KnowledgeLookup.Site("example.com")), NoticePolicy.knowledgeAfter(Verb.Observe, Place.site("WWW.Example.com"), true))
-        assertEquals(listOf(KnowledgeLookup.Site("shop.example.com")), NoticePolicy.knowledgeAfter(Verb.Navigate, Place.site("shop.example.com"), true))
-        assertEquals(emptyList<KnowledgeLookup>(), NoticePolicy.knowledgeAfter(Verb.Navigate, Place.site("shop.example.com"), false))
+        val observeTraits = ToolTraits(fullScreenSnapshot = true, siteEntry = true, diagnosticRead = true)
+        val navigateTraits = ToolTraits(siteEntry = true, navigable = true, switchesPlace = true)
+        val tapTraits = ToolTraits(modifiesScreenState = true)
+        assertEquals(listOf(KnowledgeLookup.App("com.x")), NoticePolicy.knowledgeAfter(observeTraits, Place.app("com.x"), true))
+        assertEquals(listOf(KnowledgeLookup.Site("example.com")), NoticePolicy.knowledgeAfter(observeTraits, Place.site("WWW.Example.com"), true))
+        assertEquals(listOf(KnowledgeLookup.Site("shop.example.com")), NoticePolicy.knowledgeAfter(navigateTraits, Place.site("shop.example.com"), true))
+        assertEquals(emptyList<KnowledgeLookup>(), NoticePolicy.knowledgeAfter(navigateTraits, Place.site("shop.example.com"), false))
         // 动作把任务带到了别处,只有看过那里才找资料;打开网页不算看了 App
-        assertEquals(emptyList<KnowledgeLookup>(), NoticePolicy.knowledgeAfter(Verb.Tap, Place.app("com.x"), true))
-        assertEquals(emptyList<KnowledgeLookup>(), NoticePolicy.knowledgeAfter(Verb.Navigate, Place.app("com.x"), true))
-        assertEquals(emptyList<KnowledgeLookup>(), NoticePolicy.knowledgeAfter(Verb.Observe, null, true))
+        assertEquals(emptyList<KnowledgeLookup>(), NoticePolicy.knowledgeAfter(tapTraits, Place.app("com.x"), true))
+        assertEquals(emptyList<KnowledgeLookup>(), NoticePolicy.knowledgeAfter(navigateTraits, Place.app("com.x"), true))
+        assertEquals(emptyList<KnowledgeLookup>(), NoticePolicy.knowledgeAfter(observeTraits, null, true))
     }
 
     @Test fun placeFromUrlWhenResultHasNoPlace() {

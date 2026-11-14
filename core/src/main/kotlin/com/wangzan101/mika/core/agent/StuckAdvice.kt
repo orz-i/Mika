@@ -3,7 +3,7 @@ package com.wangzan101.mika.core.agent
 import com.wangzan101.mika.core.guard.GuardVerdict
 import com.wangzan101.mika.core.guard.Severity
 import com.wangzan101.mika.core.prompt.Feedback
-import com.wangzan101.mika.core.tool.Verb
+import com.wangzan101.mika.core.tool.ToolTraits
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -46,8 +46,8 @@ internal object StuckAdvice {
      * 这次成功输入的文字(去掉首尾空白,空的不算);不是输入、没成功,或端口没明确说「不是密码框」时为 null:
      * 提示里会带上原文,而工具结果要进运行记录。
      */
-    fun typedText(verb: Verb?, args: JsonObject, content: JsonObject?): String? {
-        if (verb != Verb.TypeText || content?.get("ok") != JsonPrimitive(true) || content["secret"] != JsonPrimitive(false)) return null
+    fun typedText(traits: ToolTraits?, args: JsonObject, content: JsonObject?): String? {
+        if (traits?.textInput != true || content?.get("ok") != JsonPrimitive(true) || content["secret"] != JsonPrimitive(false)) return null
         return (args["text"] as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
     }
 }

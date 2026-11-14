@@ -24,6 +24,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
 import com.wangzan101.mika.core.guard.GuardVerdict
 import com.wangzan101.mika.core.guard.Severity
+import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.assembly.toolDispatcher
 
@@ -182,11 +183,11 @@ internal object PromptSurfaceFeedback {
             "final_turn" to final.text,
             "completed_closeout" to completed.text,
             "no_new_data_closeout" to noNewData.text,
-            "screenshot_note" to NoticePolicy.imageNote(Verb.Screenshot, offScreen = false),
-            "file_image_note" to NoticePolicy.imageNote(Verb.ReadFile, offScreen = true),
-            "action_frame_note" to NoticePolicy.imageNote(Verb.Tap, offScreen = false),
+            "screenshot_note" to NoticePolicy.imageNote(ToolTraits.fromVerb(Verb.Screenshot), offScreen = false),
+            "file_image_note" to NoticePolicy.imageNote(ToolTraits.fromVerb(Verb.ReadFile), offScreen = true),
+            "action_frame_note" to NoticePolicy.imageNote(ToolTraits.fromVerb(Verb.Tap), offScreen = false),
             "batch_view_note" to fileCall("AgentLoopKt", "batchViewNote", ""),
-            "recalled_note" to NoticePolicy.imageNote(Verb.ViewPastScreens, offScreen = false),
+            "recalled_note" to NoticePolicy.imageNote(ToolTraits.fromVerb(Verb.ViewPastScreens), offScreen = false),
             "nudge_source" to empty.source,
             "unconfirmed_source" to unconfirmed.source,
             "language_source" to language.source,
