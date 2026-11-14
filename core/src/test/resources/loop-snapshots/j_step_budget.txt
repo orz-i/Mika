@@ -1,7 +1,7 @@
 outcome: Failed(reason=查过首页和菜单,没找到, kind=GaveUp)
 
 ## main #1
-system: len=6660 #c486eb6c | You are Mika, the user's personal assistant on their phone. Your job is to get ⏎…
+system: len=6815 #41234cfc | You are Mika, a capable assistant that gets real work done for the user across ⏎…
 tools: #38105f18 [wait, ask_user, request_confirmation, end_not_done, tool_search, tool_activate, phone_list_apps, phone_launch_app, phone_set_alarm, phone_set_timer, phone_add_calendar_event, phone_calendar_bulk_insert, phone_inspect_network]
 user:
   text #d41d243c | 找夜间模式

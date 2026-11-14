@@ -10,6 +10,7 @@ import com.wangzan101.mika.core.cap.web.FakeWebPort
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.wangzan101.mika.core.assembly.toolDispatcher
 
@@ -18,20 +19,26 @@ import com.wangzan101.mika.core.assembly.toolDispatcher
  * 和这次实际展开了哪几组无关(只有手机时,展开了手机一组后看到的就是它)。
  */
 class PromptVersionRecordTest {
-    private suspend fun run(tools: ToolDispatcher): Pair<String, String> {
+    private suspend fun run(tools: ToolDispatcher, expandPhone: Boolean = true): Triple<String, String, Int> {
+        if (expandPhone) tools.expand("phone")
         val events = mutableListOf<RunEvent>()
         val m = fakeModel("main") { call("phone_observe"); answer("好了") }
         AgentLoop(m, tools, SystemPrompt.identity(), sink = object : RunSink {
             override fun event(e: RunEvent) { events += e }
         }).run("t")
         val r = m.requests.last()
-        return events.filterIsInstance<RunEvent.PromptVersion>().single().hash to PromptVersion.of(r.system, r.tools)
+        return Triple(events.filterIsInstance<RunEvent.PromptVersion>().single().hash, PromptVersion.of(r.system, r.tools), r.tools.size)
     }
 
     @Test fun recordsHashOfWhatTheModelSaw() = runTest {
-        val (phone, expected) = run(toolDispatcher(FakeScreen()))
+        val (phone, expected, _) = run(toolDispatcher(FakeScreen()))
         assertEquals(expected, phone)
-        val (web, _) = run(toolDispatcher(FakeScreen(), web = FakeWebPort()))
+        val (web, _, _) = run(toolDispatcher(FakeScreen(), web = FakeWebPort()))
         assertNotEquals(phone, web)
+        // 未整组展开时 phone_observe 仅追加激活核心子主题,末轮工具数明显少于全量定义,但 PromptVersion 仍记录能力全量哈希
+        val subtopicTools = toolDispatcher(FakeScreen())
+        val (hashSub, _, countSub) = run(subtopicTools, expandPhone = false)
+        assertEquals(phone, hashSub)
+        assertTrue(countSub < subtopicTools.definitions().size)
     }
 }

@@ -575,7 +575,7 @@ Reading an address in a background tab is not available here. Open it with web_n
 {{tool}} failed: {{error}}
 
 ## group_opened
-From your next call on you also have the full {{group}} tools ({{examples}} and the rest), with their descriptions and how to use them.
+From your next call on you also have the {{topics}} tools ({{examples}} and the rest), with their descriptions and how to use them. Use tool_search and tool_activate if you need other {{group}} tools.
 
 ## unknown_tool
 Unknown tool '{{name}}'. Use one of: {{tools}}.

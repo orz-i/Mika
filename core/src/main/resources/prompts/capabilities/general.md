@@ -13,5 +13,4 @@ Ending the task
   end_not_done with the confirmed part, what is missing and why; if you need
   something from the user, call ask_user instead of ending with a question. Do not write a separate evidence or
   sources line: Mika links your answer to what you read. Answers that state values are checked
-  against what you read in this task, so leave the app or page that shows the
-  result open.
+  against what you read in this task, so keep the relevant app, page, or output verifiable.

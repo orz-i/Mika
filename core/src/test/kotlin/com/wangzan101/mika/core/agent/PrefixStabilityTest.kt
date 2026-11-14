@@ -238,8 +238,8 @@ class PrefixStabilityTest {
         val r = check(bodies, "compaction", appendOnly = false)
         assertTrue(bodies.any { ContextCompressor.HEADER in it.toString() })
         // 越过触发点的那一次压缩一次(改写一次),之后只追加,再长一个余量越过时才再压:30 步里改写两次
-        // (80K 窗口:提示词瘦身后开局约 15K,触发点 47K,压到 30K 以下)
-        assertEquals(listOf(13, 24), r.changed)
+        // (80K 窗口:提示词瘦身与子主题窄化后开局更轻,触发点 47K,压到 30K 以下)
+        assertEquals(listOf(15, 27), r.changed)
         assertTrue("${r.share}", r.share > 0.85)
     }
 
