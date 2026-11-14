@@ -94,6 +94,37 @@ internal object ToolGroups {
         else -> "general"
     }
 
+    /**
+     * 首次直接调用未展开能力组内的工具(入口工具或模型凭记忆直接调用的折叠工具)时,
+     * 仅按细粒度子主题增量激活最小必要工具集,避免一次性把整组数十个工具(如全部 phone 工具)塞进上下文。
+     */
+    fun autoExpandTopics(toolName: String, group: String?, currentScreen: String?): List<String> = when (group) {
+        null -> emptyList()
+        SCREENS -> listOfNotNull(currentScreen?.let { "$it:observe" }, currentScreen?.let { "$it:ui" }, "$SCREENS:handover")
+        "phone" -> when (val sub = subtopicOf(toolName, group)) {
+            "app" -> listOf("phone:app", "phone:observe", "phone:ui", "$SCREENS:handover")
+            "observe", "ui" -> listOf("phone:observe", "phone:ui", "$SCREENS:handover")
+            null -> emptyList()
+            else -> listOf("phone:$sub")
+        }
+        "web" -> when (val sub = subtopicOf(toolName, group)) {
+            "ui" -> listOf("web:ui", "web:observe", "$SCREENS:handover")
+            null -> emptyList()
+            else -> listOf("web:$sub")
+        }
+        "sandbox" -> listOf("sandbox:exec", "sandbox:files")
+        else -> listOfNotNull(subtopicOf(toolName, group)?.let { "$group:$it" })
+    }
+
+    /** 该次自动激活是否同时打开所属能力组的基础提示词段落(如 phone/web UI、sandbox)。 */
+    fun opensPromptSection(toolName: String, group: String?): Boolean = when (group) {
+        null -> false
+        SCREENS, "sandbox" -> true
+        "phone" -> subtopicOf(toolName, group) in setOf("app", "observe", "ui")
+        "web" -> subtopicOf(toolName, group) in setOf("observe", "ui")
+        else -> true
+    }
+
     /** 子主题别名归一化。 */
     fun normalizeSubtopic(raw: String): String = when (val s = raw.trim().lowercase()) {
         "interact", "interaction", "control", "controls", "action", "actions" -> "ui"

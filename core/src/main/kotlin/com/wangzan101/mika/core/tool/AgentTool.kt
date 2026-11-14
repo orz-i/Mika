@@ -77,6 +77,10 @@ class ToolIndex(tools: Collection<ToolInfo>, private val former: (String) -> Str
     fun nameOf(verb: Verb, capability: String? = null): String? =
         byName.values.firstOrNull { it.verb == verb && (capability == null || it.capability == capability) }?.name
 
+    /** 按正交行为特征查找第一个匹配的工具名（[capability] 不为空时限定该能力）。 */
+    fun nameWhere(capability: String? = null, predicate: (ToolTraits) -> Boolean): String? =
+        byName.values.firstOrNull { (capability == null || it.capability == capability) && predicate(it.traits) }?.name
+
     /** 屏幕能力 [from] 那一套里做同一动作的工具在 [to] 那一套里叫什么;没有为 null。 */
     fun counterpart(name: String, to: String): String? = get(name)?.let { nameOf(it.verb, to) }
 }

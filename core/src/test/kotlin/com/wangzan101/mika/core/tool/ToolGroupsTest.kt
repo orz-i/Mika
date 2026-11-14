@@ -60,13 +60,17 @@ class ToolGroupsTest {
 
     @Test fun entryCallExpandsItsGroup() = runTest {
         val d = all()
+        val initial = d.offeredNow()
         val r = d.execute(call("phone_launch_app", """{"package":"com.x"}""")).content
         assertTrue("phone" in r["moreTools"]!!.jsonPrimitive.content)
-        assertEquals(setOf("phone"), d.expanded)
+        assertTrue("tool_search" in r["moreTools"]!!.jsonPrimitive.content)
+        // 调用入口工具只按需追加激活 app/observe/ui/handover 子主题,不整组展开 57 个手机工具
+        assertEquals(emptySet<String>(), d.expanded)
         val now = d.offeredNow()
-        // 整组和有屏时才有的通用工具都来了,入口换回全文
+        assertEquals(initial, now.take(initial.size))
         assertTrue(names(now).containsAll(listOf("phone_observe", "phone_tap", "hand_to_user", "handle_obstacle", "view_past_screens")))
-        assertEquals(d.definitions().single { it.name == "phone_launch_app" }, now.single { it.name == "phone_launch_app" })
+        assertFalse("phone_query" in names(now))
+        assertFalse("phone_wait_network" in names(now))
         // 网页、沙箱还收着
         assertFalse("web_tap" in names(now))
         assertEquals(Prompts.entry("web_navigate"), now.single { it.name == "web_navigate" }.description)
@@ -90,26 +94,32 @@ class ToolGroupsTest {
 
     @Test fun collapsedToolCalledFromMemoryRunsAndExpands() = runTest {
         val d = all()
-        // 模型没看到 phone_observe(手机一组收着),凭记忆调了:照常执行,手机一组展开
+        // 模型没看到 phone_observe(手机一组收着),凭记忆调了:照常执行,仅激活 observe/ui/handover 子主题
         val r = d.execute(call("phone_observe")).content
         assertEquals("true", r["ok"]!!.jsonPrimitive.content)
         assertTrue(r["moreTools"] != null)
-        assertEquals(setOf("phone"), d.expanded)
-        // 参数不对也展开:下一次看得到全文再改
+        assertEquals(emptySet<String>(), d.expanded)
+        assertEquals(setOf("phone"), d.used)
+        assertTrue("phone_tap" in names(d.offeredNow()))
+        assertFalse("phone_query" in names(d.offeredNow()))
+        // 参数不对也激活对应子主题:下一次看得到全文再改,但自动化子主题仍按需延迟
         val w = d.execute(call("web_tap", """{"bogus":1}""")).content
         assertEquals("false", w["ok"]!!.jsonPrimitive.content)
         assertTrue(w["moreTools"] != null)
-        assertEquals(setOf("phone", "web"), d.expanded)
+        assertEquals(emptySet<String>(), d.expanded)
+        assertEquals(setOf("phone", "web"), d.used)
+        assertTrue("web_observe" in names(d.offeredNow()))
+        assertFalse("web_evaluate_js" in names(d.offeredNow()))
     }
 
     @Test fun orderIsFixedAndExpandingOnlyChangesFromItsGroup() = runTest {
         val d = all()
         val collapsed = d.offeredNow()
-        d.execute(call("web_navigate", """{"url":"https://example.com"}"""))
+        d.expand("web")
         val web = d.offeredNow()
-        d.execute(call("phone_launch_app", """{"package":"com.x"}"""))
+        d.expand("phone")
         val both = d.offeredNow()
-        d.execute(call("run_command", """{"command":"ls"}"""))
+        d.expand("sandbox")
         val everything = d.offeredNow()
         // 一直都在的那几个始终在最前面、逐字不变
         val base = collapsed.takeWhile { it.name !in setOf("phone_list_apps", "phone_launch_app") }
@@ -184,14 +194,36 @@ class ToolGroupsTest {
         assertTrue("read_file" in start && "search_files" in start && "run_command" !in start)
         assertEquals(setOf("sandbox"), child.expanded)
         child.execute(call("web_navigate", """{"url":"https://example.com"}"""))
-        assertEquals(setOf("sandbox", "web"), child.expanded)
+        assertEquals(setOf("sandbox"), child.expanded)
+        assertEquals(setOf("web"), child.used)
         assertTrue("web_observe" in names(child.offeredNow()))
+        assertFalse("web_evaluate_js" in names(child.offeredNow()))
         // 定时触发的任务(没人在场):接管不给,其余同样分层
         val scheduled = toolDispatcher(FakeScreen(), web = FakeWebPort(), runSpec = RunSpec(RunId("s"), "查", "t",
             provenance = RunProvenance(RunOrigin.Trigger, Attendance.Unattended)))
         assertFalse("phone_observe" in names(scheduled.offeredNow()))
         scheduled.execute(call("phone_launch_app", """{"package":"com.x"}"""))
         val now = names(scheduled.offeredNow())
-        assertTrue("phone_observe" in now && "handle_obstacle" in now && "hand_to_user" !in now)
+        assertTrue("phone_observe" in now && "handle_obstacle" in now && "hand_to_user" !in now && "phone_query" !in now)
+    }
+
+    @Test fun subtopicAutoActivationIsStrictlyAppendOnly() = runTest {
+        val d = all()
+        val t0 = d.offeredNow()
+        d.execute(call("web_navigate", """{"url":"https://example.com"}"""))
+        val t1 = d.offeredNow()
+        assertEquals(t0, t1.take(t0.size))
+        assertTrue(t1.size > t0.size)
+        d.execute(call("phone_launch_app", """{"package":"com.x"}"""))
+        val t2 = d.offeredNow()
+        assertEquals(t1, t2.take(t1.size))
+        assertTrue(t2.size > t1.size)
+        d.execute(call("run_command", """{"command":"ls"}"""))
+        val t3 = d.offeredNow()
+        assertEquals(t2, t3.take(t2.size))
+        assertTrue(t3.size > t2.size)
+        // 未触发的细分专业能力(如 network/automation/schedule)仍待按需加载
+        assertFalse("phone_query" in names(t3))
+        assertFalse("web_evaluate_js" in names(t3))
     }
 }

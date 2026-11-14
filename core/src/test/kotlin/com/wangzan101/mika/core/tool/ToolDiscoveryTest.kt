@@ -86,11 +86,18 @@ class ToolDiscoveryTest {
     @Test fun fullGroupExpansionLaterDeduplicatesPreviouslyActivatedTools() = runTest {
         val d = all()
         d.execute(call("tool_activate", """{"tools":["phone_observe","phone_tap"]}"""))
-        // 之后若调用入口工具展开整组 phone,不会出现重复的 phone_observe / phone_tap 定义
+        // 之后调用入口工具只追加激活 app/observe/ui/handover 子主题,不重复定义已激活工具,也不展开 phone:automation / phone:network
         d.execute(call("phone_launch_app", """{"package":"com.x"}"""))
+        assertEquals(emptySet<String>(), d.expanded)
+        val afterEntry = names(d.offeredNow())
+        assertEquals(afterEntry.distinct().size, afterEntry.size)
+        assertTrue("phone_observe" in afterEntry && "phone_tap" in afterEntry && "phone_set_wheel" in afterEntry)
+        assertFalse("phone_query" in afterEntry)
+        // 若显式整组展开(例如 preload),同样不出现重复定义
+        d.expand("phone")
         assertEquals(setOf("phone"), d.expanded)
         val now = names(d.offeredNow())
         assertEquals(now.distinct().size, now.size)
-        assertTrue("phone_observe" in now && "phone_tap" in now && "phone_set_wheel" in now)
+        assertTrue("phone_observe" in now && "phone_tap" in now && "phone_query" in now)
     }
 }

@@ -37,6 +37,28 @@ enum class ModelTier {
 }
 
 /**
+ * 流程控制与人机交互角色（替代多处按控制/交互 Verb 枚举的 1-to-1 分支）。
+ */
+enum class InteractionKind {
+    None,
+    AskUser,
+    RequestConfirmation,
+    HandToUser,
+    HandleObstacle,
+    EndNotDone,
+}
+
+/**
+ * 对持久化记忆库的访问类别。
+ */
+enum class MemoryAccess {
+    None,
+    Search,
+    Save,
+    Edit,
+}
+
+/**
  * 工具的正交行为特征描述，取代按 [Verb] 枚举集合硬编码的分支判断。
  */
 data class ToolTraits(
@@ -59,7 +81,47 @@ data class ToolTraits(
     val pageRead: Boolean = false,
     /** 是否直接改变当前可见界面控件状态（触发未读界面变化提醒）。 */
     val modifiesScreenState: Boolean = false,
+    /** 人机交互或流程收尾角色。 */
+    val interactionKind: InteractionKind = InteractionKind.None,
+    /** 记忆库访问类别。 */
+    val memoryAccess: MemoryAccess = MemoryAccess.None,
+    /** 是否为界面修改后可重新锚定最新界面的新鲜读取动作。 */
+    val freshRead: Boolean = false,
+    /** 是否属于界面/页面采集与浏览类推进动作（供新数据追踪器判断）。 */
+    val collectionOp: Boolean = false,
+    /** 是否会落入站点/应用场所上下文并触发知识查询。 */
+    val siteEntry: Boolean = false,
+    /** 是否为讨论模式允许的本地记忆/知识/技能/历史只读检索。 */
+    val lookupRead: Boolean = false,
+    /** 是否为安全的界面导航动作（只读/子任务模式仍可放行网页导航）。 */
+    val navigable: Boolean = false,
+    /** 是否向焦点输入框输入文本（记录明文去敏回显、卡住建议去重、同意核对）。 */
+    val textInput: Boolean = false,
+    /** 是否作用于当前焦点可编辑输入框（输入/清空：风险判定位目标且保留未消费授权）。 */
+    val usesFocusedEditable: Boolean = false,
+    /** 是否返回无图结构化元素树快照（路线回放等按特征定位）。 */
+    val elementSnapshot: Boolean = false,
+    /** 是否读取技能全文（用于记录个人技能阅读）。 */
+    val readsSkill: Boolean = false,
+    /** 记录工具结果时是否遮蔽 answer 字段。 */
+    val hidesAnswerInRecord: Boolean = false,
+    /** 是否记入用户可见的活动流（纯等待与流程控制工具不记入）。 */
+    val recordedInActivity: Boolean = true,
+    /** 是否调度定时/后台任务。 */
+    val schedulesTask: Boolean = false,
+    /** 是否派生子代理任务。 */
+    val delegatesTask: Boolean = false,
+    /** 是否修改用户个人画像配置。 */
+    val modifiesProfile: Boolean = false,
+    /** 是否写入/保存个人技能。 */
+    val writesSkill: Boolean = false,
 ) {
+    /** 是否访问记忆库（检索、写入或编辑）。 */
+    val memoryOp: Boolean get() = memoryAccess != MemoryAccess.None
+
+    /** 是否为结束当前轮次并报告未完成的终结工具。 */
+    val terminatesRun: Boolean get() = interactionKind == InteractionKind.EndNotDone
+
     companion object {
         private val REFERENCE_VERBS = setOf(
             Verb.KnowledgeSearch, Verb.KnowledgeRead, Verb.SkillSearch, Verb.SkillRead, Verb.MemorySearch,
@@ -85,6 +147,19 @@ data class ToolTraits(
         )
         private val SCREEN_STATE_CHANGE_VERBS = setOf(
             Verb.Tap, Verb.TypeText, Verb.ClearText, Verb.PressKey, Verb.Upload, Verb.Interact,
+        )
+        private val FRESH_READ_VERBS = setOf(
+            Verb.Observe, Verb.Screenshot, Verb.Capture, Verb.ReadPage, Verb.Wait, Verb.WaitFor,
+        )
+        private val COLLECTION_OP_VERBS = setOf(
+            Verb.Observe, Verb.ListElements, Verb.Query, Verb.Collect, Verb.PhoneExtract,
+            Verb.ReadPage, Verb.EvaluateJs, Verb.SiteCommand, Verb.Scroll, Verb.Swipe,
+        )
+        private val SITE_ENTRY_VERBS = setOf(
+            Verb.Observe, Verb.ListElements, Verb.Navigate, Verb.ReadPage,
+        )
+        private val LOOKUP_READ_VERBS = setOf(
+            Verb.MemorySearch, Verb.KnowledgeSearch, Verb.KnowledgeRead, Verb.SkillSearch, Verb.SkillRead, Verb.HistoryRead,
         )
         private val MAIN_MODEL_ONLY_VERBS = setOf(
             Verb.EndNotDone, Verb.RequestConfirmation, Verb.HandToUser, Verb.AskUser, Verb.HandleObstacle,
@@ -135,6 +210,20 @@ data class ToolTraits(
             }
             val tier = if (verb in MAIN_MODEL_ONLY_VERBS) ModelTier.MainModelOnly else ModelTier.Default
             val diagnostic = verb in DIAGNOSTIC_READ_VERBS
+            val interaction = when (verb) {
+                Verb.AskUser -> InteractionKind.AskUser
+                Verb.RequestConfirmation -> InteractionKind.RequestConfirmation
+                Verb.HandToUser -> InteractionKind.HandToUser
+                Verb.HandleObstacle -> InteractionKind.HandleObstacle
+                Verb.EndNotDone -> InteractionKind.EndNotDone
+                else -> InteractionKind.None
+            }
+            val memory = when (verb) {
+                Verb.MemorySearch -> MemoryAccess.Search
+                Verb.MemorySave -> MemoryAccess.Save
+                Verb.MemoryEdit -> MemoryAccess.Edit
+                else -> MemoryAccess.None
+            }
             return ToolTraits(
                 effect = effect,
                 concurrency = concurrency,
@@ -148,6 +237,23 @@ data class ToolTraits(
                 diagnosticRead = diagnostic,
                 pageRead = diagnostic || verb in PAGE_READ_EXTRA_VERBS,
                 modifiesScreenState = !offScreen && verb in SCREEN_STATE_CHANGE_VERBS,
+                interactionKind = interaction,
+                memoryAccess = memory,
+                freshRead = verb in FRESH_READ_VERBS,
+                collectionOp = verb in COLLECTION_OP_VERBS,
+                siteEntry = verb in SITE_ENTRY_VERBS,
+                lookupRead = verb in LOOKUP_READ_VERBS,
+                navigable = verb == Verb.Navigate,
+                textInput = verb == Verb.TypeText,
+                usesFocusedEditable = verb == Verb.TypeText || verb == Verb.ClearText,
+                elementSnapshot = verb == Verb.ListElements,
+                readsSkill = verb == Verb.SkillRead,
+                hidesAnswerInRecord = verb == Verb.AskUser,
+                recordedInActivity = verb != Verb.Wait && interaction == InteractionKind.None,
+                schedulesTask = verb == Verb.ScheduleTask,
+                delegatesTask = verb == Verb.SpawnAgent,
+                modifiesProfile = verb == Verb.ProfileEdit,
+                writesSkill = verb == Verb.SkillSave,
             )
         }
 

@@ -209,4 +209,78 @@ class ToolTraitsTest {
         val keptCallIds = compressed.messages.flatMap { it.parts }.filterIsInstance<Part.ToolCall>().map { it.id }
         assertTrue("userInteraction trait must pin the round", "u1" in keptCallIds)
     }
+
+    @Test
+    fun wave3OrthogonalTraitsAndToolIndexNameWhereCoverAllRoles() {
+        val observe = TOOLS.traits("phone_observe")!!
+        assertTrue(observe.freshRead)
+        assertTrue(observe.collectionOp)
+        assertTrue(observe.siteEntry)
+        assertFalse(observe.elementSnapshot)
+        assertTrue(observe.recordedInActivity)
+
+        val listElements = TOOLS.traits("phone_list_elements")!!
+        assertTrue(listElements.elementSnapshot)
+        assertTrue(listElements.collectionOp)
+        assertTrue(listElements.siteEntry)
+
+        val typeText = TOOLS.traits("phone_type_text")!!
+        assertTrue(typeText.textInput)
+        assertTrue(typeText.usesFocusedEditable)
+        assertTrue(typeText.modifiesScreenState)
+
+        val clearText = TOOLS.traits("phone_clear_text")!!
+        assertFalse(clearText.textInput)
+        assertTrue(clearText.usesFocusedEditable)
+
+        val memSearch = TOOLS.traits("memory_search")!!
+        assertEquals(MemoryAccess.Search, memSearch.memoryAccess)
+        assertTrue(memSearch.memoryOp)
+        assertTrue(memSearch.lookupRead)
+
+        val memSave = TOOLS.traits("memory_save")!!
+        assertEquals(MemoryAccess.Save, memSave.memoryAccess)
+        assertTrue(memSave.memoryOp)
+        assertFalse(memSave.lookupRead)
+
+        val memEdit = TOOLS.traits("memory_edit")!!
+        assertEquals(MemoryAccess.Edit, memEdit.memoryAccess)
+        assertTrue(memEdit.memoryOp)
+
+        val skillRead = TOOLS.traits("skill_read")!!
+        assertTrue(skillRead.readsSkill)
+        assertTrue(skillRead.lookupRead)
+
+        val askUser = TOOLS.traits("ask_user")!!
+        assertEquals(InteractionKind.AskUser, askUser.interactionKind)
+        assertTrue(askUser.hidesAnswerInRecord)
+        assertFalse(askUser.recordedInActivity)
+
+        val handToUser = TOOLS.traits("hand_to_user")!!
+        assertEquals(InteractionKind.HandToUser, handToUser.interactionKind)
+        assertFalse(handToUser.recordedInActivity)
+
+        val endNotDone = TOOLS.traits("end_not_done")!!
+        assertEquals(InteractionKind.EndNotDone, endNotDone.interactionKind)
+        assertTrue(endNotDone.terminatesRun)
+        assertFalse(endNotDone.recordedInActivity)
+
+        val wait = TOOLS.traits("wait")!!
+        assertEquals(InteractionKind.None, wait.interactionKind)
+        assertTrue(wait.freshRead)
+        assertFalse(wait.recordedInActivity)
+
+        assertTrue(TOOLS.traits("schedule_task")!!.schedulesTask)
+        assertTrue(TOOLS.traits("spawn_agent")!!.delegatesTask)
+        assertTrue(TOOLS.traits("profile_edit")!!.modifiesProfile)
+        assertTrue(TOOLS.traits("skill_save")!!.writesSkill)
+
+        val webDispatcher = toolDispatcher(FakeScreen(), web = com.wangzan101.mika.core.cap.web.FakeWebPort())
+        assertTrue(webDispatcher.traits("web_navigate")!!.navigable)
+        assertTrue(webDispatcher.traits("web_navigate")!!.siteEntry)
+        assertEquals("phone_list_elements", webDispatcher.index.nameWhere("phone") { it.elementSnapshot })
+        assertEquals("web_list_elements", webDispatcher.index.nameWhere("web") { it.elementSnapshot })
+        assertEquals("hand_to_user", webDispatcher.index.nameWhere { it.interactionKind == InteractionKind.HandToUser })
+        assertNull(webDispatcher.index.nameWhere("sandbox") { it.elementSnapshot })
+    }
 }
