@@ -143,6 +143,25 @@ class PhoneNetworkProbeAndSkillTest {
         val reJson = Json.parseToJsonElement(reOut).jsonObject
         assertEquals("0x123400", reJson["matchedFunctions"]!!.jsonObject["SSL_write"]?.jsonPrimitive?.content)
         assertEquals("0x123800", reJson["matchedFunctions"]!!.jsonObject["SSL_read"]?.jsonPrimitive?.content)
+
+        // decode-body subcommand: gzip + Protobuf, Thrift Compact, and Zstd dictId detection
+        val pbPayload = byteArrayOf(0x0A, 0x06) + "douyin".toByteArray() + byteArrayOf(0x10, 0x2A)
+        val gzPb = ByteArrayOutputStream().apply {
+            java.util.zip.GZIPOutputStream(this).use { it.write(pbPayload) }
+        }.toByteArray()
+        val pbB64File = File(tmpDir, "pb_gz.b64").apply {
+            writeText(java.util.Base64.getEncoder().encodeToString(gzPb))
+        }
+        val decPbJson = Json.parseToJsonElement(runPython(py, scriptFile, "decode-body", pbB64File.absolutePath, "--base64")).jsonObject
+        assertEquals("gzip", decPbJson["detectedCompression"]?.jsonPrimitive?.content)
+        assertEquals("douyin", decPbJson["protobufDecoded"]!!.jsonObject["1"]?.jsonPrimitive?.content)
+
+        val zstdDictFile = File(tmpDir, "zdict.bin").apply {
+            writeBytes(byteArrayOf(0x28, 0xB5.toByte(), 0x2F, 0xFD.toByte(), 0x23, 0x0A, 0x00, 0x00, 0x00, 0x01))
+        }
+        val decZstdJson = Json.parseToJsonElement(runPython(py, scriptFile, "decode-body", zstdDictFile.absolutePath)).jsonObject
+        assertEquals("zstd", decZstdJson["detectedCompression"]?.jsonPrimitive?.content)
+        assertEquals("0xa", decZstdJson["zstdHeader"]!!.jsonObject["dictIdHex"]?.jsonPrimitive?.content)
     }
 
     private fun findPythonExecutable(): String {

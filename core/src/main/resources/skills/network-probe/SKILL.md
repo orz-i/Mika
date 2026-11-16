@@ -41,6 +41,8 @@ cat /proc/<pid>/maps | grep '\.so'; cat /proc/<pid>/net/udp6; cat /proc/<pid>/ne
   - `args: ["inspect", "probe/libcronet.so", "--pkg", "com.xingin.xhs", "--out-plugin-json", "plugin.json"]`
 - **直读未解压的 APK / split APK（针对 `extractNativeLibs=false`）**：
   - `args: ["inspect-apk", "probe/split_config.arm64_v8a.apk", "--abi", "arm64-v8a", "--extract-dir", "probe/out", "--pkg", "com.xingin.xhs", "--out-plugin-json", "plugin.json"]`
+- **解析抓到的原始/乱码响应体（先用 `phone_get_network_response(..., asString=false)` 拿 Base64 落盘）**：
+  - `args: ["decode-body", "resp_body.b64", "--base64"]`（识别 `gzip` / `zlib` / `zstd` 及字典 `dictId`、信息熵、无 `.proto` Protobuf / Thrift Compact Wire 尝试解包）
 
 ## 结果落盘与反馈
 

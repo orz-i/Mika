@@ -7,17 +7,21 @@ Usage:
   analyze_so.py inspect-apk APK_PATH [--abi arm64-v8a] [--lib-pattern REGEX] [--extract-dir DIR] [--pkg PKG] [--out-plugin-json OUT.json]
   analyze_so.py proc-summary SNAPSHOT_TXT
   analyze_so.py analyze-readelf READELF_TXT [--lib LIB_NAME] [--pkg PKG] [--out-plugin-json OUT.json]
+  analyze_so.py decode-body BODY_FILE [--base64] [--charset utf-8]
 
 Runs with Python 3 standard library only inside the Mika sandbox (/workspace).
 """
 import argparse
+import base64
 import json
+import math
 import os
 import re
 import struct
 import sys
 import tempfile
 import zipfile
+import zlib
 
 
 ELF_MAGIC = b"\x7fELF"
@@ -35,7 +39,7 @@ STACK_FINGERPRINTS = {
     "boringssl": [b"ssl_lib.cc", b"ssl_lib.c", b"tls_write_app_data", b"BoringSSL", b"SSL_set_tlsext_host_name"],
     "cronet": [b"CronetURLRequest", b"Cronet/", b"org/chromium/net/impl/CronetUrlRequest"],
     "quic_http3": [b"ngtcp2", b"lsquic", b"tquic", b"xquic", b"quiche", b"QuicChromium", b"QUIC"],
-    "ttnet_bytedance": [b"ttquic", b"ttboringssl", b"libttnet"],
+    "ttnet_bytedance": [b"ttquic", b"ttboringssl", b"libttnet", b"tt_zstd_manager", b"ttnet_zstd", b"com/ttnet/org/chromium"],
     "mars_tencent": [b"mars::", b"MicroMsg", b"mmtls"],
     "okhttp_conscrypt": [b"okhttp", b"conscrypt", b"Conscrypt"],
     "grpc_protobuf": [b"grpc", b"protobuf", b"application/grpc"],
@@ -487,6 +491,290 @@ def cmd_analyze_readelf(args):
     return 0
 
 
+def _shannon_entropy(data):
+    if not data:
+        return 0.0
+    counts = [0] * 256
+    for b in data:
+        counts[b] += 1
+    n = float(len(data))
+    ent = 0.0
+    for c in counts:
+        if c:
+            p = c / n
+            ent -= p * math.log2(p)
+    return round(ent, 3)
+
+
+def _inspect_zstd_header(data):
+    if len(data) < 5 or data[:4] != b"\x28\xb5\x2f\xfd":
+        return None
+    desc = data[4]
+    single_seg = (desc >> 5) & 1
+    win_len = 0 if single_seg else 1
+    dict_flag = desc & 0x03
+    dict_len = {0: 0, 1: 1, 2: 2, 3: 4}[dict_flag]
+    dict_id = None
+    off = 5 + win_len
+    if dict_len > 0 and len(data) >= off + dict_len:
+        dict_id = int.from_bytes(data[off : off + dict_len], "little")
+    return {
+        "hasDictionaryId": dict_len > 0,
+        "dictId": dict_id,
+        "dictIdHex": hex(dict_id) if dict_id is not None else None,
+    }
+
+
+def _clean_text(data, charset="utf-8"):
+    try:
+        s = data.decode(charset, errors="strict")
+    except Exception:
+        return None
+    bad = sum(1 for ch in s if (ord(ch) < 0x20 and ch not in "\r\n\t") or ord(ch) == 0x7F or ch == "\ufffd")
+    if s and (bad / len(s)) > 0.05:
+        return None
+    return s
+
+
+def _pb_read_varint(data, pos):
+    res = 0
+    shift = 0
+    for i in range(10):
+        if pos >= len(data):
+            return None
+        b = data[pos]
+        pos += 1
+        res |= (b & 0x7F) << shift
+        if not (b & 0x80):
+            return res, pos
+        shift += 7
+    return None
+
+
+def _try_parse_protobuf(data, start=0, end=None, depth=0):
+    if end is None:
+        end = len(data)
+    if depth > 16 or start > end:
+        return None
+    fields = {}
+    pos = start
+    cnt = 0
+    while pos < end:
+        cnt += 1
+        if cnt > 10000:
+            return None
+        rv = _pb_read_varint(data, pos)
+        if not rv:
+            return None
+        tag, pos = rv
+        if tag <= 0:
+            return None
+        fnum = tag >> 3
+        wtype = tag & 7
+        if fnum <= 0 or fnum > 536870911:
+            return None
+        if wtype == 0:
+            rv = _pb_read_varint(data, pos)
+            if not rv:
+                return None
+            val, pos = rv
+        elif wtype == 1:
+            if end - pos < 8:
+                return None
+            val = int.from_bytes(data[pos : pos + 8], "little")
+            pos += 8
+        elif wtype == 5:
+            if end - pos < 4:
+                return None
+            val = int.from_bytes(data[pos : pos + 4], "little")
+            pos += 4
+        elif wtype == 2:
+            rv = _pb_read_varint(data, pos)
+            if not rv:
+                return None
+            ln, pos = rv
+            if ln < 0 or ln > (end - pos):
+                return None
+            sub = data[pos : pos + ln]
+            pos += ln
+            txt = _clean_text(sub, "utf-8") if ln > 0 else ""
+            if txt is not None:
+                val = txt
+            else:
+                nested = _try_parse_protobuf(sub, 0, len(sub), depth + 1)
+                val = nested if nested is not None else {"_bytes": len(sub), "hex": sub[:24].hex()}
+        else:
+            return None
+        key = str(fnum)
+        if key in fields:
+            if not isinstance(fields[key], list):
+                fields[key] = [fields[key]]
+            fields[key].append(val)
+        else:
+            fields[key] = val
+    return fields if pos == end and fields else None
+
+
+def _try_parse_thrift_compact(data):
+    pos = [0]
+    n = len(data)
+    def uvar():
+        r, s = 0, 0
+        for _ in range(10):
+            if pos[0] >= n:
+                return None
+            b = data[pos[0]]; pos[0] += 1
+            r |= (b & 0x7F) << s
+            if not (b & 0x80):
+                return r
+            s += 7
+        return None
+    def zz(v):
+        return (v >> 1) ^ -(v & 1)
+    def read_elem(t, d):
+        if d > 16:
+            return None
+        if t == 3:
+            if pos[0] >= n: return None
+            v = struct.unpack("b", data[pos[0]:pos[0]+1])[0]; pos[0] += 1; return v
+        if t in (4, 5, 6):
+            v = uvar(); return None if v is None else zz(v)
+        if t == 7:
+            if pos[0] + 8 > n: return None
+            v = struct.unpack("<d", data[pos[0]:pos[0]+8])[0]; pos[0] += 8; return v
+        if t == 8:
+            ln = uvar()
+            if ln is None or ln < 0 or pos[0] + ln > n: return None
+            sub = data[pos[0]:pos[0]+ln]; pos[0] += ln
+            txt = _clean_text(sub, "utf-8")
+            return txt if txt is not None else {"_bytes": ln, "hex": sub[:24].hex()}
+        if t == 12:
+            return read_struct(d + 1)
+        if t in (9, 10):
+            if pos[0] >= n: return None
+            st = data[pos[0]]; pos[0] += 1
+            sz, et = (st >> 4) & 0xF, st & 0xF
+            if sz == 15:
+                sz = uvar()
+            if sz is None or sz > 4096 or et < 1 or et > 12: return None
+            items = []
+            for _ in range(sz):
+                if et in (1, 2):
+                    if pos[0] >= n: return None
+                    b = data[pos[0]]; pos[0] += 1
+                    if b not in (0, 1): return None
+                    items.append(b == 1)
+                else:
+                    el = read_elem(et, d + 1)
+                    if el is None: return None
+                    items.append(el)
+            return items
+        return None
+    def read_struct(d):
+        if d > 16:
+            return None
+        out = {}
+        last_id = 0
+        while True:
+            if pos[0] >= n: return None
+            h = data[pos[0]]; pos[0] += 1
+            if h == 0:
+                return out
+            mod, ct = (h >> 4) & 0xF, h & 0xF
+            if ct < 1 or ct > 12: return None
+            if mod == 0:
+                v = uvar()
+                if v is None: return None
+                fid = zz(v)
+            else:
+                fid = last_id + mod
+            if fid < 0 or fid > 32767: return None
+            last_id = fid
+            if ct == 1:
+                out[str(fid)] = True
+            elif ct == 2:
+                out[str(fid)] = False
+            else:
+                val = read_elem(ct, d)
+                if val is None: return None
+                out[str(fid)] = val
+    res = read_struct(0)
+    return res if res and pos[0] == n else None
+
+
+def cmd_decode_body(args):
+    if not os.path.isfile(args.body_file):
+        fail(f"file not found: {args.body_file}")
+    with open(args.body_file, "rb") as f:
+        raw = f.read()
+
+    if args.base64:
+        try:
+            raw = base64.b64decode(raw.strip())
+        except Exception as e:
+            fail(f"invalid base64 input: {e}")
+    else:
+        # Auto-detect pure single-line base64 dumps pasted from phone_get_network_response(asString=false)
+        stripped = raw.strip()
+        if stripped and all(32 <= b < 127 for b in stripped) and not stripped.startswith((b"{", b"[", b"<")):
+            if len(stripped) >= 16 and re.fullmatch(rb"[A-Za-z0-9+/]+={0,2}", stripped):
+                try:
+                    raw = base64.b64decode(stripped, validate=True)
+                except Exception:
+                    pass
+
+    zstd_info = _inspect_zstd_header(raw)
+    decompressed = raw
+    compression = None
+    if raw.startswith(b"\x1f\x8b"):
+        compression = "gzip"
+        try:
+            decompressed = zlib.decompress(raw, wbits=16 + zlib.MAX_WBITS)
+        except Exception as e:
+            compression = f"gzip_error:{e}"
+    elif len(raw) >= 2 and (raw[0] & 0x0F) == 8 and (((raw[0] << 8) | raw[1]) % 31 == 0):
+        compression = "zlib"
+        try:
+            decompressed = zlib.decompress(raw)
+        except Exception as e:
+            compression = f"zlib_error:{e}"
+    elif zstd_info is not None:
+        compression = "zstd"
+
+    text_out = _clean_text(decompressed, args.charset)
+    pb_out = None if text_out is not None else _try_parse_protobuf(decompressed)
+    thrift_out = None if (text_out is not None or pb_out is not None) else _try_parse_thrift_compact(decompressed)
+
+    hints = []
+    if zstd_info is not None:
+        if zstd_info["hasDictionaryId"]:
+            hints.append(
+                f"Payload is Zstd compressed with dictionary id {zstd_info['dictIdHex']}. "
+                "Inspect APK assets/resources or `libbdzstd.so` / `libsscronet.so` for matching TTNet dictionary."
+            )
+        else:
+            hints.append("Payload is standard Zstd compressed (magic 28 b5 2f fd); stdlib zlib cannot decode Zstd, use zstd-jni or Python zstandard.")
+    elif text_out is None and pb_out is None and thrift_out is None:
+        ent = _shannon_entropy(decompressed)
+        if ent >= 7.5:
+            hints.append("High entropy (>=7.5 bits/byte) with no gzip/zlib/zstd magic: likely Brotli (`Content-Encoding: br`) or app-layer encryption/custom obfuscation.")
+
+    out = {
+        "rawSize": len(raw),
+        "decodedSize": len(decompressed),
+        "magicHex": raw[:24].hex(" "),
+        "entropyBitsPerByte": _shannon_entropy(decompressed),
+        "detectedCompression": compression,
+        "zstdHeader": zstd_info,
+        "textPreview": text_out[:2000] if text_out is not None else None,
+        "protobufDecoded": pb_out,
+        "thriftCompactDecoded": thrift_out,
+        "hints": hints,
+    }
+    print(json.dumps(out, indent=2, ensure_ascii=False))
+    return 0
+
+
 def main(argv):
     p = argparse.ArgumentParser(prog="analyze_so.py", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -513,6 +801,11 @@ def main(argv):
     p_re.add_argument("--pkg")
     p_re.add_argument("--out-plugin-json")
 
+    p_dec = sub.add_parser("decode-body", help="Analyze raw/base64 response body bytes (gzip/zlib/zstd dict/protobuf/thrift)")
+    p_dec.add_argument("body_file")
+    p_dec.add_argument("--base64", action="store_true")
+    p_dec.add_argument("--charset", default="utf-8")
+
     args = p.parse_args(argv)
     if args.cmd == "inspect":
         return cmd_inspect(args)
@@ -522,6 +815,8 @@ def main(argv):
         return cmd_proc_summary(args)
     if args.cmd == "analyze-readelf":
         return cmd_analyze_readelf(args)
+    if args.cmd == "decode-body":
+        return cmd_decode_body(args)
     return 2
 
 
