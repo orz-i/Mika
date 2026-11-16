@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +43,7 @@ import com.wangzan101.mika.core.agent.QuoteMessage
 import com.wangzan101.mika.core.cap.web.AttachedPage
 import com.wangzan101.mika.core.userscreen.UserScreen
 import com.wangzan101.mika.core.userscreen.UserScreenMessage
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import kotlinx.coroutines.Dispatchers
@@ -158,7 +160,10 @@ private fun ScreenItem(shown: ShownScreen?, width: Dp) {
     val screen = shown?.screen
     if (screen?.blocked == true) {
         Row(
-            Modifier.testTag("screen-blocked").background(c.ink.copy(alpha = 0.05f), ThumbShape).padding(horizontal = 10.dp, vertical = 8.dp),
+            Modifier.testTag("screen-blocked")
+                .background(c.glassSubtle, ThumbShape)
+                .border(0.75.dp, c.glassEdge, ThumbShape)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Icon(MikaIcons.Lock, null, Modifier.size(15.dp), tint = c.ink2)
@@ -177,12 +182,17 @@ private fun ScreenItem(shown: ShownScreen?, width: Dp) {
     }
 }
 
-/** 截图缩略图:按图的宽高比,圆角细边;没有图时是同样大小的一块淡灰。 */
+/** 截图缩略图:按图的宽高比,圆角高光细边;没有图时是同样大小的一块磨砂底。 */
 @Composable
 fun ScreenThumb(thumb: ImageBitmap?, width: Dp, modifier: Modifier = Modifier) {
     val c = MikaTheme.colors
     val ratio = thumb?.let { (it.width.toFloat() / it.height.coerceAtLeast(1)).coerceIn(0.3f, 1.8f) } ?: DEFAULT_RATIO
-    Box(modifier.width(width).aspectRatio(ratio).clip(ThumbShape).border(1.dp, c.glassEdge, ThumbShape).background(c.ink.copy(alpha = 0.05f))) {
+    val borderBrush = remember(c) { specularBorderBrush(c) }
+    Box(
+        modifier.width(width).aspectRatio(ratio).clip(ThumbShape)
+            .background(c.glassSubtle, ThumbShape)
+            .border(0.75.dp, borderBrush, ThumbShape),
+    ) {
         thumb?.let { Image(it, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop) }
     }
 }

@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -92,14 +93,21 @@ private fun Block(b: MdBlock, style: TextStyle, depth: Int) {
                 fontWeight = FontWeight.SemiBold,
             ),
         )
-        is MdBlock.Code -> Box(
-            Modifier.fillMaxWidth().background(MikaTheme.colors.fill, RoundedCornerShape(10.dp))
-                .horizontalScroll(rememberScrollState()).padding(horizontal = 11.dp, vertical = 9.dp),
-        ) {
-            Text(b.code, style = style.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp), softWrap = false)
+        is MdBlock.Code -> {
+            val c = MikaTheme.colors
+            val bg = if (c.isDark) c.glassSubtle else c.glassTonal
+            Box(
+                Modifier.fillMaxWidth()
+                    .background(bg, CodeShape)
+                    .border(0.75.dp, c.glassEdge, CodeShape)
+                    .clip(CodeShape)
+                    .horizontalScroll(rememberScrollState()).padding(horizontal = 11.dp, vertical = 9.dp),
+            ) {
+                Text(b.code, style = style.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp), softWrap = false)
+            }
         }
         is MdBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
-            Box(Modifier.width(3.dp).fillMaxHeight().background(MikaTheme.colors.hair, RoundedCornerShape(2.dp)))
+            Box(Modifier.width(3.dp).fillMaxHeight().background(MikaTheme.colors.accent.copy(alpha = 0.45f), RoundedCornerShape(2.dp)))
             Blocks(b.blocks, style.copy(color = MikaTheme.colors.ink2), Modifier.padding(start = 10.dp), depth + 1)
         }
         is MdBlock.ListBlock -> Column(verticalArrangement = Arrangement.spacedBy(if (b.tight) 3.dp else 8.dp)) {
@@ -121,6 +129,8 @@ private fun Block(b: MdBlock, style: TextStyle, depth: Int) {
 private fun TableBlock(t: MdBlock.Table, style: TextStyle) {
     val cols = t.header.size
     if (cols == 0) return
+    val c = MikaTheme.colors
+    val headerBg = if (c.isDark) c.glassSubtle else c.glassTonal
     val cellStyle = style.copy(fontSize = 13.5.sp, lineHeight = 19.sp)
     val rows = listOf(t.header) + t.rows
     Box(Modifier.horizontalScroll(rememberScrollState())) {
@@ -129,8 +139,8 @@ private fun TableBlock(t: MdBlock.Table, style: TextStyle) {
                 rows.forEachIndexed { r, row ->
                     row.forEach { cell ->
                         Box(
-                            Modifier.border(0.5.dp, MikaTheme.colors.hair)
-                                .then(if (r == 0) Modifier.background(MikaTheme.colors.fill) else Modifier)
+                            Modifier.border(0.5.dp, c.hair)
+                                .then(if (r == 0) Modifier.background(headerBg) else Modifier)
                                 .padding(horizontal = 9.dp, vertical = 6.dp),
                         ) {
                             Text(cell, style = if (r == 0) cellStyle.copy(fontWeight = FontWeight.SemiBold) else cellStyle)
@@ -138,7 +148,7 @@ private fun TableBlock(t: MdBlock.Table, style: TextStyle) {
                     }
                 }
             },
-            modifier = Modifier.border(0.5.dp, MikaTheme.colors.hair, RoundedCornerShape(2.dp)),
+            modifier = Modifier.clip(TableShape).border(0.75.dp, c.glassEdge, TableShape),
         ) { measurables, _ ->
             val maxCol = 240.dp.roundToPx()
             val minCol = 48.dp.roundToPx()
@@ -164,3 +174,6 @@ private fun TableBlock(t: MdBlock.Table, style: TextStyle) {
         }
     }
 }
+
+private val CodeShape = RoundedCornerShape(10.dp)
+private val TableShape = RoundedCornerShape(8.dp)

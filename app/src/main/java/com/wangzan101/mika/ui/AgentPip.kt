@@ -27,6 +27,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -60,13 +61,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.ui.PipPhysics.Corner
@@ -75,7 +79,12 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaIcons
-import com.wangzan101.mika.ui.components.floatShadow
+import com.wangzan101.mika.ui.components.GlassBackdrop
+import com.wangzan101.mika.ui.components.GlassMaterials
+import com.wangzan101.mika.ui.components.LocalGlassBackdrop
+import com.wangzan101.mika.ui.components.liquidGlass
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
 
 /** 小窗宽度:收起 / 展开。高度按画面(没有画面时按主屏)的长宽比算,整屏完整显示、不裁底部。 */
 private val CollapsedWidth = 96.dp
@@ -116,6 +125,7 @@ fun AgentPip(
     onClose: () -> Unit = {},
     onReopen: () -> Unit = {},
     onUnmute: () -> Unit = {},
+    backdrop: GlassBackdrop? = LocalGlassBackdrop.current,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val fade = if (reduceMotion) tween<Float>(150) else tween(300)
@@ -125,16 +135,18 @@ fun AgentPip(
             enter = fadeIn(fade), exit = fadeOut(fade),
         ) {
             val bottom = with(LocalDensity.current) { bottomInset.toDp() }
-            ClosedPip(pip.mode == PipMode.NeedsYou, reduceMotion, Modifier.padding(end = 12.dp, bottom = bottom + 12.dp), onReopen, onAttention)
+            ClosedPip(pip.mode == PipMode.NeedsYou, reduceMotion, backdrop, Modifier.padding(end = 12.dp, bottom = bottom + 12.dp), onReopen, onAttention)
         }
         AnimatedVisibility(pip.visible && !pip.closed && pip.expanded, enter = fadeIn(fade), exit = fadeOut(fade)) {
-            Box(Modifier.fillMaxSize().background(MikaTheme.colors.floatShadow.copy(alpha = 0.12f)).pointerInput(Unit) { detectTapGestures { onCollapse() } })
+            val c = MikaTheme.colors
+            Box(Modifier.fillMaxSize().background(c.scrim.copy(alpha = if (c.isDark) 0.32f else 0.16f)).pointerInput(Unit) { detectTapGestures { onCollapse() } })
         }
         AnimatedVisibility(pip.visible && !pip.closed, enter = fadeIn(fade), exit = fadeOut(if (reduceMotion) tween(150) else tween(500))) {
             PipWindow(
                 pip, frame, webContent, reduceMotion,
                 areaWidth = constraints.maxWidth.toFloat(), areaHeight = constraints.maxHeight.toFloat(),
-                topInset = topInset, bottomInset = bottomInset, onExpand = onExpand, onCollapse = onCollapse, onAttention = onAttention,
+                topInset = topInset, bottomInset = bottomInset, backdrop = backdrop,
+                onExpand = onExpand, onCollapse = onCollapse, onAttention = onAttention,
                 onClose = onClose,
                 onUnmute = onUnmute,
             )
@@ -147,9 +159,17 @@ fun AgentPip(
  * 点了滚到要你处理的那张卡片(小画面关着也不漏掉要你做的事)。
  */
 @Composable
-private fun ClosedPip(needsYou: Boolean, reduceMotion: Boolean, modifier: Modifier, onReopen: () -> Unit, onAttention: () -> Unit) {
+private fun ClosedPip(
+    needsYou: Boolean,
+    reduceMotion: Boolean,
+    backdrop: GlassBackdrop?,
+    modifier: Modifier,
+    onReopen: () -> Unit,
+    onAttention: () -> Unit,
+) {
     val c = MikaTheme.colors
     val shape = RoundedCornerShape(50)
+    val interaction = remember { MutableInteractionSource() }
     val breath = if (needsYou && !reduceMotion) {
         rememberInfiniteTransition(label = "closedBreathe").animateFloat(
             1f, 0.45f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "closedBreathe",
@@ -157,10 +177,13 @@ private fun ClosedPip(needsYou: Boolean, reduceMotion: Boolean, modifier: Modifi
     } else 1f
     val label = stringResource(if (needsYou) R.string.pip_closed_needs_you else R.string.pip_reopen)
     Row(
-        modifier.floatShadow(c, shape).background(c.glass, shape)
-            .border(if (needsYou) 2.dp else 0.5.dp, if (needsYou) c.warnSolid.copy(alpha = breath) else c.glassEdge, shape)
-            .clip(shape)
-            .clickable(onClickLabel = label, role = Role.Button) { if (needsYou) onAttention() else onReopen() }
+        modifier
+            .mikaPress(interaction, pressedScale = 0.95f, shape = shape)
+            .liquidGlass(GlassMaterials.FloatingPill, backdrop = backdrop, shape = shape)
+            .then(if (needsYou) Modifier.border(2.dp, c.warnSolid.copy(alpha = breath), shape) else Modifier)
+            .clickable(interactionSource = interaction, indication = null, onClickLabel = label, role = Role.Button) {
+                if (needsYou) onAttention() else onReopen()
+            }
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .testTag("pip-closed"),
         verticalAlignment = Alignment.CenterVertically,
@@ -182,6 +205,7 @@ private fun PipWindow(
     areaHeight: Float,
     topInset: Float,
     bottomInset: Float,
+    backdrop: GlassBackdrop?,
     onExpand: () -> Unit,
     onCollapse: () -> Unit,
     onAttention: () -> Unit,
@@ -304,9 +328,7 @@ private fun PipWindow(
         Box(
             Modifier.testTag("pip-window").size(w, h)
                 .alpha(if (pip.mode == PipMode.Done) 0.85f else 1f)
-                .floatShadow(MikaTheme.colors, outer)
-                .background(MikaTheme.colors.glass, outer)
-                .border(0.5.dp, MikaTheme.colors.glassEdge, outer)
+                .liquidGlass(GlassMaterials.PipFrame, backdrop = backdrop, shape = outer)
                 .pointerInput(Unit) {
                     val tracker = VelocityTracker()
                     // 自己数位移而不用 detectDragGestures:越过触摸阈值时把阈值内的那段也补上,
@@ -361,12 +383,13 @@ private fun PipWindow(
                         tag = "pip-close",
                     )
                 }
-                Box(
-                    Modifier.align(Alignment.TopEnd).padding(6.dp).size(26.dp)
-                        .floatShadow(MikaTheme.colors, CircleShape).background(MikaTheme.colors.glass, CircleShape).clip(CircleShape)
-                        .clickable(onClickLabel = stringResource(R.string.collapse), onClick = onCollapse),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(MikaIcons.Close, stringResource(R.string.collapse), Modifier.size(12.dp), tint = MikaTheme.colors.ink) }
+                PipButton(
+                    icon = MikaIcons.Close,
+                    label = stringResource(R.string.collapse),
+                    onClick = onCollapse,
+                    iconSize = 12.dp,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                )
             }
         }
         // 边框光画在玻璃框外沿
@@ -380,12 +403,31 @@ private fun PipWindow(
 }
 
 @Composable
-private fun PipButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit, tag: String) {
+private fun PipButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tag: String? = null,
+    iconSize: Dp = 13.dp,
+    modifier: Modifier = Modifier,
+) {
+    val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val borderBrush = remember(c) { specularBorderBrush(c) }
     Box(
-        Modifier.size(26.dp)
-            .floatShadow(MikaTheme.colors, CircleShape).background(MikaTheme.colors.glass, CircleShape).clip(CircleShape)
-            .clickable(onClickLabel = label, onClick = onClick)
-            .testTag(tag),
+        modifier
+            .size(26.dp)
+            .mikaPress(interaction, pressedScale = 0.90f, shape = CircleShape)
+            .shadow(
+                6.dp, CircleShape, clip = false,
+                ambientColor = c.floatShadow.copy(alpha = 0.24f),
+                spotColor = c.floatShadow.copy(alpha = 0.30f),
+            )
+            .background(c.glassCardElevated, CircleShape)
+            .border(0.75.dp, borderBrush, CircleShape)
+            .clip(CircleShape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = label, onClick = onClick)
+            .then(if (tag != null) Modifier.testTag(tag) else Modifier),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, label, Modifier.size(13.dp), tint = MikaTheme.colors.ink) }
+    ) { Icon(icon, label, Modifier.size(iconSize), tint = c.ink) }
 }

@@ -9,14 +9,17 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.wangzan101.mika.ui.components.MikaDialog
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import com.wangzan101.mika.chat.DeleteImpact
 import com.wangzan101.mika.i18n.trPlural
@@ -85,12 +88,20 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.toSize
 import com.wangzan101.mika.ui.theme.MikaMotion
+import com.wangzan101.mika.ui.components.GlassBackdrop
+import com.wangzan101.mika.ui.components.GlassMaterials
+import com.wangzan101.mika.ui.components.LocalGlassBackdrop
 import com.wangzan101.mika.ui.components.MikaLogo
+import com.wangzan101.mika.ui.components.glassSource
 import com.wangzan101.mika.ui.components.keepsKeyboard
+import com.wangzan101.mika.ui.components.liquidGlass
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.rememberGlassBackdrop
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
@@ -106,6 +117,7 @@ import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -253,11 +265,12 @@ fun ChatDrawer(
     aboutDot: Boolean = false,
     /** 长按一条存过的对话:在它原地弹出操作菜单(置顶、改名、删除);带上那一行在窗口里的位置和大小。 */
     onActions: (DrawerConversation, Rect) -> Unit = { _, _ -> },
+    backdrop: GlassBackdrop? = LocalGlassBackdrop.current,
 ) {
     val c = MikaTheme.colors
     Column(
         Modifier.fillMaxHeight().widthIn(max = DrawerWidth).fillMaxWidth()
-            .clip(DrawerShape).background(c.bg, DrawerShape)
+            .liquidGlass(GlassMaterials.Drawer, backdrop = backdrop, shape = DrawerShape)
             .windowInsetsPadding(WindowInsets.statusBars.union(WindowInsets.navigationBars))
             .testTag("drawer"),
     ) {
@@ -369,9 +382,12 @@ private fun NavEntry(
     enabled: Boolean = true, dot: Boolean = false, onClick: () -> Unit,
 ) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        modifier.height(46.dp).clip(NavShape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        modifier.height(46.dp)
+            .mikaPress(interaction, enabled = enabled, pressedScale = 0.98f, shape = NavShape)
+            .clip(NavShape)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
             .alpha(if (enabled) 1f else 0.4f)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -389,11 +405,18 @@ private fun NavEntry(
 @Composable
 private fun RunningLabel(onScreens: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Row(Modifier.fillMaxWidth().padding(end = 12.dp), verticalAlignment = Alignment.Bottom) {
         Box(Modifier.weight(1f)) { SectionLabel(stringResource(R.string.drawer_running)) }
         Row(
-            Modifier.clip(NavShape).clickable(role = Role.Button, onClick = onScreens)
-                .padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 4.dp).testTag("drawer-screens"),
+            Modifier
+                .mikaPress(interaction, pressedScale = 0.96f, shape = NavShape)
+                .background(c.glassSubtle, NavShape)
+                .border(0.5.dp, c.glassEdge, NavShape)
+                .clip(NavShape)
+                .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onScreens)
+                .padding(horizontal = 10.dp, vertical = 5.dp)
+                .testTag("drawer-screens"),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -428,21 +451,30 @@ internal fun ConversationEntry(
     val c = MikaTheme.colors
     val deletable = item.id != null
     val haptic = LocalHapticFeedback.current
+    val interaction = remember { MutableInteractionSource() }
     // 这一行在窗口里的位置和大小(不裁掉滚出列表的部分),菜单照它摆出抬起的那一行;只在回调里读,不引起重组
     val bounds = remember { mutableStateOf(Rect.Zero) }
+    val rowSurface = when {
+        item.current -> Modifier.cardSurface(c, NavShape, elevated = true)
+        item.pinned -> Modifier.background(c.glassSubtle, NavShape).border(0.5.dp, c.glassEdge, NavShape)
+        else -> Modifier
+    }
     Column(
-        Modifier.padding(horizontal = 12.dp).fillMaxWidth()
+        Modifier.padding(horizontal = 12.dp, vertical = if (item.current || item.pinned) 1.5.dp else 0.dp).fillMaxWidth()
             .onGloballyPositioned { bounds.value = Rect(it.positionInWindow(), it.size.toSize()) }
-            .then(if (item.current) Modifier.cardSurface(c, NavShape) else Modifier)
+            .mikaPress(interaction, enabled = item.enabled || deletable, pressedScale = 0.985f, shape = NavShape)
+            .then(rowSurface)
             .clip(NavShape)
             .then(
                 if (deletable) Modifier.combinedClickable(
+                    interactionSource = interaction,
+                    indication = null,
                     onClickLabel = null,
                     onLongClickLabel = stringResource(R.string.drawer_actions),
                     // 和系统里长按一样振一下
                     onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onActions(item, bounds.value) },
                     onClick = { if (item.enabled) onOpen(item) },
-                ) else Modifier.clickable(enabled = item.enabled, onClick = { onOpen(item) }),
+                ) else Modifier.clickable(interactionSource = interaction, indication = null, enabled = item.enabled, onClick = { onOpen(item) }),
             )
             .testTag("conversation-row")
             .alpha(if (item.enabled) 1f else 0.45f)
@@ -465,7 +497,10 @@ internal fun ConversationRowContent(item: DrawerConversation, terms: List<String
             Text(title, Modifier.weight(1f, fill = item.site == null), style = ConversationTitle, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (item.site != null) {
                 Text(
-                    PageAskCopy.WEB, Modifier.background(c.accentSoft, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp).testTag("conversation-web"),
+                    PageAskCopy.WEB,
+                    Modifier.background(c.accentSoft, RoundedCornerShape(6.dp))
+                        .border(0.5.dp, c.accent.copy(alpha = 0.22f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp).testTag("conversation-web"),
                     style = ConversationTag, color = c.accent, maxLines = 1,
                 )
                 Box(Modifier.weight(1f))
@@ -661,6 +696,15 @@ fun ChatWithDrawer(
         }
     }
     val menuOpen = acting != null
+    var drawerWidthPx by remember { mutableIntStateOf(0) }
+    val drawerVisible by remember {
+        derivedStateOf {
+            val offset = drawer.currentOffset
+            val dragging = !offset.isNaN() && drawerWidthPx > 0 && abs(offset) < drawerWidthPx - 0.5f
+            !drawer.isClosed || drawer.targetValue != DrawerValue.Closed || drawer.isAnimationRunning || dragging
+        }
+    }
+    val drawerBackdrop = rememberGlassBackdrop(enabled = drawerVisible)
     Box(Modifier.fillMaxSize()) {
         ModalNavigationDrawer(
             // 菜单开着时后面整屏(对话页和侧栏)模糊(安卓 12 起;更早的只变暗),无障碍也只读菜单
@@ -673,95 +717,104 @@ fun ChatWithDrawer(
                 )
                 .clearAndSetSemantics {},
             drawerContent = {
-                // 只在打开时读盘;每次打开、开着时存储里有对话改过都重读一次
-                val history = remember(open, revision) { if (open) conversations() else emptyList() }
-                val drafts by vm.draftConversations.collectAsState()
-                val all = remember(open, history, drafts, revision) { if (open) vm.withDrafts(history) else emptyList() }
-                val stored = remember(open, revision, ui.conversationId) { if (open) ui.conversationId?.let(conversationTitle) else null }
-                val last = ui.exchanges.lastOrNull()
-                val running = vm.busy()
-                val current = CurrentConversation(
-                    ui.conversationId, running,
-                    stored ?: ChatCopy.title(ui.exchanges),
-                    if (running) ChatCopy.subtitle(last, last?.let(vm::livePlace))?.first.orEmpty() else "",
-                )
-                val canSwitch = vm.canSwitch()
-                // 搜索候选:标题换成侧栏里显示的样子(去掉附件行、网页说明),和行上看到的一致
-                val candidates = remember(all, deleted) {
-                    all.filter { it.id !in deleted }.map { it.copy(title = ChatCopy.plainTitle(it.title)) }
-                }
-                val engine = search
-                LaunchedEffect(open, query, revision, candidates.size, engine) {
-                    val q = query.trim()
-                    if (engine == null || !open || q.isEmpty() || candidates.isEmpty()) {
-                        searchOutcome = null
-                        return@LaunchedEffect
-                    }
-                    // 标题命中不用等正文,先列出来;正文扫完再整体换掉
-                    searchOutcome = SearchOutcome(q, engine.titleMatches(q, candidates), searching = true)
-                    delay(180)
-                    val result = withContext(Dispatchers.IO) { engine.search(q, candidates) }
-                    searchOutcome = SearchOutcome(q, result.hits, searching = false, truncated = result.truncated)
-                }
-                val byId = remember(candidates) { candidates.associateBy { it.id } }
-                val now = System.currentTimeMillis()
-                val runningIds = remember(others, ui.conversationId, running) {
-                    (others + listOfNotNull(ui.conversationId?.takeIf { running })).toSet()
-                }
-                val searchView = searchOutcome?.takeIf { it.query == query.trim() }?.let { outcome ->
-                    DrawerSearch(
-                        outcome.hits.mapNotNull { hit ->
-                            val s = byId[hit.id] ?: return@mapNotNull null
-                            val time = if (s.updatedAt != 0L) conversationTime(s.updatedAt, now) else ""
-                            drawerEntry(
-                                s, ui.conversationId, canSwitch, running = hit.id in runningIds,
-                                time = time, subtitle = hit.snippet.orEmpty(),
-                            )
-                        },
-                        outcome.searching,
-                        outcome.truncated,
-                    )
-                }
-                // 删掉的对话当场不列,不等后台删完
-                val sections = remember(all, current, others, canSwitch, deleted) {
-                    drawerSections(all.filter { it.id !in deleted }, current, others.filter { it !in deleted }, vm::runningGoal, canSwitch, System.currentTimeMillis())
-                }
-                ChatDrawer(
-                    check, sections, canSwitch,
-                    query = query,
-                    onQueryChange = { query = it },
-                    search = searchView,
-                    canSearch = candidates.isNotEmpty(),
-                    onNew = { close { vm.newConversation() } },
-                    onPlans = { leave(onPlans) },
-                    onMemory = { leave(onMemory) },
-                    onSettings = { leave(onSettings) },
-                    onBrowser = { leave(onBrowser) },
-                    onFiles = { leave(onFiles) },
-                    onScreens = { leave(onScreens) },
-                    onAbout = { leave(onAbout) },
-                    onQuit = { leave { confirmingQuit = true } },
-                    aboutDot = updateAvailable,
-                    onActions = { item, bounds -> if (item.id != null) acting = item to bounds },
-                    onOpen = { item ->
-                        close {
-                            val id = item.id
-                            when {
-                                id == null || id == ui.conversationId -> Unit
-                                item.running -> vm.switchTo(id)
-                                else -> vm.openConversation(id)
-                            }
+                CompositionLocalProvider(LocalGlassBackdrop provides drawerBackdrop) {
+                    Box(Modifier.onSizeChanged { if (it.width > 0) drawerWidthPx = it.width }) {
+                        // 只在打开时读盘;每次打开、开着时存储里有对话改过都重读一次
+                        val history = remember(open, revision) { if (open) conversations() else emptyList() }
+                        val drafts by vm.draftConversations.collectAsState()
+                        val all = remember(open, history, drafts, revision) { if (open) vm.withDrafts(history) else emptyList() }
+                        val stored = remember(open, revision, ui.conversationId) { if (open) ui.conversationId?.let(conversationTitle) else null }
+                        val last = ui.exchanges.lastOrNull()
+                        val running = vm.busy()
+                        val current = CurrentConversation(
+                            ui.conversationId, running,
+                            stored ?: ChatCopy.title(ui.exchanges),
+                            if (running) ChatCopy.subtitle(last, last?.let(vm::livePlace))?.first.orEmpty() else "",
+                        )
+                        val canSwitch = vm.canSwitch()
+                        // 搜索候选:标题换成侧栏里显示的样子(去掉附件行、网页说明),和行上看到的一致
+                        val candidates = remember(all, deleted) {
+                            all.filter { it.id !in deleted }.map { it.copy(title = ChatCopy.plainTitle(it.title)) }
                         }
-                    },
-                )
+                        val engine = search
+                        LaunchedEffect(open, query, revision, candidates.size, engine) {
+                            val q = query.trim()
+                            if (engine == null || !open || q.isEmpty() || candidates.isEmpty()) {
+                                searchOutcome = null
+                                return@LaunchedEffect
+                            }
+                            // 标题命中不用等正文,先列出来;正文扫完再整体换掉
+                            searchOutcome = SearchOutcome(q, engine.titleMatches(q, candidates), searching = true)
+                            delay(180)
+                            val result = withContext(Dispatchers.IO) { engine.search(q, candidates) }
+                            searchOutcome = SearchOutcome(q, result.hits, searching = false, truncated = result.truncated)
+                        }
+                        val byId = remember(candidates) { candidates.associateBy { it.id } }
+                        val now = System.currentTimeMillis()
+                        val runningIds = remember(others, ui.conversationId, running) {
+                            (others + listOfNotNull(ui.conversationId?.takeIf { running })).toSet()
+                        }
+                        val searchView = searchOutcome?.takeIf { it.query == query.trim() }?.let { outcome ->
+                            DrawerSearch(
+                                outcome.hits.mapNotNull { hit ->
+                                    val s = byId[hit.id] ?: return@mapNotNull null
+                                    val time = if (s.updatedAt != 0L) conversationTime(s.updatedAt, now) else ""
+                                    drawerEntry(
+                                        s, ui.conversationId, canSwitch, running = hit.id in runningIds,
+                                        time = time, subtitle = hit.snippet.orEmpty(),
+                                    )
+                                },
+                                outcome.searching,
+                                outcome.truncated,
+                            )
+                        }
+                        // 删掉的对话当场不列,不等后台删完
+                        val sections = remember(all, current, others, canSwitch, deleted) {
+                            drawerSections(all.filter { it.id !in deleted }, current, others.filter { it !in deleted }, vm::runningGoal, canSwitch, System.currentTimeMillis())
+                        }
+                        ChatDrawer(
+                            check, sections, canSwitch,
+                            query = query,
+                            onQueryChange = { query = it },
+                            search = searchView,
+                            canSearch = candidates.isNotEmpty(),
+                            onNew = { close { vm.newConversation() } },
+                            onPlans = { leave(onPlans) },
+                            onMemory = { leave(onMemory) },
+                            onSettings = { leave(onSettings) },
+                            onBrowser = { leave(onBrowser) },
+                            onFiles = { leave(onFiles) },
+                            onScreens = { leave(onScreens) },
+                            onAbout = { leave(onAbout) },
+                            onQuit = { leave { confirmingQuit = true } },
+                            aboutDot = updateAvailable,
+                            onActions = { item, bounds -> if (item.id != null) acting = item to bounds },
+                            onOpen = { item ->
+                                close {
+                                    val id = item.id
+                                    when {
+                                        id == null || id == ui.conversationId -> Unit
+                                        item.running -> vm.switchTo(id)
+                                        else -> vm.openConversation(id)
+                                    }
+                                }
+                            },
+                            backdrop = drawerBackdrop,
+                        )
+                    }
+                }
             },
             drawerState = drawer,
             // 对话页上从左往右划拉出侧栏(拖着跟手);能左右滚的内容(宽表格、代码块等)先自己滚。
             // 从左边缘往里滑是系统的返回手势,上面的返回处理同样是打开侧栏
             gesturesEnabled = true,
-            scrimColor = MikaTheme.colors.floatShadow.copy(alpha = 0.28f),
+            scrimColor = MikaTheme.colors.scrim,
         ) {
-            content { scope.launch { if (reduceMotion) drawer.snapTo(DrawerValue.Open) else drawer.open() } }
+            Box(Modifier.fillMaxSize().glassSource(drawerBackdrop, enabled = drawerVisible)) {
+                CompositionLocalProvider(LocalGlassBackdrop provides null) {
+                    content { scope.launch { if (reduceMotion) drawer.snapTo(DrawerValue.Open) else drawer.open() } }
+                }
+            }
         }
         acting?.let { (item, bounds) ->
             val id = item.id ?: return@let
@@ -796,7 +849,7 @@ fun ChatWithDrawer(
         )
     }
     if (confirmingQuit) {
-        AlertDialog(
+        MikaDialog(
             onDismissRequest = { confirmingQuit = false },
             title = { Text(stringResource(R.string.quit_title)) },
             text = { Text(stringResource(R.string.quit_confirm_body)) },

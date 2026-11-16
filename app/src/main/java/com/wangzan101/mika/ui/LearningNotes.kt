@@ -2,11 +2,14 @@ package com.wangzan101.mika.ui
 
 import com.wangzan101.mika.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,7 +24,15 @@ internal fun LazyListScope.learningNotes(index: Int, ex: Exchange, vm: ChatViewM
     val runId = ex.runId ?: return
     if (ex.memoryNotes.isEmpty() && ex.skillNotes.isEmpty()) return
     item("m$index") {
-        Column(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, bottom = 8.dp).testTag("learning-notes")) {
+        val c = MikaTheme.colors
+        Column(
+            Modifier.fillMaxWidth()
+                .padding(bottom = 8.dp)
+                .background(c.glassSubtle, NoteCardShape)
+                .border(0.5.dp, c.glassEdge, NoteCardShape)
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .testTag("learning-notes"),
+        ) {
             ex.memoryNotes.forEach { n ->
                 NoteLine(vm.noteText(n)) {
                     if (n.pendingId != null) {
@@ -50,4 +61,6 @@ private fun NoteLine(text: String, buttons: @Composable () -> Unit) {
         buttons()
     }
 }
+
+private val NoteCardShape = RoundedCornerShape(12.dp)
 

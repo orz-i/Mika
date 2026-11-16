@@ -1,7 +1,9 @@
 package com.wangzan101.mika.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,16 +12,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -30,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.task.QueuedFollowUp
+import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
@@ -62,11 +68,27 @@ fun FollowUpModeBar(mode: FollowUpMode, onMode: (FollowUpMode) -> Unit, status: 
 private fun ModePill(value: FollowUpMode, selected: FollowUpMode, onMode: (FollowUpMode) -> Unit, label: String) {
     val c = MikaTheme.colors
     val on = value == selected
+    val interaction = remember { MutableInteractionSource() }
+    val surface = if (on) {
+        Modifier
+            .background(Brush.verticalGradient(listOf(c.accentHighlight, c.accent)), MikaShapes.Pill)
+            .border(
+                0.75.dp,
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.08f))),
+                MikaShapes.Pill,
+            )
+    } else {
+        Modifier
+            .background(c.glassSubtle, MikaShapes.Pill)
+            .border(0.5.dp, c.glassEdge, MikaShapes.Pill)
+    }
     Box(
-        Modifier.heightIn(min = 30.dp).clip(MikaShapes.Pill)
+        Modifier.heightIn(min = 30.dp)
+            .mikaPress(interaction, pressedScale = 0.95f, shape = MikaShapes.Pill)
+            .then(surface)
+            .clip(MikaShapes.Pill)
             .testTag(if (value == FollowUpMode.Steer) "follow-up-mode-steer" else "follow-up-mode-queue")
-            .background(if (on) c.accent else c.fill)
-            .clickable(role = Role.Tab, onClickLabel = label) { onMode(value) }
+            .clickable(interactionSource = interaction, indication = null, role = Role.Tab, onClickLabel = label) { onMode(value) }
             .semantics { this.selected = on; contentDescription = label }
             .padding(horizontal = 12.dp),
         contentAlignment = Alignment.Center,
@@ -74,6 +96,8 @@ private fun ModePill(value: FollowUpMode, selected: FollowUpMode, onMode: (Follo
         Text(label, style = MikaType.Hint, color = if (on) c.onAccent else c.ink2, maxLines = 1)
     }
 }
+
+private val TrayRowShape = RoundedCornerShape(12.dp)
 
 /**
  * 输入栏上方的排队条:只含用户明确排队的项(引导 fallback 由穿插话那行「下一件」表示)。
@@ -101,16 +125,21 @@ fun FollowUpTray(
                 Modifier.weight(1f), style = MikaType.Hint, color = c.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             if (!active) {
+                val startInteraction = remember { MutableInteractionSource() }
                 Text(
-                    tr(R.string.follow_up_start_now), Modifier.clip(MikaShapes.Pill)
-                        .clickable(role = Role.Button, onClick = onStartNow).padding(horizontal = 8.dp, vertical = 4.dp),
+                    tr(R.string.follow_up_start_now),
+                    Modifier
+                        .mikaPress(startInteraction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+                        .clip(MikaShapes.Pill)
+                        .clickable(interactionSource = startInteraction, indication = null, role = Role.Button, onClick = onStartNow)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
                     style = MikaType.Hint, color = c.accent,
                 )
             }
         }
         items.forEach { item ->
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.fill)
+                Modifier.fillMaxWidth().cardSurface(c, TrayRowShape).clip(TrayRowShape)
                     .padding(start = 10.dp, end = 4.dp, top = 5.dp, bottom = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -130,9 +159,14 @@ fun FollowUpTray(
 @Composable
 private fun TrayAction(text: String, enabled: Boolean, tag: String, onClick: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Text(
-        text, Modifier.testTag(tag).clip(MikaShapes.Pill)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+        text,
+        Modifier
+            .testTag(tag)
+            .mikaPress(interaction, enabled = enabled, pressedScale = 0.94f, shape = MikaShapes.Pill)
+            .clip(MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 4.dp),
         style = MikaType.Hint, color = if (enabled) c.ink2 else c.ink3.copy(alpha = 0.5f), maxLines = 1,
     )

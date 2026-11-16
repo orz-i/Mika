@@ -3,6 +3,7 @@ package com.wangzan101.mika.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,8 @@ import androidx.compose.ui.unit.sp
 import com.wangzan101.mika.R
 import androidx.compose.ui.semantics.Role
 import com.wangzan101.mika.ui.components.keepsKeyboard
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
@@ -60,13 +63,17 @@ internal fun DrawerSearchField(query: String, onQueryChange: (String) -> Unit) {
     val clear = stringResource(R.string.drawer_search_clear)
     val focus = LocalFocusManager.current
     var focused by remember { mutableStateOf(false) }
+    val borderBrush = remember(c) { specularBorderBrush(c) }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
             .height(38.dp)
             .keepsKeyboard()
             .clip(NavShape)
-            .background(c.fill)
-            .then(if (focused) Modifier.border(1.dp, c.accent, NavShape) else Modifier)
+            .background(c.glassSubtle, NavShape)
+            .then(
+                if (focused) Modifier.border(1.25.dp, c.accent, NavShape)
+                else Modifier.border(0.75.dp, borderBrush, NavShape),
+            )
             .padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -88,9 +95,14 @@ internal fun DrawerSearchField(query: String, onQueryChange: (String) -> Unit) {
             )
         }
         if (query.isNotEmpty()) {
+            val clearInteraction = remember { MutableInteractionSource() }
             Box(
-                Modifier.size(30.dp).clip(CircleShape)
-                    .clickable(role = Role.Button, onClickLabel = clear) { onQueryChange("") }
+                Modifier.size(30.dp)
+                    .mikaPress(clearInteraction, pressedScale = 0.90f, shape = CircleShape)
+                    .clip(CircleShape)
+                    .clickable(interactionSource = clearInteraction, indication = null, role = Role.Button, onClickLabel = clear) {
+                        onQueryChange("")
+                    }
                     .testTag("drawer-search-clear"),
                 contentAlignment = Alignment.Center,
             ) { Icon(MikaIcons.Close, clear, Modifier.size(14.dp), tint = c.ink3) }

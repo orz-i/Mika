@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,6 +81,7 @@ import com.wangzan101.mika.ui.components.ButtonKind
 import com.wangzan101.mika.ui.components.ButtonSize
 import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaColors
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
@@ -267,8 +269,12 @@ internal fun AttachPanel(
 @Composable
 private fun RowScope.Tile(icon: ImageVector, label: String, onClick: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Column(
-        Modifier.weight(1f).height(76.dp).cardSurface(c, TileShape).clip(TileShape).clickable(role = Role.Button, onClick = onClick),
+        Modifier.weight(1f).height(76.dp)
+            .mikaPress(interaction, pressedScale = 0.96f, shape = TileShape)
+            .cardSurface(c, TileShape).clip(TileShape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
     ) {
@@ -279,8 +285,14 @@ private fun RowScope.Tile(icon: ImageVector, label: String, onClick: () -> Unit)
 
 @Composable
 private fun PanelLink(text: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
     Text(
-        text, Modifier.clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 6.dp, vertical = 4.dp),
+        text,
+        Modifier
+            .mikaPress(interaction, pressedScale = 0.95f, shape = LinkShape)
+            .clip(LinkShape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
         style = LinkText, color = MikaTheme.colors.accent,
     )
 }
@@ -290,10 +302,18 @@ private fun PanelLink(text: String, onClick: () -> Unit) {
 private fun RecentCell(photo: PendingAttachment, order: Int?, onClick: () -> Unit) {
     val c = MikaTheme.colors
     val thumb = rememberAttachImage(AttachImage.Picked(photo.uri), RECENT_PX)
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier.testTag("recent-photo").aspectRatio(1f).clip(CellShape).background(c.fill)
+        Modifier.testTag("recent-photo").aspectRatio(1f)
+            .mikaPress(interaction, pressedScale = 0.96f, shape = CellShape)
+            .clip(CellShape).background(c.glassSubtle)
             .semantics { selected = order != null }
-            .clickable(onClickLabel = if (order != null) stringResource(R.string.attach_deselect) else stringResource(R.string.attach_select), onClick = onClick),
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                onClickLabel = if (order != null) stringResource(R.string.attach_deselect) else stringResource(R.string.attach_select),
+                onClick = onClick,
+            ),
     ) {
         thumb?.let { Image(it, photo.name, Modifier.matchParentSize(), contentScale = ContentScale.Crop) }
         if (order != null) Box(Modifier.matchParentSize().background(c.accent.copy(alpha = 0.12f)).border(2.5.dp, c.accent, CellShape))
@@ -325,27 +345,36 @@ internal fun PendingTray(items: List<PendingAttachment>, onRemove: (String) -> U
             val path = a.workspacePath
             val workspaceImage = if (conversationId != null && path != null) AttachImage.Sent(conversationId, path) else null
             val openModifier = if (workspaceImage != null) {
-                Modifier.clickable(
-                    role = if (a.photo) Role.Image else Role.Button,
-                    onClickLabel = stringResource(if (a.photo) R.string.attach_view_large else R.string.chat_open),
-                ) {
-                    scope.launch {
-                        if (!AttachFiles.openSent(context, workspaceImage.conversationId, workspaceImage.path)) {
-                            Toast.makeText(context, AttachCopy.GONE, Toast.LENGTH_SHORT).show()
+                val openInteraction = remember { MutableInteractionSource() }
+                Modifier
+                    .mikaPress(openInteraction, pressedScale = 0.96f, shape = ChipShape)
+                    .clickable(
+                        interactionSource = openInteraction,
+                        indication = null,
+                        role = if (a.photo) Role.Image else Role.Button,
+                        onClickLabel = stringResource(if (a.photo) R.string.attach_view_large else R.string.chat_open),
+                    ) {
+                        scope.launch {
+                            if (!AttachFiles.openSent(context, workspaceImage.conversationId, workspaceImage.path)) {
+                                Toast.makeText(context, AttachCopy.GONE, Toast.LENGTH_SHORT).show()
+                            }
                         }
                     }
-                }
             } else Modifier
             Box {
                 if (a.photo) {
                     val thumb = rememberAttachImage(workspaceImage ?: AttachImage.Picked(a.uri), TRAY_PX)
-                    Box(Modifier.testTag("tray-photo").size(58.dp).clip(ChipShape).background(c.fill).then(openModifier)) {
+                    Box(
+                        Modifier.testTag("tray-photo").size(58.dp).clip(ChipShape)
+                            .background(c.glassSubtle).border(0.5.dp, c.glassEdge, ChipShape).then(openModifier),
+                    ) {
                         thumb?.let { Image(it, a.name, Modifier.matchParentSize(), contentScale = ContentScale.Crop) }
                     }
                 } else {
                     Row(
-                        Modifier.testTag("tray-file").height(58.dp).widthIn(max = 200.dp).cardSurface(c, ChipShape)
-                            .clip(ChipShape).then(openModifier).padding(horizontal = 10.dp),
+                        Modifier.testTag("tray-file").height(58.dp).widthIn(max = 200.dp)
+                            .then(openModifier)
+                            .cardSurface(c, ChipShape).clip(ChipShape).padding(horizontal = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
@@ -356,10 +385,16 @@ internal fun PendingTray(items: List<PendingAttachment>, onRemove: (String) -> U
                         }
                     }
                 }
+                val removeInteraction = remember { MutableInteractionSource() }
                 Box(
-                    Modifier.align(Alignment.TopEnd).offset(6.dp, (-6).dp).size(20.dp).clip(CircleShape)
+                    Modifier.align(Alignment.TopEnd).offset(6.dp, (-6).dp).size(20.dp)
+                        .mikaPress(removeInteraction, pressedScale = 0.90f, shape = CircleShape)
+                        .clip(CircleShape)
                         .background(Color.Black.copy(alpha = 0.65f))
-                        .clickable(role = Role.Button, onClickLabel = AttachCopy.remove(a.name)) { onRemove(a.uri) }
+                        .border(0.5.dp, Color.White.copy(alpha = 0.28f), CircleShape)
+                        .clickable(interactionSource = removeInteraction, indication = null, role = Role.Button, onClickLabel = AttachCopy.remove(a.name)) {
+                            onRemove(a.uri)
+                        }
                         .semantics { contentDescription = AttachCopy.remove(a.name) },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -392,9 +427,14 @@ private fun SentPhotos(photos: List<AttachmentMessage.Item>, conversationId: Str
         val p = photos.single()
         val thumb = conversationId?.let { rememberAttachImage(AttachImage.Sent(it, p.path), SINGLE_PX) }
         val ratio = thumb?.let { (it.width.toFloat() / it.height.coerceAtLeast(1)).coerceIn(0.56f, 1.8f) } ?: 0.75f
+        val interaction = remember { MutableInteractionSource() }
         Box(
-            Modifier.testTag("sent-photo").width(minOf(SingleWidth, maxWidth)).aspectRatio(ratio).clip(GridPhotoShape).background(c.fill)
-                .clickable(role = Role.Image, onClickLabel = stringResource(R.string.attach_view_large)) { onOpen(p) },
+            Modifier.testTag("sent-photo").width(minOf(SingleWidth, maxWidth)).aspectRatio(ratio)
+                .mikaPress(interaction, pressedScale = 0.97f, shape = GridPhotoShape)
+                .clip(GridPhotoShape).background(c.glassSubtle).border(0.5.dp, c.glassEdge, GridPhotoShape)
+                .clickable(interactionSource = interaction, indication = null, role = Role.Image, onClickLabel = stringResource(R.string.attach_view_large)) {
+                    onOpen(p)
+                },
         ) {
             thumb?.let { Image(it, p.name, Modifier.matchParentSize(), contentScale = ContentScale.Crop) }
         }
@@ -403,14 +443,19 @@ private fun SentPhotos(photos: List<AttachmentMessage.Item>, conversationId: Str
     val gap = 4.dp
     val cell = minOf(if (cols == 2) 118.dp else 96.dp, (maxWidth - gap * (cols - 1)) / cols)
     val px = with(LocalDensity.current) { cell.roundToPx() }.coerceAtLeast(64)
-    Column(Modifier.clip(GridPhotoShape), verticalArrangement = Arrangement.spacedBy(gap)) {
+    Column(Modifier.clip(GridPhotoShape).border(0.5.dp, c.glassEdge, GridPhotoShape), verticalArrangement = Arrangement.spacedBy(gap)) {
         photos.chunked(cols).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                 row.forEach { p ->
                     val thumb = conversationId?.let { rememberAttachImage(AttachImage.Sent(it, p.path), px) }
+                    val interaction = remember { MutableInteractionSource() }
                     Box(
-                        Modifier.testTag("sent-photo").size(cell).background(c.fill)
-                            .clickable(role = Role.Image, onClickLabel = stringResource(R.string.attach_view_large)) { onOpen(p) },
+                        Modifier.testTag("sent-photo").size(cell)
+                            .mikaPress(interaction, pressedScale = 0.96f)
+                            .background(c.glassSubtle)
+                            .clickable(interactionSource = interaction, indication = null, role = Role.Image, onClickLabel = stringResource(R.string.attach_view_large)) {
+                                onOpen(p)
+                            },
                     ) {
                         thumb?.let { Image(it, p.name, Modifier.matchParentSize(), contentScale = ContentScale.Crop) }
                     }
@@ -423,9 +468,12 @@ private fun SentPhotos(photos: List<AttachmentMessage.Item>, conversationId: Str
 @Composable
 private fun SentFileCard(f: AttachmentMessage.Item, maxWidth: Dp, onClick: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.testTag("sent-file").widthIn(min = minOf(220.dp, maxWidth), max = maxWidth).cardSurface(c, FileCardShape).clip(FileCardShape)
-            .clickable(onClickLabel = stringResource(R.string.chat_open), role = Role.Button, onClick = onClick)
+        Modifier.testTag("sent-file").widthIn(min = minOf(220.dp, maxWidth), max = maxWidth)
+            .mikaPress(interaction, pressedScale = 0.98f, shape = FileCardShape)
+            .cardSurface(c, FileCardShape).clip(FileCardShape)
+            .clickable(interactionSource = interaction, indication = null, onClickLabel = stringResource(R.string.chat_open), role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -463,6 +511,7 @@ private const val SINGLE_PX = 640
 private val SingleWidth = 200.dp
 private val NeutralBadge = Color(0xFF8E8E93)
 private val TileShape = RoundedCornerShape(16.dp)
+private val LinkShape = RoundedCornerShape(8.dp)
 private val GridShape = RoundedCornerShape(12.dp)
 private val CellShape = RoundedCornerShape(6.dp)
 private val ChipShape = RoundedCornerShape(12.dp)

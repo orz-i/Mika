@@ -2,9 +2,9 @@ package com.wangzan101.mika.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,7 +46,11 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.R
 import com.wangzan101.mika.ui.components.GlassBlurSupported
+import com.wangzan101.mika.ui.components.GlassMaterials
+import com.wangzan101.mika.ui.components.cardSurface
 import com.wangzan101.mika.ui.components.floatShadow
+import com.wangzan101.mika.ui.components.liquidGlass
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaSize
@@ -176,14 +181,14 @@ internal fun LongPressMenu(
     }
 }
 
-/** 抬起的那一行:和侧栏里那一行一样的内容,换成白底圆角、带阴影。 */
+/** 抬起的那一行:和侧栏里那一行一样的内容,换成悬浮磨砂玻璃卡、带阴影。 */
 @Composable
 private fun LiftedRow(item: DrawerConversation) {
     val c = MikaTheme.colors
     Box(
         Modifier
             .floatShadow(c, NavShape)
-            .background(c.surface, NavShape)
+            .cardSurface(c, NavShape, elevated = true)
             .clip(NavShape)
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
@@ -193,20 +198,20 @@ private fun LiftedRow(item: DrawerConversation) {
 
 @Composable
 private fun MenuCard(content: @Composable () -> Unit) {
-    val c = MikaTheme.colors
     Column(
-        Modifier.floatShadow(c, MikaShapes.Card).clip(MikaShapes.Card)
-            .background(c.surface)
-            .border(0.5.dp, c.edge, MikaShapes.Card)
+        Modifier
+            .liquidGlass(GlassMaterials.FloatingMenu, backdrop = null, shape = MikaShapes.Card)
             .semantics { popup() },
     ) { content() }
 }
 
 @Composable
 private fun MenuItem(text: String, icon: ImageVector, tag: String, color: Color, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .clickable(role = Role.Button, onClick = onClick)
+            .mikaPress(interaction, pressedScale = 0.985f)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .testTag(tag)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,

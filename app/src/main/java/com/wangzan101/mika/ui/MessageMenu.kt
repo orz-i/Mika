@@ -5,8 +5,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import com.wangzan101.mika.ui.components.GlassBlurSupported
 import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
@@ -179,8 +182,10 @@ internal fun QuoteChip(quote: QuoteMessage.Quote, onRemove: () -> Unit, modifier
     val c = MikaTheme.colors
     val remove = stringResource(R.string.chat_quote_remove)
     val said = quoteDescription(quote)
+    val removeInteraction = remember { MutableInteractionSource() }
     Row(
-        modifier.fillMaxWidth().testTag("quote-chip").cardSurface(c, QuoteShape).padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
+        modifier.fillMaxWidth().testTag("quote-chip").cardSurface(c, QuoteShape).clip(QuoteShape)
+            .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(3.dp).height(30.dp).background(c.accent, CircleShape))
@@ -189,8 +194,10 @@ internal fun QuoteChip(quote: QuoteMessage.Quote, onRemove: () -> Unit, modifier
             style = MikaType.Caption, color = c.ink2, maxLines = 2, overflow = TextOverflow.Ellipsis,
         )
         Box(
-            Modifier.size(40.dp).clip(CircleShape)
-                .clickable(role = Role.Button, onClickLabel = remove, onClick = onRemove)
+            Modifier.size(40.dp)
+                .mikaPress(removeInteraction, pressedScale = 0.90f, shape = CircleShape)
+                .clip(CircleShape)
+                .clickable(interactionSource = removeInteraction, indication = null, role = Role.Button, onClickLabel = remove, onClick = onRemove)
                 .semantics { contentDescription = remove }
                 .testTag("quote-remove"),
             contentAlignment = Alignment.Center,
@@ -200,13 +207,15 @@ internal fun QuoteChip(quote: QuoteMessage.Quote, onRemove: () -> Unit, modifier
     }
 }
 
-/** 用户的话里引的那条:气泡上方一小块淡色,最多两行。 */
+/** 用户的话里引的那条:气泡上方一小块淡色磨砂卡,最多两行。 */
 @Composable
 internal fun SentQuote(quote: QuoteMessage.Quote, maxWidth: Dp) {
     val c = MikaTheme.colors
     val said = quoteDescription(quote)
     Row(
-        Modifier.padding(bottom = 4.dp).widthIn(max = maxWidth).background(c.ink.copy(alpha = 0.05f), QuoteShape)
+        Modifier.padding(bottom = 4.dp).widthIn(max = maxWidth)
+            .background(c.glassSubtle, QuoteShape)
+            .border(0.5.dp, c.glassEdge, QuoteShape)
             .padding(horizontal = 10.dp, vertical = 6.dp)
             .semantics(mergeDescendants = true) { contentDescription = said }
             .testTag("sent-quote"),

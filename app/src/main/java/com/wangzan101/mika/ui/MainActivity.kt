@@ -8,9 +8,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
+import com.wangzan101.mika.ui.components.GlassBackdropHost
 import com.wangzan101.mika.ui.components.KeyboardDismissArea
-import com.wangzan101.mika.ui.components.glassSource
-import com.wangzan101.mika.ui.components.rememberGlassBackdrop
 import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -489,52 +488,57 @@ private fun MikaRoot(
                 onReopened = nav::drawerReopened,
                 resetKey = nav.resetSerial,
             ) { openDrawer ->
+                val readyRelease = readyUpdate?.takeIf { autoUpdate && it.apkUrl == updateState.update?.apkUrl }
+                var installUpdate by remember { mutableStateOf<ReleaseInfo?>(null) }
                 Box(Modifier.fillMaxSize()) {
-                    val readyRelease = readyUpdate?.takeIf { autoUpdate && it.apkUrl == updateState.update?.apkUrl }
-                    val updateBackdrop = if (readyRelease != null) rememberGlassBackdrop() else null
-                    Box(Modifier.fillMaxSize().glassSource(updateBackdrop)) {
-                        ChatScreen(
-                            vm = app.chat,
-                            check = check,
-                            frames = app.taskState.frames,
-                            webOpen = app.tasks.webScreenOpen,
-                            reduceMotion = MikaTheme.reduceMotion,
-                            onOpenDrawer = openDrawer,
-                            onOpenFiles = { filesFromDrawer = false; filesConversation = app.chat.ui.value.conversationId; nav.push(Route.Files) },
-                            openSettings = { nav.push(Route.Settings) },
-                            openRun = { runId = it; nav.push(Route.Run) },
-                            phoneSetupNeeded = phoneSetupNeeded && status.builtinShell != BuiltinShellStatus.Running,
-                            openPhoneSetup = { onFix(Fix.OpenPhoneSetup) },
-                            loadSource = { id ->
-                                withContext(Dispatchers.IO) { evidenceSource(RunStore(context).events(id)) { ConfirmationNotifier.appLabel(context, it) } }
-                            },
-                            openSource = { id, legacy ->
-                                sourceRunId = id
-                                sourceLegacyText = legacy
-                                nav.push(Route.Source)
-                            },
-                            voice = app.voice,
-                            openSpeechModel = { nav.push(Route.SpeechModel) },
-                            onOpenTeach = { hint ->
-                                app.teach.prefill(hint)
-                                nav.push(Route.Teach)
-                            },
-                        )
-                    }
-                    var installUpdate by remember { mutableStateOf<ReleaseInfo?>(null) }
-                    readyRelease?.let { release ->
-                        UpdateReadyCapsule(
-                            release,
-                            onInstall = {
-                                installUpdate = release
-                                app.automaticUpdates.dismiss(release)
-                            },
-                            onTimeout = { app.automaticUpdates.dismiss(release) },
-                            onDisable = { app.automaticUpdates.setEnabled(false) },
-                            backdrop = updateBackdrop,
-                            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 54.dp),
-                        )
-                    }
+                    GlassBackdropHost(
+                        modifier = Modifier.fillMaxSize(),
+                        enabled = readyRelease != null,
+                        content = {
+                            ChatScreen(
+                                vm = app.chat,
+                                check = check,
+                                frames = app.taskState.frames,
+                                webOpen = app.tasks.webScreenOpen,
+                                reduceMotion = MikaTheme.reduceMotion,
+                                onOpenDrawer = openDrawer,
+                                onOpenFiles = { filesFromDrawer = false; filesConversation = app.chat.ui.value.conversationId; nav.push(Route.Files) },
+                                openSettings = { nav.push(Route.Settings) },
+                                openRun = { runId = it; nav.push(Route.Run) },
+                                phoneSetupNeeded = phoneSetupNeeded && status.builtinShell != BuiltinShellStatus.Running,
+                                openPhoneSetup = { onFix(Fix.OpenPhoneSetup) },
+                                loadSource = { id ->
+                                    withContext(Dispatchers.IO) { evidenceSource(RunStore(context).events(id)) { ConfirmationNotifier.appLabel(context, it) } }
+                                },
+                                openSource = { id, legacy ->
+                                    sourceRunId = id
+                                    sourceLegacyText = legacy
+                                    nav.push(Route.Source)
+                                },
+                                voice = app.voice,
+                                openSpeechModel = { nav.push(Route.SpeechModel) },
+                                onOpenTeach = { hint ->
+                                    app.teach.prefill(hint)
+                                    nav.push(Route.Teach)
+                                },
+                            )
+                        },
+                        overlay = { updateBackdrop ->
+                            readyRelease?.let { release ->
+                                UpdateReadyCapsule(
+                                    release,
+                                    onInstall = {
+                                        installUpdate = release
+                                        app.automaticUpdates.dismiss(release)
+                                    },
+                                    onTimeout = { app.automaticUpdates.dismiss(release) },
+                                    onDisable = { app.automaticUpdates.setEnabled(false) },
+                                    backdrop = updateBackdrop,
+                                    modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 54.dp),
+                                )
+                            }
+                        },
+                    )
                     installUpdate?.let { release ->
                         UpdateSheet(release, BuildConfig.VERSION_NAME, BuildConfig.BETA,
                             onOpenUrl = { openInBrowser(context, it) }, onDismiss = { installUpdate = null })

@@ -34,17 +34,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -59,7 +55,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
@@ -95,9 +93,12 @@ import com.wangzan101.mika.ui.components.ButtonSize
 import com.wangzan101.mika.ui.components.GlassBackdrop
 import com.wangzan101.mika.ui.components.GlassBar
 import com.wangzan101.mika.ui.components.GlassBlurSupported
+import com.wangzan101.mika.ui.components.GlassMaterials
+import com.wangzan101.mika.ui.components.MikaBottomSheet
 import com.wangzan101.mika.ui.components.MikaButton
-import com.wangzan101.mika.ui.components.floatShadow
+import com.wangzan101.mika.ui.components.liquidGlass
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import com.wangzan101.mika.voice.HoldToTalk
@@ -486,8 +487,18 @@ internal fun VoiceBarCover(vh: VoiceHold, state: HoldToTalk.State, reduceMotion:
         s.live -> stringResource(R.string.voice_release_fill)
         else -> stringResource(R.string.voice_release_convert)
     }
+    val tone = aimTone(s, c.accent)
+    val topTone = if (s.cancelArmed || s.sendArmed) tone else c.accentHighlight
     Row(
-        modifier.clip(CircleShape).background(aimTone(s, c.accent)).testTag("voice-bar"),
+        modifier
+            .clip(CircleShape)
+            .background(Brush.verticalGradient(listOf(topTone, tone)), CircleShape)
+            .border(
+                0.75.dp,
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.10f))),
+                CircleShape,
+            )
+            .testTag("voice-bar"),
         horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -536,7 +547,7 @@ internal fun VoiceFloat(vh: VoiceHold, state: HoldToTalk.State, title: String, b
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             val armed = listening?.cancelArmed == true
             AnimatedVisibility(vh.holding && listening != null, enter = fadeIn(tween(if (reduceMotion) 0 else 200)), exit = fadeOut(tween(if (reduceMotion) 0 else 150))) {
-                CancelHint(armed, Modifier.padding(bottom = 14.dp))
+                CancelHint(armed, backdrop, Modifier.padding(bottom = 14.dp))
             }
             AnimatedVisibility(
                 listening != null,
@@ -547,19 +558,30 @@ internal fun VoiceFloat(vh: VoiceHold, state: HoldToTalk.State, title: String, b
                 last[0]?.let { ListenCard(it, title, vh.engine, backdrop) { at -> vh.cardAt = at } }
             }
             val toast = vh.toast
-            if (toast != null && listening == null) VoiceToast(toast)
+            if (toast != null && listening == null) VoiceToast(toast, backdrop)
         }
     }
 }
 
 /** 「上滑 发送/取消」的小胶囊:往上滑进卡片是发送、再滑过卡片到这里是取消;滑到这里变红写「松开 取消」。 */
 @Composable
-private fun CancelHint(armed: Boolean, modifier: Modifier = Modifier) {
+private fun CancelHint(armed: Boolean, backdrop: GlassBackdrop?, modifier: Modifier = Modifier) {
     val c = MikaTheme.colors
-    val shape = RoundedCornerShape(16.dp)
+    val shape = MikaShapes.Pill
+    val pillModifier = if (armed) {
+        modifier
+            .shadow(10.dp, shape, clip = false, ambientColor = c.bad.copy(alpha = 0.35f), spotColor = c.bad.copy(alpha = 0.45f))
+            .background(Brush.verticalGradient(listOf(c.bad, c.bad.copy(alpha = 0.90f))), shape)
+            .border(
+                0.75.dp,
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.38f), Color.White.copy(alpha = 0.10f))),
+                shape,
+            )
+    } else {
+        modifier.liquidGlass(GlassMaterials.FloatingPill, backdrop = backdrop, shape = shape)
+    }
     Row(
-        modifier.floatShadow(c, shape).background(if (armed) c.bad else c.surface, shape)
-            .padding(horizontal = 14.dp, vertical = 7.dp).testTag("voice-cancel-hint"),
+        pillModifier.padding(horizontal = 14.dp, vertical = 7.dp).testTag("voice-cancel-hint"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -583,7 +605,9 @@ private fun ListenCard(
     GlassBar(
         Modifier.fillMaxWidth().testTag("voice-listen").onGloballyPositioned { onPlaced(it.boundsInRoot()) }
             .then(if (s.cancelArmed || s.sendArmed) Modifier.border(1.5.dp, aimTone(s, c.accent), shape) else Modifier),
-        backdrop, shape,
+        backdrop = backdrop,
+        shape = shape,
+        material = GlassMaterials.VoiceCard,
     ) {
         Column(Modifier.weight(1f).padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -591,7 +615,10 @@ private fun ListenCard(
                 Text(title, Modifier.weight(1f, fill = false), style = HeadText, color = c.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (engine.isNotEmpty()) {
                     Text(
-                        engine, Modifier.background(c.fill, RoundedCornerShape(7.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+                        engine,
+                        Modifier.background(c.glassSubtle, RoundedCornerShape(7.dp))
+                            .border(0.5.dp, c.glassEdge, RoundedCornerShape(7.dp))
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
                         style = ChipText, color = c.ink2, maxLines = 1,
                     )
                 }
@@ -652,12 +679,15 @@ private fun aimTone(s: HoldToTalk.State.Listening, idle: Color): Color {
 
 /** 输入栏上方的一句轻提示(没听清、识别服务忙……),一会儿自己消失。 */
 @Composable
-private fun VoiceToast(text: String) {
+private fun VoiceToast(text: String, backdrop: GlassBackdrop?) {
     val c = MikaTheme.colors
     Text(
         text,
-        Modifier.background(c.ink.copy(alpha = 0.88f), RoundedCornerShape(18.dp)).padding(horizontal = 16.dp, vertical = 9.dp).testTag("voice-toast"),
-        style = ToastText, color = c.bg, maxLines = 2,
+        Modifier
+            .liquidGlass(GlassMaterials.FloatingPill, backdrop = backdrop, shape = MikaShapes.Pill)
+            .padding(horizontal = 16.dp, vertical = 9.dp)
+            .testTag("voice-toast"),
+        style = ToastText, color = c.ink, maxLines = 2,
     )
 }
 
@@ -695,7 +725,7 @@ internal fun Modifier.voiceDim(on: Boolean, reduceMotion: Boolean): Modifier {
 }
 
 /** 「还不能语音输入」(「去选」到设置里选转文字)和录音权限的说明(「去设置」到系统里 Mika 的权限页)。 */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun VoiceSheetHost(vh: VoiceHold, onPickSpeech: () -> Unit) {
     val sheet = vh.sheet ?: return
@@ -725,13 +755,8 @@ internal fun VoiceSheetHost(vh: VoiceHold, onPickSpeech: () -> Unit) {
             }
         }
     }
-    ModalBottomSheet(
-        onDismissRequest = { vh.sheet = null },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surface,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    ) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 18.dp).testTag("voice-sheet")) {
+    MikaBottomSheet(onDismissRequest = { vh.sheet = null }) {
+        Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 18.dp).testTag("voice-sheet")) {
             Text(title, style = MikaType.Title, color = c.ink)
             Text(body, Modifier.padding(top = 8.dp), style = SheetBody, color = c.ink2)
             Row(Modifier.fillMaxWidth().padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
