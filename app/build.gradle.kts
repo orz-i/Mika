@@ -181,6 +181,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.zstd.jni)
     // 沙箱路径契约(core 的 testFixtures):AndroidSandbox 在 JVM 与真机上都跑同一套
     testImplementation(testFixtures(project(":core")))
     androidTestImplementation(testFixtures(project(":core")))
