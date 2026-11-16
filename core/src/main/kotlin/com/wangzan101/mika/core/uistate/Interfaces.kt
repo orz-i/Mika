@@ -146,15 +146,27 @@ internal class Interfaces(
         val reportsEffect: Boolean get() = probe != null
     }
 
-    override suspend fun around(tool: AgentTool, args: JsonObject, inlineScreen: Boolean, body: suspend (reportsEffect: Boolean) -> ToolExecution): ToolExecution {
+    override suspend fun around(tool: AgentTool, args: JsonObject, inlineScreen: Boolean, body: suspend (reportsEffect: Boolean) -> ToolExecution): ToolExecution =
+        around(tool, args, inlineScreen, afterAction = null, body = body)
+
+    override suspend fun around(
+        tool: AgentTool,
+        args: JsonObject,
+        inlineScreen: Boolean,
+        afterAction: (suspend () -> Boolean)?,
+        body: suspend (reportsEffect: Boolean) -> ToolExecution,
+    ): ToolExecution {
         if (tool.offScreen || tool.verb == Verb.ListApps) return body(false)
         // 按目标启动可离开受限应用;此时不采集旧页面,只在启动后附上允许的页面。
         if (tool.verb in APP_TARGET_VERBS) {
             val raw = body(false)
-            return finish(tool, args, Prep(session, null, null), raw, inlineScreen)
+            val waited = afterAction?.invoke() == true
+            return finish(tool, args, Prep(session, null, null), raw, inlineScreen, waited)
         }
         val prep = prepare(tool, args)
-        return finish(tool, args, prep, body(prep.reportsEffect), inlineScreen)
+        val raw = body(prep.reportsEffect)
+        val waited = afterAction?.invoke() == true
+        return finish(tool, args, prep, raw, inlineScreen, waited)
     }
 
     private suspend fun prepare(tool: AgentTool, o: JsonObject): Prep {
@@ -173,12 +185,38 @@ internal class Interfaces(
      * 一次调用之后:成功的动作按 [inlineScreen] 附界面差异;画面按观察策略附上,并报回实际效果;
      * 动过这块屏之后(失败的也算,参数不对没执行的不算),这块屏上之前看图得来的点就不再可信。
      */
-    private suspend fun finish(tool: AgentTool, o: JsonObject, prep: Prep, raw: ToolExecution, inlineScreen: Boolean): ToolExecution {
+    private suspend fun finish(
+        tool: AgentTool,
+        o: JsonObject,
+        prep: Prep,
+        raw: ToolExecution,
+        inlineScreen: Boolean,
+        interstitialWaited: Boolean = false,
+    ): ToolExecution {
         val session = prep.session
         session.probeDone()
         val readsAtAction = session.reads
         var result = raw
         val ok = result.content["ok"] == JsonPrimitive(true)
+        if (interstitialWaited) {
+            val settled = screenAttempt { session.screen.drainSettledSpill() }
+            if (ok) {
+                val updated = result.content.toMutableMap()
+                val hadOpened = updated.remove("opened") != null
+                if (hadOpened) updated.remove("hint")
+                if (settled != null) {
+                    updated["opened"] = settled.toJson()
+                    val note = openedHint(settled)
+                    val prevHint = (updated["hint"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    updated["hint"] = JsonPrimitive(listOfNotNull(note, prevHint).joinToString(" "))
+                    if (settled.pulledBack) updated["changed"] = JsonPrimitive(true)
+                }
+                result = result.with(
+                    content = JsonObject(updated),
+                    changed = if (settled?.pulledBack == true) true else result.changed,
+                )
+            }
+        }
         if (inlineScreen && tool.showsScreenAfter && ok) result = session.withScreen(result)
         // 旧模式的视觉主模型直接看动作后画面；分级模式只在界面差异或下次 observe 需要时补图。
         if (tool.showsScreenAfter && ok && !config.adaptiveVision && result.images.isEmpty() && "screen" !in result.content) result = session.withFrame(result)

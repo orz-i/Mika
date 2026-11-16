@@ -309,6 +309,18 @@ This action opened {{app}} as a popup on the user's own screen that needs them (
 ## spill.in_use
 This action opened {{app}}, which the user is using on their own screen, so it opened there in front of them and Mika left it alone. Do not repeat the action. Call hand_to_user with reason other so the user can do that step there, or wait and try again later.
 
+## spill.jump_confirm_wait
+This action triggered a jump confirmation from {{initiator}} to open {{target}} on the user's own screen, and Mika left it for the user to confirm. Do not repeat the action: ask the user to confirm there (or call hand_to_user with reason other), then check Mika's screen once they have responded.
+
+## spill.jump_confirm_auto
+This action triggered a jump confirmation from {{initiator}} to open {{target}}, and Mika automatically confirmed it for this step so {{target}} opened on Mika's screen. The action worked, so do not repeat it: continue in {{target}}.
+
+## spill.jump_confirm_denied
+The jump confirmation from {{initiator}} to open {{target}} was denied or closed, so {{target}} did not open. Do not simply repeat the same action: choose another route or ask the user how to proceed.
+
+## spill.jump_confirm_unavailable
+This action triggered a jump confirmation from {{initiator}} to open {{target}}, but automatic confirmation failed or is unavailable here. Do not repeat the action: call hand_to_user with reason other if the user can handle it on their screen, or pick an alternative route (or stop and report if running unattended).
+
 ## profile.main_not_requested
 This is the main app, not the requested copy.
 

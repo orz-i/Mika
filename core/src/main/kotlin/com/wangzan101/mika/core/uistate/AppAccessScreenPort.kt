@@ -97,6 +97,7 @@ class AppAccessScreenPort(
     override suspend fun frameGrid() = checked { inner.frameGrid() }
     override suspend fun isProtected() = checked { inner.isProtected() }
     override suspend fun checkScreen() = checked { inner.checkScreen() }
+    override suspend fun drainSettledSpill() = checked { inner.drainSettledSpill() }
 
     // ---------- 在当前屏上的动作 ----------
     override suspend fun tapRef(ref: String, snapshotId: String) = checked { inner.tapRef(ref, snapshotId) }

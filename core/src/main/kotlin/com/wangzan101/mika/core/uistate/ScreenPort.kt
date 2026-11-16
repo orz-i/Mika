@@ -1,5 +1,9 @@
 package com.wangzan101.mika.core.uistate
 
+import com.wangzan101.mika.core.custody.InterstitialChoice
+import com.wangzan101.mika.core.custody.JumpConfirmOutcome
+import com.wangzan101.mika.core.custody.JumpConfirmReport
+
 import com.wangzan101.mika.core.visual.FrameGrid
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
@@ -108,9 +112,14 @@ data class ScreenSnapshot(
 data class OpenedElsewhere(
     val packageName: String, val app: String?, val pulledBack: Boolean, val inProfile: String? = null, val picker: Boolean = false,
     val closed: Boolean = false, val byUser: Boolean = false, val needsUser: Boolean = false,
+    val jumpConfirm: JumpConfirmReport? = null,
 ) {
     /** 此刻还在用户的主屏上(用户正用着,或系统正在问用户)。 */
-    val onUserScreen: Boolean get() = !pulledBack && !closed && !byUser
+    val onUserScreen: Boolean
+        get() = !pulledBack && !closed && !byUser &&
+            jumpConfirm?.choice != InterstitialChoice.DENY &&
+            jumpConfirm?.outcome != JumpConfirmOutcome.AUTO_ALLOWED &&
+            jumpConfirm?.outcome != JumpConfirmOutcome.USER_ALLOWED
 
     fun toJson(): JsonObject = buildJsonObject {
         put("package", packageName)
@@ -122,6 +131,16 @@ data class OpenedElsewhere(
         if (picker) put("picker", true)
         if (closed) put("closed", true)
         if (byUser) put("byUser", true)
+        jumpConfirm?.let { jc ->
+            put("jumpConfirm", buildJsonObject {
+                jc.initiator?.let { put("initiator", it) }
+                jc.target?.let { put("target", it) }
+                jc.by?.let { put("by", it.name.lowercase()) }
+                put("choice", jc.choice.name.lowercase())
+                put("outcome", jc.outcome.name.lowercase())
+                jc.degradeReason?.let { put("degradeReason", it.name.lowercase()) }
+            })
+        }
     }
 
     companion object {
@@ -323,6 +342,9 @@ interface ScreenPort {
 
     /** 此刻画面缩成的亮度格子(判动作效果用,见 [FrameGrid.sample]);没有画面、端口不支持时为 null。要便宜:不编码图片。 */
     suspend fun frameGrid(): FrameGrid? = null
+
+    /** 取出刚刚在中间页/确认弹窗等待完成后落定、尚未附进工具结果的越屏/回捞报告；没有为 null。 */
+    suspend fun drainSettledSpill(): OpenedElsewhere? = null
 
     /** 手机端网络抓包端口；设备不支持或未启用抓包时为 null。 */
     val network: com.wangzan101.mika.core.cap.phone.PhoneNetworkPort? get() = null

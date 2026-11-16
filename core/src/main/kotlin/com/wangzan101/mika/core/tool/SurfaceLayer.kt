@@ -32,6 +32,22 @@ internal interface SurfaceLayer {
      */
     suspend fun around(tool: AgentTool, args: JsonObject, inlineScreen: Boolean, body: suspend (reportsEffect: Boolean) -> ToolExecution): ToolExecution
 
+    /**
+     * 同上，但在动作本体返回后、界面收尾（截屏、差异、效果）之前先执行 [afterAction]（例如挂起等待刚弹出的确认弹窗）；
+     * [afterAction] 返回 true 表示曾等待过中间页。
+     */
+    suspend fun around(
+        tool: AgentTool,
+        args: JsonObject,
+        inlineScreen: Boolean,
+        afterAction: (suspend () -> Boolean)?,
+        body: suspend (reportsEffect: Boolean) -> ToolExecution,
+    ): ToolExecution = around(tool, args, inlineScreen) { reportsEffect ->
+        val exec = body(reportsEffect)
+        afterAction?.invoke()
+        exec
+    }
+
     /** 开着时写操作执行前取目标元素与锚点(回放开关打开时由循环设置)。 */
     var captureTargets: Boolean
 

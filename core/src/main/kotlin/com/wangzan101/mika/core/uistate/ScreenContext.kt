@@ -1,5 +1,9 @@
 package com.wangzan101.mika.core.uistate
 
+import com.wangzan101.mika.core.custody.InterstitialActor
+import com.wangzan101.mika.core.custody.InterstitialChoice
+import com.wangzan101.mika.core.custody.JumpConfirmOutcome
+
 import com.wangzan101.mika.core.capability.CapabilityKey
 import com.wangzan101.mika.core.prompt.Feedback
 import com.wangzan101.mika.core.tool.FAILURE_MESSAGES
@@ -114,6 +118,24 @@ internal fun ToolContext.action(r: ActionResult): ToolExecution = when (r) {
  */
 internal fun openedHint(o: OpenedElsewhere): String {
     val app = o.app ?: o.packageName
+    val jc = o.jumpConfirm
+    if (jc != null) {
+        val target = jc.target ?: app
+        val initiator = jc.initiator ?: app
+        return when {
+            jc.outcome == JumpConfirmOutcome.DENIED || jc.choice == InterstitialChoice.DENY || o.closed ->
+                Feedback.format("spill.jump_confirm_denied", "initiator" to initiator, "target" to target)
+            jc.outcome == JumpConfirmOutcome.AUTO_ALLOWED ||
+                (jc.by == InterstitialActor.AGENT && jc.choice == InterstitialChoice.ALLOW) ->
+                Feedback.format("spill.jump_confirm_auto", "initiator" to initiator, "target" to target)
+            o.byUser || jc.outcome == JumpConfirmOutcome.USER_ALLOWED ->
+                Feedback.format("spill.user_done", "app" to app)
+            jc.outcome == JumpConfirmOutcome.UNAVAILABLE ->
+                Feedback.format("spill.jump_confirm_unavailable", "initiator" to initiator, "target" to target)
+            else ->
+                Feedback.format("spill.jump_confirm_wait", "initiator" to initiator, "target" to target)
+        }
+    }
     return when {
         o.closed -> Feedback["spill.picker_closed"]
         o.byUser -> Feedback.format("spill.user_done", "app" to app)

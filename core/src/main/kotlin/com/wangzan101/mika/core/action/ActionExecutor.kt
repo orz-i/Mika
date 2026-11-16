@@ -70,6 +70,8 @@ class ActionExecutor(
     private val pacing: OutwardPacing = OutwardPacing.Off,
     /** 统一动作节拍策略（未传且旧 [pacing] 开启时自动桥接为 [com.wangzan101.mika.core.policy.OutwardPacingPolicy]）。 */
     private val pacingPolicy: PacingPolicy = pacing.asPacingPolicy(),
+    /** 无条件检查并等待系统中间页/跳转确认弹窗解决的门禁；曾等待过时返回 true。 */
+    private val interstitialGate: suspend () -> Boolean = { false },
 ) {
     private val decision = ConfirmDecision(tools, confirmations, approvals, recorder = recorder, provenance = provenance, selfPackage = selfPackage, autonomous = autonomous)
     private val decisionMutex = Mutex()
@@ -177,7 +179,9 @@ class ActionExecutor(
         if (stopped) return refuse("guard_stopped", origin, before)
         if (policy.stopOnGuardWarning && before.isNotEmpty()) return refuse("guard_warning", origin, before)
         val writing = tools.writesScreen(call.name)
-        if (writing && !policy.gatedByCaller) gate()
+        if (!policy.gatedByCaller) {
+            if (writing) gate() else if (!offScreen) interstitialGate()
+        }
         // 没有可用的同意就不执行,也不计入失败熔断
         var (d, site) = judge(call.name, args, origin)
         // 不在屏上、工具声明要问的一步(会改动东西的 root 命令):调用方问得到人就当场问,同意了按这次同意再判一次;
@@ -373,9 +377,10 @@ class ActionExecutor(
 
     private suspend fun execute(s: Step, sub: SubActions?): ToolExecution {
         val call = if (s.offScreen && offScreen != null) offScreen.capTimeout(s.call, s.args) else s.call
-        val cap = s.origin.policy.actionCapMs ?: return tools.execute(call, pass, s.origin.step, sub)
+        val after = if (!s.offScreen && !s.skipSurface && !s.origin.policy.gatedByCaller) interstitialGate else null
+        val cap = s.origin.policy.actionCapMs ?: return tools.execute(call, pass, s.origin.step, sub, afterScreenAction = after)
         // 动作自己有上限
-        return withTimeoutOrNull(cap) { tools.execute(call, pass, s.origin.step, sub) } ?: ToolExecution(buildJsonObject {
+        return withTimeoutOrNull(cap) { tools.execute(call, pass, s.origin.step, sub, afterScreenAction = after) } ?: ToolExecution(buildJsonObject {
             put("ok", false); put("error", "action_timeout"); put("message", "the action did not finish within ${cap / 1000} s; read the screen before going on")
         })
     }

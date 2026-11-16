@@ -261,6 +261,23 @@ sealed interface RunEvent {
     @Serializable @SerialName("outcome")
     data class OutcomeJudged(override val atMs: Long, val outcome: String, val reason: String = "", val model: String? = null) : RunEvent
 
+    /**
+     * 跨屏跳转授权弹窗托管审计事件：记录发起方 A（[initiator]）、目标方 B（[target]）、弹窗组件（[component]）、
+     * 处置结果（[result]，如 `auto_allowed` / `degraded` / `click_failed` / `denied`）以及是否触发护栏降级（[degraded] 与 [reason]）。
+     */
+    @Serializable @SerialName("jump_confirm")
+    data class JumpConfirm(
+        override val atMs: Long,
+        val initiator: String? = null,
+        val target: String? = null,
+        val component: String? = null,
+        val result: String,
+        val degraded: Boolean = false,
+        val reason: String? = null,
+        val by: String? = null,
+        val displayId: Int? = null,
+    ) : RunEvent
+
     companion object {
         const val MAX_FIELD = 2000
 

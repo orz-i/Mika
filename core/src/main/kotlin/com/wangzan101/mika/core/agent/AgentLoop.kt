@@ -192,6 +192,8 @@ class AgentLoop(
     private val guardMode: GuardMode = runProfile.executionPolicy.guardMode,
     /** 子任务向交互式父会话冒泡确认的可选回调（未传时自动从协程上下文继承 [ConfirmEscalator]）。 */
     private val confirmEscalator: (suspend (ConfirmationRequest) -> ConfirmChoice)? = null,
+    /** 无条件检查并等待系统中间页/跳转确认弹窗解决的门禁；挂起期间对外显示等待原因，结束后恢复状态并报告是否等待过。 */
+    private val interstitialGate: suspend (setWaiting: (TaskState?) -> Unit) -> Boolean = { false },
 ) {
     init {
         require(maxSteps > 0) { "maxSteps must be positive" }
@@ -359,6 +361,33 @@ class AgentLoop(
         }
     }
 
+    /** 检查并等待活跃的系统中间页/跳转确认框解决；真的等待过时返回 true，并保持当前运行态在挂起前后一致。 */
+    private suspend fun awaitInterstitialGate(): Boolean {
+        val restore = _state.value
+        return try {
+            interstitialGate { waiting ->
+                _state.value = waiting ?: restore
+                if (waiting != null) emit(waitingEvent(waiting))
+            }
+        } finally {
+            _state.value = restore
+        }
+    }
+
+    private suspend fun interstitialResumeMessage(): Message {
+        val glance = tools.lookNow()
+        val text = if (glance != null) {
+            "A system dialog or confirmation interstitial paused the task and has now settled. Current screen state:\n${glance.content}"
+        } else {
+            "A system dialog or confirmation interstitial paused the task and has now settled. Check the current screen state before continuing."
+        }
+        return Message(
+            Role.User,
+            listOfNotNull(Part.Text(text), glance?.image?.let { tools.modelImage(it, glance.imageId) }),
+            Author.Mika,
+        )
+    }
+
     /**
      * 交出的回答判过结局([OutcomeJudge])之后调用:回放走完的路线只在办成([LearnGate])时记一次成功。
      * 失败、取消的任务不判也不用调用;不调用就不记成功。
@@ -461,7 +490,8 @@ class AgentLoop(
         val recorder = ActionRecorder(sink, clock, saveScreen = { id, png -> sink.media(id, png) })
         val executor = ActionExecutor(tools, guards, confirmations, gate = ::awaitGate, recorder = recorder, offScreen = tools.offScreenGuard(), approvals = effectiveApprovals,
             provenance = provenance,
-            selfPackage = selfPackage, autonomous = autonomous, pacing = outwardPacing, pacingPolicy = effectivePacing)
+            selfPackage = selfPackage, autonomous = autonomous, pacing = outwardPacing, pacingPolicy = effectivePacing,
+            interstitialGate = ::awaitInterstitialGate)
         var emptyNudged = false
         // 调过工具才有可核对的材料;交给用户付款和放行过对外动作一样,回答要另请核查
         var acted = false
@@ -559,6 +589,7 @@ class AgentLoop(
             appendRuntimeState(history, place, labels, step)
             _state.value = TaskState.Running(step, note, progress = progressState())
             refreshOffer()
+            if (awaitInterstitialGate()) history += interstitialResumeMessage()
             var asked = now()
             val routed = try {
                 routedOrRedirect(inbox, history, specs, track, step, { asked = it }, previewFor(step))
@@ -612,6 +643,10 @@ class AgentLoop(
             if (calls.isEmpty()) {
                 track.after(ToolTraits(), ok = false, guard = false, changed = null, recovery = false, app = null)
                 recordReply(null)
+                if (awaitInterstitialGate()) {
+                    history += interstitialResumeMessage()
+                    continue
+                }
                 // 模型给出最终回答时,先收下在途的用户插话,再决定是否交出回答。
                 if (keepFinished(history, inbox)) continue
                 // 空回复、被输出上限截断的半截话不是回答:提醒一次,再这样就结束
@@ -814,6 +849,7 @@ class AgentLoop(
                 }
             }
 
+            val preWaveInterstitialWaited = awaitInterstitialGate()
             val waves = if (flags.serialToolCallsOnly) {
                 listOf(ToolWave.Serial(IndexedValue(0, first)))
             } else {
@@ -832,7 +868,9 @@ class AgentLoop(
                     val callTraits = tools.traits(call.name)
                     val callArgs = parseArgs(call.argsJson)
                     val surface = uiSurfaceFor(call.name, callArgs)
-                    if (surface != null && surface in changedSurfaces && !isFreshScreenRead(callTraits, callArgs)) {
+                    val blockedBySurface = surface != null && surface in changedSurfaces && !isFreshScreenRead(callTraits, callArgs)
+                    val blockedByInterstitial = preWaveInterstitialWaited && !tools.offScreen(call.name) && !isFreshScreenRead(callTraits, callArgs)
+                    if (blockedBySurface || blockedByInterstitial) {
                         val content = buildJsonObject {
                             put("ok", false)
                             put("error", "screen_changed")
@@ -920,6 +958,11 @@ class AgentLoop(
                 }
             }
 
+            if (preWaveInterstitialWaited && pendingStop == null &&
+                calls.take(if (flags.serialToolCallsOnly) 1 else calls.size).none { isFreshScreenRead(tools.traits(it.name), parseArgs(it.argsJson)) }
+            ) {
+                followUpMessages += interstitialResumeMessage()
+            }
             recordReplyOnce(replyArgsJson(secretField = true))
             val finalResults = calls.mapIndexed { idx, call ->
                 resultsByIndex[idx] ?: Part.ToolResult(call.id, buildJsonObject {

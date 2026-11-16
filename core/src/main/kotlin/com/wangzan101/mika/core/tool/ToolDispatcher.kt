@@ -361,11 +361,22 @@ class ToolDispatcher internal constructor(
      * [sub]:web_script 里的动作经它回到循环(守卫、关卡、记录照常);不给时脚本里的动作一律不做。
      */
     @Suppress("UNUSED_PARAMETER")
-    suspend fun execute(call: Part.ToolCall, pass: ActionPass, step: Int? = null, sub: SubActions? = null): ToolExecution = dispatch(call, step, sub)
+    suspend fun execute(
+        call: Part.ToolCall,
+        pass: ActionPass,
+        step: Int? = null,
+        sub: SubActions? = null,
+        afterScreenAction: (suspend () -> Boolean)? = null,
+    ): ToolExecution = dispatch(call, step, sub, afterScreenAction)
 
     private val executed = AtomicInteger(0)
 
-    private suspend fun dispatch(call: Part.ToolCall, step: Int?, sub: SubActions?): ToolExecution {
+    private suspend fun dispatch(
+        call: Part.ToolCall,
+        step: Int?,
+        sub: SubActions?,
+        afterScreenAction: (suspend () -> Boolean)? = null,
+    ): ToolExecution {
         val tool = registry[call.name] ?: run {
             surfaces.skip()
             return unknown(call.name, parseArgs(call.argsJson))
@@ -390,7 +401,7 @@ class ToolDispatcher internal constructor(
             val topics = ToolGroups.autoExpandTopics(tool.name, group, activeScreen)
             if (topics.isNotEmpty()) activate(tools = topics).activated else emptyList()
         } else emptyList()
-        val result = dispatchTool(tool, call, step, sub, skipSurface)
+        val result = dispatchTool(tool, call, step, sub, skipSurface, afterScreenAction)
         if (opened.isEmpty()) return result
         val openedNames = opened.mapTo(hashSetOf()) { it.name }
         val openedTopics = registry.slots()
@@ -408,7 +419,12 @@ class ToolDispatcher internal constructor(
     }
 
     private suspend fun dispatchTool(
-        tool: AgentTool, call: Part.ToolCall, step: Int?, sub: SubActions?, skipSurface: Boolean,
+        tool: AgentTool,
+        call: Part.ToolCall,
+        step: Int?,
+        sub: SubActions?,
+        skipSurface: Boolean,
+        afterScreenAction: (suspend () -> Boolean)?,
     ): ToolExecution {
         val args = try {
             val el = if (call.argsJson.isBlank()) JsonObject(emptyMap()) else Json.parseToJsonElement(call.argsJson)
@@ -424,14 +440,21 @@ class ToolDispatcher internal constructor(
         aim(call.name, args.o)
         var ok = false
         try {
-            return run(tool, args, call, step, sub, skipSurface = false).also { ok = it.content["ok"] == JsonPrimitive(true) }
+            return run(tool, args, call, step, sub, skipSurface = false, afterScreenAction = afterScreenAction)
+                .also { ok = it.content["ok"] == JsonPrimitive(true) }
         } finally {
             release(ok)
         }
     }
 
     private suspend fun run(
-        tool: AgentTool, args: Args, call: Part.ToolCall, step: Int?, sub: SubActions?, skipSurface: Boolean,
+        tool: AgentTool,
+        args: Args,
+        call: Part.ToolCall,
+        step: Int?,
+        sub: SubActions?,
+        skipSurface: Boolean,
+        afterScreenAction: (suspend () -> Boolean)? = null,
     ): ToolExecution {
         val seq = executed.incrementAndGet()
         val resolvedStep = step ?: seq
@@ -445,7 +468,7 @@ class ToolDispatcher internal constructor(
             } else {
                 synchronized(shots) { shots.step = resolvedStep }
                 // 界面上的准备(路线要的目标、改变界面的动作前先看一眼)与收尾都在界面一侧
-                surfaces.around(tool, args.o, inlineScreen) { reportsEffect ->
+                val runBody: suspend (Boolean) -> ToolExecution = { reportsEffect ->
                     session.reportsEffect = reportsEffect
                     try {
                         executeTool(tool, args)
@@ -453,6 +476,8 @@ class ToolDispatcher internal constructor(
                         session.reportsEffect = false
                     }
                 }
+                if (afterScreenAction != null) surfaces.around(tool, args.o, inlineScreen, afterScreenAction, runBody)
+                else surfaces.around(tool, args.o, inlineScreen, runBody)
             }
             if (tool.logged) {
                 logTarget = tool.logTarget(args.o, res, ctx)

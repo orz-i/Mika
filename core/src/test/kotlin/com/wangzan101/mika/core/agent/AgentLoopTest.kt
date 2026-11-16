@@ -59,6 +59,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.wangzan101.mika.core.testing.verb
 import com.wangzan101.mika.core.assembly.toolDispatcher
+import com.wangzan101.mika.core.custody.InterstitialActor
+import com.wangzan101.mika.core.custody.InterstitialChoice
+import com.wangzan101.mika.core.custody.JumpConfirmDegradeReason
+import com.wangzan101.mika.core.custody.JumpConfirmOutcome
+import com.wangzan101.mika.core.custody.JumpConfirmReport
+import com.wangzan101.mika.core.uistate.OpenedElsewhere
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
 
 /** 按脚本回复;脚本项是回复或要抛出的异常。 */
 /** 当看图模型用时默认按定位准度已验证([groundingVerified]);没验证的情形单独测。 */
@@ -1053,5 +1061,322 @@ class AgentLoopTest {
         }.filter { "no_progress" in it.content }
         assertTrue(guardWarnings.isNotEmpty())
         assertTrue(guardWarnings.all { "\"severity\":\"warn\"" in it.content })
+    }
+
+    private class InterstitialTestScreen : ScreenPort {
+        private val inner = FakeScreen()
+        var currentApp: String = "com.tencent.weread"
+        var settledSpill: OpenedElsewhere? = null
+        var drainCalls: Int = 0
+        val actions = mutableListOf<String>()
+        var onTap: () -> ActionResult = { ActionResult.Ok(changed = true) }
+
+        private fun currentSnapshot(id: String): ScreenSnapshot {
+            val el = UiElement("@e1", "button", "打开小程序", 540, 120, listOf(0, 0, 999, 100), "a:id/open", true, false, false)
+            return ScreenSnapshot(id, currentApp, listOf(el), 1080, 2400)
+        }
+
+        override suspend fun snapshot(): ScreenSnapshot {
+            inner.snapshots++
+            return currentSnapshot("s${inner.snapshots}")
+        }
+
+        override suspend fun peek(): ScreenSnapshot = currentSnapshot("peek")
+        override suspend fun screenshotPng(): ByteArray? = inner.png
+        override suspend fun tapRef(ref: String, snapshotId: String): ActionResult {
+            actions += "tapRef $ref $snapshotId"
+            return onTap()
+        }
+        override suspend fun tapXY(x: Int, y: Int): ActionResult {
+            actions += "tapXY $x $y"
+            return onTap()
+        }
+        override suspend fun typeText(ref: String?, snapshotId: String?, text: String) = inner.typeText(ref, snapshotId, text)
+        override suspend fun clearText(ref: String?, snapshotId: String?) = inner.clearText(ref, snapshotId)
+        override suspend fun scroll(ref: String?, snapshotId: String?, down: Boolean) = inner.scroll(ref, snapshotId, down)
+        override suspend fun swipe(x1: Int, y1: Int, x2: Int, y2: Int, durationMs: Long) = inner.swipe(x1, y1, x2, y2, durationMs)
+        override suspend fun back() = inner.back()
+        override suspend fun pressKey(keyCode: Int) = inner.pressKey(keyCode)
+        override suspend fun openApp(packageName: String, cold: Boolean) = inner.openApp(packageName, cold)
+        override suspend fun waitStable(timeoutMs: Long) = inner.waitStable(timeoutMs)
+        override suspend fun listApps() = listOf("com.tencent.weread" to "微信读书", "com.tencent.mm" to "微信")
+        override suspend fun drainSettledSpill(): OpenedElsewhere? {
+            drainCalls++
+            return settledSpill.also { settledSpill = null }
+        }
+    }
+
+    @Test fun interstitialAfterTapPausesBeforeScreenCaptureAndRefreshesSettledSpill() = runTest {
+        val screen = InterstitialTestScreen()
+        val waitingOpened = OpenedElsewhere(
+            packageName = "com.oplus.securitypermission",
+            app = "微信",
+            pulledBack = false,
+            jumpConfirm = JumpConfirmReport(
+                initiator = "微信读书",
+                target = "微信",
+                outcome = JumpConfirmOutcome.WAITING_USER,
+                degradeReason = JumpConfirmDegradeReason.HOSTING_DISABLED,
+            ),
+        )
+        val settledOpened = OpenedElsewhere(
+            packageName = "com.tencent.mm",
+            app = "微信",
+            pulledBack = true,
+            jumpConfirm = JumpConfirmReport(
+                initiator = "微信读书",
+                target = "微信",
+                by = InterstitialActor.USER,
+                choice = InterstitialChoice.ALLOW,
+                outcome = JumpConfirmOutcome.USER_ALLOWED,
+            ),
+        )
+        var gateArmed = false
+        val heldReason = GateReason("jump_confirm_user", "请在屏幕上确认打开「微信」", needsYou = true)
+        val gateDeferred = CompletableDeferred<Unit>()
+        screen.onTap = {
+            gateArmed = true
+            ActionResult.Ok(changed = true, opened = waitingOpened)
+        }
+        val requests = mutableListOf<List<Message>>()
+        val model = object : ChatModel {
+            override val capabilities = Capabilities(toolCalls = true, vision = false, contextTokens = 128_000, reasoning = false)
+            override suspend fun complete(system: String, messages: List<Message>, tools: List<ToolSpec>): ModelReply {
+                requests += messages
+                return when (requests.size) {
+                    1 -> tools(call("phone_observe"))
+                    2 -> {
+                        val obs = messages.last { it.role == Role.Tool }.results().single().json()
+                        val ref = obs["elements"]!!.jsonArray[0].jsonObject.s("ref")
+                        val sid = obs.s("snapshotId")
+                        tools(call("phone_tap", """{"ref":"$ref","snapshotId":"$sid"}"""))
+                    }
+                    else -> finish("已打开微信")
+                }
+            }
+        }
+        val loop = AgentLoop(
+            model,
+            toolDispatcher(screen, inlineScreen = true, adaptiveVision = true),
+            "BASE",
+            retry = FIXED_RETRY,
+            interstitialGate = { setWaiting ->
+                if (!gateArmed) return@AgentLoop false
+                gateArmed = false
+                setWaiting(TaskState.Held(heldReason))
+                gateDeferred.await()
+                setWaiting(null)
+                true
+            },
+        )
+        val run = async { loop.run("打开微信读书小程序") }
+        advanceUntilIdle()
+
+        assertFalse(run.isCompleted)
+        assertEquals(2, requests.size)
+        assertEquals(1, screen.actions.size)
+        assertEquals(0, screen.drainCalls)
+        assertEquals(TaskState.Held(heldReason), loop.state.value)
+
+        screen.currentApp = "com.tencent.mm"
+        screen.settledSpill = settledOpened
+        gateDeferred.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(run.isCompleted)
+        assertTrue(run.await() is TaskState.Succeeded)
+        assertEquals(1, screen.drainCalls)
+        assertEquals(3, requests.size)
+        val tapResult = requests[2].last { it.role == Role.Tool }.results().single().json()
+        assertEquals(true, tapResult["changed"]?.jsonPrimitive?.boolean)
+        val opened = tapResult["opened"]!!.jsonObject
+        assertEquals("com.tencent.mm", opened.s("package"))
+        assertEquals(true, opened["pulledBack"]?.jsonPrimitive?.boolean)
+        assertEquals("user_allowed", opened["jumpConfirm"]!!.jsonObject.s("outcome"))
+        assertNull(opened["onUserScreen"])
+        assertEquals("com.tencent.mm", tapResult["screen"]!!.jsonObject.s("currentApp"))
+        val hint = tapResult["hint"]?.jsonPrimitive?.content ?: ""
+        assertFalse("Unexpected stale wait hint: $hint", "hand_to_user" in hint)
+    }
+
+    @Test fun asynchronousInterstitialBeforeModelCallPausesAndInjectsResumeScreen() = runTest {
+        val screen = InterstitialTestScreen()
+        val heldReason = GateReason("jump_confirm_user", "请在屏幕上确认打开", needsYou = true)
+        val gateDeferred = CompletableDeferred<Unit>()
+        var armBeforeStep2 = false
+        val requests = mutableListOf<List<Message>>()
+        val model = object : ChatModel {
+            override val capabilities = Capabilities(toolCalls = true, vision = false, contextTokens = 128_000, reasoning = false)
+            override suspend fun complete(system: String, messages: List<Message>, tools: List<ToolSpec>): ModelReply {
+                requests += messages
+                return when (requests.size) {
+                    1 -> tools(call("phone_observe"))
+                    else -> finish("继续完成")
+                }
+            }
+        }
+        val loop = AgentLoop(
+            model,
+            toolDispatcher(screen, adaptiveVision = true),
+            "BASE",
+            sink = object : RunSink {
+                override fun event(e: RunEvent) {
+                    if (e is RunEvent.ToolResult && e.tool == "phone_observe") armBeforeStep2 = true
+                }
+            },
+            retry = FIXED_RETRY,
+            interstitialGate = { setWaiting ->
+                if (!armBeforeStep2) return@AgentLoop false
+                armBeforeStep2 = false
+                setWaiting(TaskState.Held(heldReason))
+                gateDeferred.await()
+                setWaiting(null)
+                true
+            },
+        )
+        val run = async { loop.run("t") }
+        advanceUntilIdle()
+
+        assertFalse(run.isCompleted)
+        assertEquals(1, requests.size)
+        assertEquals(TaskState.Held(heldReason), loop.state.value)
+
+        screen.currentApp = "com.tencent.mm"
+        gateDeferred.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(run.await() is TaskState.Succeeded)
+        assertEquals(2, requests.size)
+        val texts = requests[1].flatMap { it.parts.filterIsInstance<Part.Text>() }.map { it.text }
+        assertTrue(texts.any { "system dialog or confirmation interstitial paused the task" in it && "com.tencent.mm" in it })
+    }
+
+    @Test fun lateInterstitialBeforeConcludePausesInsteadOfFinishingEarly() = runTest {
+        val screen = InterstitialTestScreen()
+        val heldReason = GateReason("jump_confirm_user", "等待确认", needsYou = true)
+        val gateDeferred = CompletableDeferred<Unit>()
+        var armOnAnswer = false
+        val requests = mutableListOf<List<Message>>()
+        val model = object : ChatModel {
+            override val capabilities = Capabilities(toolCalls = true, vision = false, contextTokens = 128_000, reasoning = false)
+            override suspend fun complete(system: String, messages: List<Message>, tools: List<ToolSpec>): ModelReply {
+                requests += messages
+                return when (requests.size) {
+                    1 -> tools(call("phone_observe"))
+                    2 -> {
+                        armOnAnswer = true
+                        finish("差点提前结束")
+                    }
+                    else -> finish("确认后完成")
+                }
+            }
+        }
+        val loop = AgentLoop(
+            model,
+            toolDispatcher(screen, adaptiveVision = true),
+            "BASE",
+            retry = FIXED_RETRY,
+            interstitialGate = { setWaiting ->
+                if (!armOnAnswer) return@AgentLoop false
+                armOnAnswer = false
+                setWaiting(TaskState.Held(heldReason))
+                gateDeferred.await()
+                setWaiting(null)
+                true
+            },
+        )
+        val run = async { loop.run("t") }
+        advanceUntilIdle()
+
+        assertFalse(run.isCompleted)
+        assertEquals(2, requests.size)
+        assertEquals(TaskState.Held(heldReason), loop.state.value)
+
+        screen.currentApp = "com.tencent.mm"
+        gateDeferred.complete(Unit)
+        advanceUntilIdle()
+
+        val end = run.await()
+        assertTrue(end is TaskState.Succeeded)
+        assertEquals("确认后完成", (end as TaskState.Succeeded).answer)
+        assertEquals(3, requests.size)
+        val texts = requests[2].flatMap { it.parts.filterIsInstance<Part.Text>() }.map { it.text }
+        assertTrue(texts.any { "system dialog or confirmation interstitial paused the task" in it && "com.tencent.mm" in it })
+    }
+
+    @Test fun lateInterstitialBeforeWavePausesBlocksStaleActionsAndAllowsFreshObserve() = runTest {
+        val screen = InterstitialTestScreen()
+        val heldReason = GateReason("jump_confirm_user", "等待确认", needsYou = true)
+        val firstGate = CompletableDeferred<Unit>()
+        val secondGate = CompletableDeferred<Unit>()
+        var pendingGate: CompletableDeferred<Unit>? = null
+        val requests = mutableListOf<List<Message>>()
+        val model = object : ChatModel {
+            override val capabilities = Capabilities(toolCalls = true, vision = false, contextTokens = 128_000, reasoning = false)
+            override suspend fun complete(system: String, messages: List<Message>, tools: List<ToolSpec>): ModelReply {
+                requests += messages
+                return when (requests.size) {
+                    1 -> tools(call("phone_observe"))
+                    2 -> {
+                        val obs = messages.last { it.role == Role.Tool }.results().single().json()
+                        val ref = obs["elements"]!!.jsonArray[0].jsonObject.s("ref")
+                        val sid = obs.s("snapshotId")
+                        pendingGate = firstGate
+                        tools(
+                            call("phone_tap", """{"ref":"$ref","snapshotId":"$sid"}"""),
+                            call("hand_to_user", """{"reason":"other","message":"need user"}"""),
+                        )
+                    }
+                    3 -> {
+                        pendingGate = secondGate
+                        tools(call("phone_observe"))
+                    }
+                    else -> finish("重读后完成")
+                }
+            }
+        }
+        val loop = AgentLoop(
+            model,
+            toolDispatcher(screen, adaptiveVision = true),
+            "BASE",
+            retry = FIXED_RETRY,
+            interstitialGate = { setWaiting ->
+                val d = pendingGate ?: return@AgentLoop false
+                pendingGate = null
+                setWaiting(TaskState.Held(heldReason))
+                d.await()
+                setWaiting(null)
+                true
+            },
+        )
+        val run = async { loop.run("t") }
+        advanceUntilIdle()
+
+        assertFalse(run.isCompleted)
+        assertEquals(2, requests.size)
+        assertTrue(screen.actions.isEmpty())
+        assertEquals(TaskState.Held(heldReason), loop.state.value)
+
+        screen.currentApp = "com.tencent.mm"
+        firstGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertFalse(run.isCompleted)
+        assertEquals(3, requests.size)
+        assertTrue("Stale phone_tap must not execute after wave interstitial", screen.actions.isEmpty())
+        val step2Results = requests[2].last { it.role == Role.Tool }.results().map { it.json() }
+        assertTrue(step2Results.all { it.s("error") == "screen_changed" })
+        val textsBeforeStep3 = requests[2].flatMap { it.parts.filterIsInstance<Part.Text>() }.map { it.text }
+        assertTrue(textsBeforeStep3.any { "system dialog or confirmation interstitial paused the task" in it && "com.tencent.mm" in it })
+
+        secondGate.complete(Unit)
+        advanceUntilIdle()
+
+        val end = run.await()
+        assertTrue(end is TaskState.Succeeded)
+        assertEquals("重读后完成", (end as TaskState.Succeeded).answer)
+        assertEquals(4, requests.size)
+        val freshObs = requests[3].last { it.role == Role.Tool }.results().single().json()
+        assertEquals("com.tencent.mm", freshObs.s("currentApp"))
     }
 }
