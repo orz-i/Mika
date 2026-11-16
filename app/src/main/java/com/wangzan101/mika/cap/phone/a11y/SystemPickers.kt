@@ -25,6 +25,22 @@ internal object SystemPickers {
     fun settingsPackage(pm: PackageManager): String? =
         runCatching { pm.resolveActivity(Intent(Settings.ACTION_SETTINGS), 0)?.activityInfo?.packageName }.getOrNull()
 
+    fun launcherPackages(pm: PackageManager): Set<String> {
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val candidates = runCatching { pm.queryIntentActivities(home, 0) }.getOrDefault(emptyList())
+        val real = candidates.filter { info ->
+            val ai = info.activityInfo ?: return@filter false
+            // 排除 com.android.settings.FallbackHome（priority=-1000）等解锁前占位 HOME
+            info.priority >= 0 &&
+                !ai.name.orEmpty().endsWith(".FallbackHome") &&
+                ai.permission != "android.permission.DEVICE_POWER"
+        }.mapNotNull { it.activityInfo?.packageName }.toSet()
+        if (real.isNotEmpty()) return real
+        return setOfNotNull(
+            runCatching { pm.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName }.getOrNull()
+        )
+    }
+
     fun resolve(pm: PackageManager): Set<String> =
         intents().mapNotNull { runCatching { pm.resolveActivity(it, 0)?.activityInfo?.packageName }.getOrNull() }.toSet() + SYSTEM_PACKAGE
 }

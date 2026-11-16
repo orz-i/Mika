@@ -116,6 +116,27 @@ class TaskGate(
         /** 等用户在手机上动一下手(比如在系统的选择框里选一个),动完自动继续(运行记录里记成 waiting_user)。 */
         fun userStep(why: String) = GateReason("waiting_user", why, needsYou = true)
 
+        /** 跳转确认弹窗停留在虚拟屏上等待用户点击「到主屏确认」并完成确认。 */
+        const val WAITING_JUMP_CONFIRM_VD = "waiting_jump_confirm_vd"
+
+        /** 跳转确认弹窗落在虚拟屏时使用的挂起原因，胶囊据此给出「到主屏确认」操作按钮。 */
+        fun jumpConfirmOnVirtualDisplay(why: String) =
+            GateReason(WAITING_JUMP_CONFIRM_VD, why, needsYou = true)
+
+        /** 跳转确认弹窗等待用户确认的提示语；在虚拟屏上时附加引导点击「到主屏确认」。 */
+        fun jumpConfirmCopy(initiator: String?, target: String?, onVirtualDisplay: Boolean): String {
+            val base = when {
+                !initiator.isNullOrBlank() && !target.isNullOrBlank() ->
+                    tr(R.string.gate_jump_confirm_app_target, initiator, target)
+                !initiator.isNullOrBlank() ->
+                    tr(R.string.gate_jump_confirm_app, initiator)
+                !target.isNullOrBlank() ->
+                    tr(R.string.gate_jump_confirm_target, target)
+                else -> tr(R.string.gate_jump_confirm_system)
+            }
+            return if (onVirtualDisplay) "$base\n${tr(R.string.gate_jump_confirm_vd_hint)}" else base
+        }
+
         /** 系统在用户屏上问打开 [app] 的哪一个时请用户选的那句;名字读不到时不说名字。 */
         fun pickCopy(app: String?) = app?.let { tr(R.string.gate_pick_app, it) } ?: tr(R.string.gate_pick_system)
 

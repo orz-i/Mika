@@ -117,4 +117,6 @@
     <string name="timeline_network_capture_off">Перехват сети не активен</string>
     <string name="timeline_network_body_empty">Тело ответа пустое</string>
     <string name="timeline_network_truncated">Содержимое обрезано; показан только фрагмент</string>
+    <string name="tag_jump_confirm_auto">Переход подтверждён автоматически</string>
+    <string name="tag_jump_confirm_degraded">Подтверждение перехода передано вам</string>
 </resources>

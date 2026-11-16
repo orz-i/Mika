@@ -84,4 +84,10 @@
     <string name="screens_waiting">Aguardando</string>
     <string name="screens_needs_you">Precisa de você</string>
     <string name="screens_zoom">Ampliar esta tela</string>
+    <string name="action_confirm_on_main">Confirmar na tela principal</string>
+    <string name="gate_jump_confirm_app_target">“%1$s” está pedindo para abrir “%2$s”. Confirme na tela</string>
+    <string name="gate_jump_confirm_app">“%1$s” está pedindo confirmação para abrir outro app. Confirme na tela</string>
+    <string name="gate_jump_confirm_target">Confirme na tela para abrir “%1$s”</string>
+    <string name="gate_jump_confirm_system">O sistema está pedindo confirmação para abrir outro app. Confirme na tela</string>
+    <string name="gate_jump_confirm_vd_hint">O aviso de confirmação está na tela em segundo plano do Mika. Toque em “Confirmar na tela principal” para revisar e permitir.</string>
 </resources>

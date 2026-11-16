@@ -282,6 +282,7 @@ class TaskService : Service() {
                 ?.let { r -> if (center.cancelIfQueued(r)) cancelQueued(r) else r.cancel() }
             ACTION_CANCEL -> if (run != null && center.cancelIfQueued(run)) cancelQueued(run) else run?.cancel()
             ACTION_RESUME -> run?.resume()
+            ACTION_CONFIRM_ON_MAIN -> run?.confirmOnMain()
             ACTION_TAKE_OVER -> run?.takeOver(waitKeyOf(intent))
             ACTION_HAND_BACK -> run?.handBack(waitKeyOf(intent))
             ACTION_FINISHED_MYSELF -> run?.finishedMyself(waitKeyOf(intent))
@@ -749,7 +750,11 @@ class TaskService : Service() {
                 b.addAction(action(run, tr(R.string.chat_stop), ACTION_CANCEL, 2))
             }
             else -> {
-                if (state is TaskState.Held && state.reason.resumable) b.addAction(action(run, tr(R.string.chat_continue), ACTION_RESUME, 1))
+                if (state is TaskState.Held && state.reason.code == TaskGate.WAITING_JUMP_CONFIRM_VD) {
+                    b.addAction(action(run, tr(R.string.action_confirm_on_main), ACTION_CONFIRM_ON_MAIN, 1))
+                } else if (state is TaskState.Held && state.reason.resumable) {
+                    b.addAction(action(run, tr(R.string.chat_continue), ACTION_RESUME, 1))
+                }
                 b.addAction(action(run, tr(R.string.chat_stop), ACTION_CANCEL, 2))
             }
         }
@@ -989,6 +994,7 @@ class TaskService : Service() {
         /** 关掉任务结束后留在后台的那一页(通知上的按钮)。 */
         const val ACTION_CLOSE_KEPT_PAGE = "com.wangzan101.mika.task.CLOSE_KEPT_PAGE"
         const val ACTION_DECLINE = "com.wangzan101.mika.task.DECLINE"
+        const val ACTION_CONFIRM_ON_MAIN = "com.wangzan101.mika.task.CONFIRM_ON_MAIN"
         private const val EXTRA_GOAL = "goal"
         private const val EXTRA_MESSAGE_ID = "message_id"
         private const val EXTRA_SOURCE = "source"
@@ -1124,6 +1130,9 @@ class TaskService : Service() {
 
         /** 用户点了「继续」:被挪走的 App 会被挪回 Mika 的屏幕。 */
         fun resume(context: Context, runKey: String? = null) = send(context, ACTION_RESUME, runKey = runKey)
+
+        /** 跳转确认弹窗停在虚拟屏上时，用户点击「到主屏确认」后把它移至主屏。 */
+        fun confirmOnMain(context: Context, runKey: String? = null) = send(context, ACTION_CONFIRM_ON_MAIN, runKey = runKey)
 
         /** 「我来处理」:把 App 挪到主屏并恢复它的声音。 */
         fun takeOver(context: Context, waitKey: Int? = null, runKey: String? = null) = send(context, ACTION_TAKE_OVER, waitKey, runKey)

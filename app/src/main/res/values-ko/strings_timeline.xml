@@ -105,4 +105,6 @@
     <string name="timeline_network_capture_off">네트워크 캡처가 꺼져 있어요</string>
     <string name="timeline_network_body_empty">응답 본문이 비어 있어요</string>
     <string name="timeline_network_truncated">내용이 길어 일부만 표시해요</string>
+    <string name="tag_jump_confirm_auto">앱 전환 자동 허용됨</string>
+    <string name="tag_jump_confirm_degraded">앱 전환 확인을 사용자에게 넘김</string>
 </resources>

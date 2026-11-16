@@ -109,4 +109,6 @@
     <string name="timeline_network_capture_off">ثبت شبکه فعال نیست</string>
     <string name="timeline_network_body_empty">متن پاسخ خالی است</string>
     <string name="timeline_network_truncated">محتوا کوتاه شده؛ فقط پیش‌نمایش نمایش داده می‌شود</string>
+    <string name="tag_jump_confirm_auto">تأیید جابه‌جایی خودکار انجام شد</string>
+    <string name="tag_jump_confirm_degraded">تأیید جابه‌جایی به شما سپرده شد</string>
 </resources>

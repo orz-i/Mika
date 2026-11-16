@@ -1,156 +1,213 @@
 package com.wangzan101.mika.cap.phone.a11y
 
 import android.view.accessibility.AccessibilityEvent
-import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.InUse
-import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.PullBack
+import com.wangzan101.mika.core.custody.Arrival
+import com.wangzan101.mika.core.custody.AttributionContext
+import com.wangzan101.mika.core.custody.AttributionResult
+import com.wangzan101.mika.core.custody.CustodyAttribution
+import com.wangzan101.mika.core.custody.IgnoreReason
+import com.wangzan101.mika.core.custody.InUseReason
+import com.wangzan101.mika.core.custody.Interstitial
+import com.wangzan101.mika.core.custody.InterstitialActor
+import com.wangzan101.mika.core.custody.InterstitialChoice
+import com.wangzan101.mika.core.custody.InterstitialLedger
+import com.wangzan101.mika.core.custody.LaunchOrigin
+import com.wangzan101.mika.core.custody.OriginConfidence
+import com.wangzan101.mika.core.custody.SpillReason
+import com.wangzan101.mika.core.custody.UserIntentEvidence
+import com.wangzan101.mika.core.custody.UserIntentSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * 跨屏归因规则 R0–R6 与 [MainScreenSpill] 轻量辅助函数单元测试。
+ */
 class MainScreenSpillTest {
     private val since = 10_000L
-    private val window = 6_000L
+    private val vd = 5
     private val launchers = setOf("com.home")
-    private val home = launchers + "com.wangzan101.mika"
+    private val selfPkg = "com.wangzan101.mika"
+    private val managedUid = 10123
 
     private fun arrival(
-        task: Int = 7, pkg: String? = "com.chat", at: Long = since + 500, from: Int = MainScreenSpill.NEW,
-        sameTask: Boolean = false, standard: Boolean = true, now: Int = MainScreenSpill.MAIN, user: Int = 0,
-    ) = MainScreenSpill.Arrival(task, pkg, user, at, from, sameTask, standard, now)
+        taskId: Int = 7,
+        pkg: String? = "com.chat",
+        at: Long = since + 500L,
+        fromDisplay: Int = MainScreenSpill.NEW,
+        sameTask: Boolean = false,
+        standardTask: Boolean = true,
+        displayId: Int = MainScreenSpill.MAIN,
+        userId: Int = 0,
+    ) = Arrival(
+        taskId = taskId,
+        pkg = pkg,
+        userId = userId,
+        displayId = displayId,
+        fromDisplay = fromDisplay,
+        newTask = fromDisplay == MainScreenSpill.NEW,
+        sameTask = sameTask,
+        at = at,
+        standardTask = standardTask,
+    )
 
-    private fun decide(vararg a: MainScreenSpill.Arrival, topBefore: Int = 3, taps: List<MainScreenSpill.Tap> = emptyList()) =
-        MainScreenSpill.decide(a.toList(), since, window, topBefore, home, taps, launchers)
+    private fun managedOrigin(pkg: String = "com.caller") = LaunchOrigin(
+        uid = managedUid,
+        pkg = pkg,
+        confidence = OriginConfidence.HIGH,
+    )
 
-    @Test fun newTaskOnTheMainScreenRightAfterTheActionIsPulledBack() {
-        assertEquals(listOf(PullBack(arrival())), decide(arrival()))
+    private fun ctx(
+        previousMainTopTaskId: Int? = 3,
+        existingMainUserTaskIds: Set<Int> = setOf(3),
+        ledger: InterstitialLedger = InterstitialLedger(),
+        userIntents: List<UserIntentEvidence> = emptyList(),
+        recentAgentAction: Boolean = true,
+        lastAgentActionAtMs: Long? = since,
+        nowMs: Long = since + 500L,
+    ) = AttributionContext(
+        selfPackage = selfPkg,
+        launcherPackages = launchers,
+        managedDisplays = mapOf(vd to setOf(managedUid)),
+        mainDisplayId = MainScreenSpill.MAIN,
+        previousMainTopTaskId = previousMainTopTaskId,
+        existingMainUserTaskIds = existingMainUserTaskIds,
+        ledgerEntries = ledger.snapshot(nowMs),
+        userIntents = userIntents,
+        recentAgentAction = recentAgentAction,
+        lastAgentActionAtMs = lastAgentActionAtMs,
+    )
+
+    @Test
+    fun newTaskFromManagedUidWithoutUserIntentIsPulledBackByR3() {
+        val result = CustodyAttribution.attribute(arrival(), managedOrigin(), ctx())
+        assertEquals(AttributionResult.Spill(vd, SpillReason.MANAGED_ORIGIN_NO_USER_INTENT), result)
     }
 
-    @Test fun backgroundTaskOnTheMainScreenBroughtToFrontIsPulledBackToo() {
-        // 系统把那个 App 已有的后台任务拉到前台,不新建任务
-        val a = arrival(from = MainScreenSpill.MAIN)
-        assertEquals(listOf(PullBack(a)), decide(a))
+    @Test
+    fun backgroundTaskOnMainBroughtToFrontIsPulledBackToo() {
+        val a = arrival(fromDisplay = MainScreenSpill.MAIN)
+        val result = CustodyAttribution.attribute(a, managedOrigin(), ctx())
+        assertEquals(AttributionResult.Spill(vd, SpillReason.MANAGED_ORIGIN_NO_USER_INTENT), result)
     }
 
-    @Test fun outsideTheWindowIsNotThisAction() {
-        assertTrue(decide(arrival(at = since - 1)).isEmpty())
-        assertTrue(decide(arrival(at = since + window + 1)).isEmpty())
+    @Test
+    fun r0IgnoresNonMainLauncherSelfAndNonStandardTasks() {
+        assertEquals(
+            AttributionResult.Ignore(IgnoreReason.NOT_MAIN_DISPLAY),
+            CustodyAttribution.attribute(arrival(displayId = vd), managedOrigin(), ctx()),
+        )
+        assertEquals(
+            AttributionResult.Ignore(IgnoreReason.LAUNCHER_PACKAGE),
+            CustodyAttribution.attribute(arrival(pkg = "com.home"), managedOrigin(), ctx()),
+        )
+        assertEquals(
+            AttributionResult.Ignore(IgnoreReason.SELF_PACKAGE),
+            CustodyAttribution.attribute(arrival(pkg = selfPkg), managedOrigin(), ctx()),
+        )
+        assertEquals(
+            AttributionResult.Ignore(IgnoreReason.NON_STANDARD_TASK),
+            CustodyAttribution.attribute(arrival(standardTask = false), managedOrigin(), ctx()),
+        )
     }
 
-    @Test fun launcherMikaAndNonStandardPagesAreNotSpills() {
-        assertTrue(decide(arrival(pkg = "com.home")).isEmpty())
-        assertTrue(decide(arrival(pkg = "com.wangzan101.mika")).isEmpty())
-        assertTrue(decide(arrival(standard = false)).isEmpty())
-        assertTrue(decide(arrival(pkg = null)).isEmpty())
+    @Test
+    fun unknownOriginReportsUnattributedWithRecentAgentFlag() {
+        val aRecent = arrival(at = since + 1_000L)
+        assertEquals(
+            AttributionResult.Unattributed(recentAgentAction = true),
+            CustodyAttribution.attribute(aRecent, LaunchOrigin.UNKNOWN, ctx(recentAgentAction = false, lastAgentActionAtMs = since)),
+        )
+        val aStale = arrival(at = since + 10_000L)
+        assertEquals(
+            AttributionResult.Unattributed(recentAgentAction = false),
+            CustodyAttribution.attribute(aStale, LaunchOrigin.UNKNOWN, ctx(recentAgentAction = false, lastAgentActionAtMs = since, nowMs = since + 10_000L)),
+        )
     }
 
-    @Test fun taskMovedFromAnotherDisplayIsATakeoverNotASpill() {
-        // 接管(本任务或别的任务)是把任务从 Mika 的屏挪到主屏
-        assertTrue(decide(arrival(from = 5)).isEmpty())
-    }
-
-    @Test fun taskNoLongerOnTheMainScreenIsLeftAlone() {
-        assertTrue(decide(arrival(now = 5)).isEmpty())
-        assertTrue(decide(arrival(now = -1)).isEmpty())
-    }
-
-    @Test fun userTappingTheMainScreenMeansTheUserOpenedIt() {
-        val other = MainScreenSpill.Tap(since + 400, "com.other")
-        assertTrue(decide(arrival(at = since + 900), taps = listOf(other)).isEmpty())
-        // 动作之前的点按不算
-        assertEquals(1, decide(arrival(at = since + 900), taps = listOf(MainScreenSpill.Tap(since - 100, "com.other"))).size)
-    }
-
-    @Test fun systemTouchWithoutASemanticClickKeepsTheUsersAppOnTheMainScreen() {
-        // 系统若投递触摸事件，它是控件点击之外的补充证据
+    @Test
+    fun userIntentFromLauncherSystemUiOrRecentsWithinWindowBlocksPullbackByR4() {
         assertTrue(MainScreenSpill.isUserTap(AccessibilityEvent.TYPE_TOUCH_INTERACTION_START))
+        assertTrue(MainScreenSpill.isUserTap(AccessibilityEvent.TYPE_VIEW_CLICKED))
         assertFalse(MainScreenSpill.isUserTap(AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED))
-        val touch = MainScreenSpill.Tap(since + 400, null)
-        assertTrue(decide(arrival(at = since + 900), taps = listOf(touch)).isEmpty())
+
+        val evidence = UserIntentEvidence(source = UserIntentSource.LAUNCHER, packageName = "com.home", at = since + 400L)
+        val result = CustodyAttribution.attribute(
+            arrival(at = since + 900L),
+            managedOrigin(),
+            ctx(userIntents = listOf(evidence)),
+        )
+        assertEquals(AttributionResult.Ignore(IgnoreReason.USER_INTENT_EVIDENCE), result)
+
+        // 超过 1.5s 时间窗的旧意图不阻断回捞
+        val staleEvidence = UserIntentEvidence(source = UserIntentSource.SYSTEM_UI, packageName = "com.android.systemui", at = since - 2_000L)
+        val spillAfterStale = CustodyAttribution.attribute(
+            arrival(at = since + 900L),
+            managedOrigin(),
+            ctx(userIntents = listOf(staleEvidence)),
+        )
+        assertEquals(AttributionResult.Spill(vd, SpillReason.MANAGED_ORIGIN_NO_USER_INTENT), spillAfterStale)
     }
 
-    @Test fun returningHomeBeforeOpeningAnAppKeepsTheUsersAppOnTheMainScreen() {
-        val desktop = arrival(task = 2, pkg = "com.home", at = since + 200, from = MainScreenSpill.MAIN)
-        val opened = arrival(at = since + 900)
-        // 桌面和通知栏入口不发控件点击时，先有回桌面的主屏导航也足以证明是用户入口
-        assertTrue(decide(desktop, opened).isEmpty())
-        // Mika 自己的主屏页面不是桌面，不能把 Agent 的真实外溢当成用户操作
-        val mika = arrival(task = 2, pkg = "com.wangzan101.mika", at = since + 200, from = MainScreenSpill.MAIN)
-        assertEquals(listOf(PullBack(opened)), decide(mika, opened))
+    @Test
+    fun previousMainTopAndExistingSameTaskAreInUseByR1() {
+        assertEquals(
+            AttributionResult.InUse(InUseReason.WAS_MAIN_TOP_TASK),
+            CustodyAttribution.attribute(arrival(taskId = 3, fromDisplay = MainScreenSpill.MAIN), managedOrigin(), ctx(previousMainTopTaskId = 3)),
+        )
+        assertEquals(
+            AttributionResult.InUse(InUseReason.SAME_TASK_IN_EXISTING_MAIN_TASK),
+            CustodyAttribution.attribute(
+                arrival(taskId = 4, sameTask = true, fromDisplay = MainScreenSpill.MAIN),
+                managedOrigin(),
+                ctx(previousMainTopTaskId = 3, existingMainUserTaskIds = setOf(3, 4)),
+            ),
+        )
     }
 
-    @Test fun userTappingThePopupItselfLeavesItThere() {
-        // 弹窗冒出来之后用户就点在上面(在屏幕上点确认):用户在用它,不挪
-        val a = arrival(at = since + 900)
-        assertEquals(listOf(InUse(a)), decide(a, taps = listOf(MainScreenSpill.Tap(since + 1_500, "com.chat"))))
-        // 点的是别的 App 的窗口:说不清,照常挪回
-        assertEquals(1, decide(a, taps = listOf(MainScreenSpill.Tap(since + 1_500, "com.other"))).size)
+    @Test
+    fun delayedInterstitialConfirmationAndChooserFollowupArePulledBackByR2() {
+        val ledger = InterstitialLedger()
+        val entry = ledger.open(
+            Interstitial.JumpConfirm(
+                id = "jc-1",
+                displayId = vd,
+                taskId = 55,
+                packageName = "com.oplus.securitypermission",
+                componentName = null,
+                openedAtMs = since,
+                initiatorPackage = "com.caller",
+                targetPackage = "com.chat",
+                targetLabel = "Chat",
+            ),
+            nowMs = since,
+        )
+        // 用户在弹窗里拖延 15s 后才点确认：由于点击的是中间页本身，未记录 Launcher/SystemUI 意图；
+        // 且 R2 在 Open 或 Resolved 10s 内都能接管由系统确认页派生的新任务
+        val confirmAt = since + 15_000L
+        ledger.resolve(entry.interstitial.id, InterstitialActor.USER, InterstitialChoice.ALLOW, confirmAt)
+        val resolvedResult = CustodyAttribution.attribute(
+            arrival(taskId = 77, pkg = "com.chat", at = confirmAt + 400L),
+            LaunchOrigin(uid = 1000, pkg = "com.oplus.securitypermission", confidence = OriginConfidence.HIGH),
+            ctx(ledger = ledger, nowMs = confirmAt + 400L),
+        )
+        assertEquals(
+            AttributionResult.Spill(vd, SpillReason.INTERSTITIAL_LEDGER, ledgerEntryId = "jc-1"),
+            resolvedResult,
+        )
     }
 
-    @Test fun previousTopComingBackIsNotASpill() {
-        // 挪走开出来的那个之后,原来最上面的又露出来
-        assertTrue(decide(arrival(task = 3, from = MainScreenSpill.MAIN), topBefore = 3).isEmpty())
-    }
-
-    @Test fun newPageInTheAppTheUserIsUsingIsReportedNotMoved() {
-        val a = arrival(task = 3, sameTask = true, from = MainScreenSpill.MAIN)
-        assertEquals(listOf(InUse(a)), decide(a, topBefore = 3))
-    }
-
-    @Test fun systemQuestionIsLeftForTheUserAndNothingElseIs() {
-        val leave = MainScreenSpill.Handling.LeaveForUser
-        val move = MainScreenSpill.Handling.Move
-        // 系统的选择器,或系统包的窗口里的选项对得上装了两份的 App:留给用户选,从不挪、从不重开
-        assertEquals(leave, MainScreenSpill.handling(systemPackage = true, systemPicker = true, optionsMatch = false))
-        assertEquals(leave, MainScreenSpill.handling(systemPackage = true, systemPicker = false, optionsMatch = true))
-        // 系统设置一类的普通系统页面、普通 App:挪回
-        assertEquals(move, MainScreenSpill.handling(systemPackage = true, systemPicker = false, optionsMatch = false))
-        assertEquals(move, MainScreenSpill.handling(systemPackage = false, systemPicker = false, optionsMatch = true))
-    }
-
-    @Test fun appPickedByTheUserIsWhatCameUpAfterTheQuestionClosed() {
-        val gone = since + 20_000
-        val chooser = arrival(task = 8, pkg = "android", at = since + 300)
-        val picked = arrival(task = 9, at = gone - 200)
-        val pick = { list: List<MainScreenSpill.Arrival> -> MainScreenSpill.picked(list, 8, gone, 1_000, 3_000, 3, home) }
-        assertEquals(picked, pick(listOf(chooser, picked)))
-        // 用户刚点过选项也算(那一下就是选)
-        assertEquals(picked, MainScreenSpill.picked(listOf(picked), 8, gone, 1_000, 3_000, 3, home))
-        // 关掉选择框后露出来的原来那个不算:用户把问题关了
-        assertEquals(null, pick(listOf(chooser, arrival(task = 3, at = gone, from = MainScreenSpill.MAIN))))
-        // 选择框关掉很久之前冒出来的不是选出来的
-        assertEquals(null, pick(listOf(arrival(task = 9, at = gone - 5_000))))
-        // 本来就在主屏后台的那个 App 被拉到前台:就是选中的那份
-        val existing = arrival(task = 12, at = gone + 400, from = MainScreenSpill.MAIN, user = 128)
-        assertEquals(existing, pick(listOf(chooser, existing)))
-    }
-
-    @Test fun pickedAppNeedsTheUserForAPasswordOrASecureUnreadablePage() {
+    @Test
+    fun needsUserAndAuthenticatorHelpersRemainConsistent() {
         assertTrue(MainScreenSpill.needsUser(passwordField = true, readable = true, secureWindow = false))
         assertTrue(MainScreenSpill.needsUser(passwordField = false, readable = false, secureWindow = true))
-        // 树本来就读不出东西的 App 不算要用户处理,照常挪回
-        assertEquals(false, MainScreenSpill.needsUser(passwordField = false, readable = false, secureWindow = false))
-        assertEquals(false, MainScreenSpill.needsUser(passwordField = false, readable = true, secureWindow = false))
-    }
+        assertFalse(MainScreenSpill.needsUser(passwordField = false, readable = false, secureWindow = false))
+        assertFalse(MainScreenSpill.needsUser(passwordField = false, readable = true, secureWindow = false))
 
-    @Test fun accountServiceWithoutLauncherIsAUserStep() {
         val auth = setOf("com.example.accounts", "com.example.chat")
-        // 系统的账号登录服务:登记了认证器、没有桌面图标,冒到主屏上的加账号、验证码页整屏、没有密码框也留给用户
         assertTrue(MainScreenSpill.authenticatorUi("com.example.accounts", auth, hasLauncher = false))
-    }
-
-    @Test fun authenticatorAppWithLauncherIsMovedBackAsBefore() {
-        val auth = setOf("com.example.accounts", "com.example.chat")
-        // 聊天 App 为同步联系人登记了认证器,但它有桌面图标:会话、分享页冒到主屏上照常挪回,不因认证器留下
         assertFalse(MainScreenSpill.authenticatorUi("com.example.chat", auth, hasLauncher = true))
-        // 不是认证器的包,没有桌面图标也不算
         assertFalse(MainScreenSpill.authenticatorUi("com.example.helper", auth, hasLauncher = false))
-    }
-
-    @Test fun oneVerdictPerTaskInOrder() {
-        val chooser = arrival(task = 8, pkg = "android", at = since + 300)
-        val first = arrival(task = 7, at = since + 200)
-        val again = arrival(task = 7, at = since + 600, sameTask = true, from = MainScreenSpill.MAIN)
-        assertEquals(listOf(PullBack(chooser), PullBack(again)), decide(again, first, chooser))
     }
 }

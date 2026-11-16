@@ -78,4 +78,10 @@
     <string name="screens_waiting">待機中</string>
     <string name="screens_needs_you">あなたの対応が必要</string>
     <string name="screens_zoom">この画面を拡大</string>
+    <string name="action_confirm_on_main">メイン画面で確認</string>
+    <string name="gate_jump_confirm_app_target">「%1$s」が「%2$s」を開こうとしています。画面で確認してください</string>
+    <string name="gate_jump_confirm_app">「%1$s」が別のアプリを開く確認を求めています。画面で確認してください</string>
+    <string name="gate_jump_confirm_target">「%1$s」を開く確認を画面で行ってください</string>
+    <string name="gate_jump_confirm_system">システムが別のアプリを開く許可を確認しています。画面で確認してください</string>
+    <string name="gate_jump_confirm_vd_hint">確認ダイアログはバックグラウンド画面にあります。「メイン画面で確認」をタップして内容を確認し許可してください。</string>
 </resources>

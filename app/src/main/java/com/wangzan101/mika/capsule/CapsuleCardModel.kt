@@ -79,8 +79,8 @@ sealed interface CardContent {
     /** Mika 问你:给了 [options] 就列成按钮;没有选项的回答在 Mika 里打字(卡片里的输入下一步再做)。 */
     data class Question(val prompt: String, val options: List<String>) : CardContent
 
-    /** 等条件:为什么停;[resumable] 时给「继续」。 */
-    data class Held(val why: String, val resumable: Boolean) : CardContent
+    /** 等条件:为什么停;[resumable] 时给「继续」;[confirmOnMain] 时给「到主屏确认」。 */
+    data class Held(val why: String, val resumable: Boolean, val confirmOnMain: Boolean = false) : CardContent
 
     /** 办好了 / 没办成 / 已停止:回答在对话卡片的来回里。 */
     data class Result(val kind: CapsuleKind) : CardContent
@@ -182,7 +182,11 @@ object CapsuleCards {
                     ConfirmationNotifier.requestKey(s),
                 )
             is TaskState.WaitingInput -> CardContent.Question(s.prompt.trim(), s.options.orEmpty().filter(String::isNotBlank))
-            is TaskState.Held -> CardContent.Held(s.reason.why.trim().ifEmpty { tr(R.string.capsule_hold) }, s.reason.resumable)
+            is TaskState.Held -> CardContent.Held(
+                s.reason.why.trim().ifEmpty { tr(R.string.capsule_hold) },
+                s.reason.resumable,
+                confirmOnMain = s.reason.code == com.wangzan101.mika.task.TaskGate.WAITING_JUMP_CONFIRM_VD,
+            )
             is TaskState.Succeeded -> CardContent.Result(CapsuleKind.Done)
             is TaskState.Failed -> CardContent.Result(CapsuleKind.Failed)
             TaskState.Cancelled -> CardContent.Result(CapsuleKind.Cancelled)

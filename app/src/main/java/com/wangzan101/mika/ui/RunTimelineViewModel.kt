@@ -231,6 +231,13 @@ class RunTimelineViewModel(
                 )
                 is RunEvent.Takeover -> tag(Tag(tr(R.string.tag_takeover), TagTone.Warn))
                 is RunEvent.Barrier -> tag(Tag(tr(R.string.tag_barrier), TagTone.Warn))
+                is RunEvent.JumpConfirm -> tag(
+                    when {
+                        e.result == "auto_allowed" -> Tag(tr(R.string.tag_jump_confirm_auto), TagTone.Ok)
+                        e.result == "denied" -> Tag(tr(R.string.tag_declined), TagTone.Bad)
+                        else -> Tag(tr(R.string.tag_jump_confirm_degraded), TagTone.Warn)
+                    },
+                )
                 else -> Unit
             }
             return rows.values.map { row ->

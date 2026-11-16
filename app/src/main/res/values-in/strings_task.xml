@@ -78,4 +78,10 @@
     <string name="screens_waiting">Menunggu</string>
     <string name="screens_needs_you">Perlu Anda</string>
     <string name="screens_zoom">Perbesar layar ini</string>
+    <string name="action_confirm_on_main">Konfirmasi di layar utama</string>
+    <string name="gate_jump_confirm_app_target">“%1$s” meminta untuk membuka “%2$s”. Silakan konfirmasi di layar</string>
+    <string name="gate_jump_confirm_app">“%1$s” meminta konfirmasi untuk membuka aplikasi lain. Silakan konfirmasi di layar</string>
+    <string name="gate_jump_confirm_target">Silakan konfirmasi di layar untuk membuka “%1$s”</string>
+    <string name="gate_jump_confirm_system">Sistem meminta konfirmasi untuk membuka aplikasi lain. Silakan konfirmasi di layar</string>
+    <string name="gate_jump_confirm_vd_hint">Dialog konfirmasi ada di layar latar belakang Mika. Ketuk “Konfirmasi di layar utama” untuk meninjau dan mengizinkan.</string>
 </resources>

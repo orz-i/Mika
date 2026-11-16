@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.view.Surface
+import com.agent.use.common.IAgentCustodyListener
 import com.agent.use.common.shell.AgentShellEngine
 import com.wangzan101.mika.shell.IMikaShell
 import java.io.File
@@ -89,8 +90,16 @@ class ShellService(
     override fun visibleOnMainScreen(packageName: String, userId: Int): Boolean =
         engine.visibleOnMainScreen(packageName, userId)
 
-    override fun watchMainScreen(windowMs: Int): Int = engine.watchMainScreen(windowMs)
-    override fun mainArrivals(sinceUptimeMs: Long): Bundle? = engine.mainArrivals(sinceUptimeMs)
+    override fun startCustody(displayId: Int, listener: IAgentCustodyListener?): Boolean =
+        engine.startCustody(displayId, listener)
+
+    override fun stopCustody(displayId: Int) = engine.stopCustody(displayId)
+    override fun launchOrigin(taskId: Int): Bundle = engine.launchOrigin(taskId)
+    override fun resolveJumpTarget(
+        taskId: Int,
+        interstitialPackage: String?,
+        initiatorPackage: String?,
+    ): String? = engine.resolveJumpTarget(taskId, interstitialPackage, initiatorPackage)
 
     override fun injectKey(displayId: Int, keyCode: Int): Boolean = engine.injectKey(displayId, keyCode)
     override fun injectCtrlKey(displayId: Int, keyCode: Int): Int = engine.injectCtrlKey(displayId, keyCode)

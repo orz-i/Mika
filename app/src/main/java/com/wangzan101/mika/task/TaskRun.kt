@@ -35,9 +35,12 @@ import android.view.Display
 import com.wangzan101.mika.BuildConfig
 import com.wangzan101.mika.cap.phone.a11y.AndroidScreen
 import com.wangzan101.mika.cap.phone.a11y.AppCopyReader
+import com.wangzan101.mika.cap.phone.a11y.DisplayCustodian
 import com.wangzan101.mika.cap.phone.a11y.LazyPhoneScreen
 import com.wangzan101.mika.cap.phone.a11y.ScreenAccessibility
 import com.wangzan101.mika.cap.phone.a11y.PhoneUnavailable
+import com.wangzan101.mika.core.custody.InterstitialKind
+import com.wangzan101.mika.core.run.Attendance
 import com.wangzan101.mika.cap.phone.PhoneServices
 import com.wangzan101.mika.cap.phone.setup.RootShell
 import com.wangzan101.mika.cap.root.RootCommands
@@ -302,6 +305,8 @@ class TaskRun(
     /** 发布与收尾互斥;[ended] 之后不再写状态,迟到的发布不能盖掉终态或重新拿锁。 */
     private val publishLock = Any()
     private var ended = false
+    @Volatile private var interactiveInterstitials = false
+    private var maskedRunningState: Pair<TaskState.Running, TaskState.Held>? = null
 
     fun cancel() {
         stopPressed = true
@@ -325,6 +330,11 @@ class TaskRun(
         g.resume()
         // 用户在页面上操作的那种暂停:循环可能还没走到关卡(还在想),按它此刻的状态重新显示,不再写着暂停
         if (wasOnPage) loop?.state?.value?.takeIf { it is TaskState.Running }?.let(::publish)
+    }
+
+    /** 跳转确认弹窗留在后台虚拟屏上时，用户点「到主屏确认」显式移至主屏操作。 */
+    fun confirmOnMain() {
+        scope.launch(Dispatchers.IO) { phone?.screen?.confirmInterstitialOnMain() }
     }
     fun takeOver(waitKey: Int?) { takeover?.let { t -> scope.launch { t.handOver(waitKey) } } }
     fun handBack(waitKey: Int?) { takeover?.let { t -> scope.launch { t.handBack(waitKey) } } }
@@ -573,6 +583,8 @@ class TaskRun(
             // 助手是否连着;没接上手机之前当作连着(网页、沙箱的步骤不看它)
             val shellUp = MutableStateFlow(true)
             val states = DeviceStateWatcher(service) { id -> phone?.shell?.topTaskId(id) ?: -1 }.also { watcher = it }
+            val runSinkRef = java.util.concurrent.atomic.AtomicReference<RunSink>(RunSink.NONE)
+            val allowUserInteraction = provenance.origin == RunOrigin.Ui && provenance.attendance == Attendance.Present
 
             /** 接上手机:连内置助手、等无障碍、备好(到第一次 launch_app 才建的)虚拟屏;缺一样就报 phone_unavailable。 */
             suspend fun connectPhone(): AndroidScreen {
@@ -624,28 +636,36 @@ class TaskRun(
                 fun stillUsed(pkg: String, user: Int?): () -> Boolean = {
                     runCatching { if (user == null) shell.displayOfPackage(pkg) else shell.displayOfPackageInUser(pkg, user) }.getOrDefault(-1) >= 0
                 }
-                val screen = AndroidScreen(
-                    a11y, shell, agentDisplay, { recovery.markClipHeld(it) },
-                    clipLock = service.clipLock, checkOtherTasks = parallel,
-                    reserve = { pkg -> service.reservePackage(pkg, key, stillUsed(pkg, null)) },
-                    reserveCopy = { pkg, user -> service.reservePackage(claimKey(pkg, user), key, stillUsed(pkg, user)) },
-                    appFree = { pkg, user -> service.packageFree(claimKey(pkg, user), key, stillUsed(pkg, user)) },
-                    // 模型要了等:等的时候界面写「等另一个任务用完某 App」(仍是在干活,不算要你处理),等完放回原来那句
-                    awaitApp = { pkg, user, timeoutMs, free ->
-                        waitingForApp(ConfirmationNotifier.appLabel(service, pkg)) { service.awaitPackage(claimKey(pkg, user), key, timeoutMs, free) }
-                    },
-                    clipSaved = { original, ours -> recovery.saveClip(original, ours) },
-                    handedOver = { handoverRef?.handedOver == true },
-                    // 打字一段一段出来;App 知识说限制浏览快慢的 App 打得更慢
-                    typing = { pkg -> pace.typing(PlacePace.of(pkg?.let(skills::appPace))) },
-                    // 启动前就静上,开头几秒也没声;启动被拒就还原
-                    beforeOpen = muter::beforeOpen,
-                    notOpened = muter::notOpened,
-                    appAccess = appAccess,
-                    network = if (FeatureFlags.get(service).networkCaptureEnabled()) phoneServices.network else null,
-                )
+                val screen = resources.acquire(Dispatchers.IO, AndroidScreen::close) {
+                    AndroidScreen(
+                        a11y, shell, agentDisplay, { recovery.markClipHeld(it) },
+                        clipLock = service.clipLock, checkOtherTasks = parallel,
+                        reserve = { pkg -> service.reservePackage(pkg, key, stillUsed(pkg, null)) },
+                        reserveCopy = { pkg, user -> service.reservePackage(claimKey(pkg, user), key, stillUsed(pkg, user)) },
+                        appFree = { pkg, user -> service.packageFree(claimKey(pkg, user), key, stillUsed(pkg, user)) },
+                        // 模型要了等:等的时候界面写「等另一个任务用完某 App」(仍是在干活,不算要你处理),等完放回原来那句
+                        awaitApp = { pkg, user, timeoutMs, free ->
+                            waitingForApp(ConfirmationNotifier.appLabel(service, pkg)) { service.awaitPackage(claimKey(pkg, user), key, timeoutMs, free) }
+                        },
+                        clipSaved = { original, ours -> recovery.saveClip(original, ours) },
+                        handedOver = { handoverRef?.handedOver == true },
+                        // 打字一段一段出来;App 知识说限制浏览快慢的 App 打得更慢
+                        typing = { pkg -> pace.typing(PlacePace.of(pkg?.let(skills::appPace))) },
+                        // 启动前就静上,开头几秒也没声;启动被拒就还原
+                        beforeOpen = muter::beforeOpen,
+                        notOpened = muter::notOpened,
+                        appAccess = appAccess,
+                        network = if (FeatureFlags.get(service).networkCaptureEnabled()) phoneServices.network else null,
+                        flags = FeatureFlags.get(service),
+                        appVersionCode = BuildConfig.VERSION_CODE,
+                        jumpConfirmProfiles = (service.application as MikaApp).jumpConfirmProfiles,
+                        allowUserInteraction = allowUserInteraction,
+                        recordEvent = { runSinkRef.get().event(it) },
+                    )
+                }
                 val side0 = PhoneSide(shell, a11y, screen, agentDisplay, muter)
                 phone = side0
+                interactiveInterstitials = allowUserInteraction
                 watchTarget(side0, states)
                 return screen
             }
@@ -715,6 +735,7 @@ class TaskRun(
                     }
                 }.onFailure { Log.w(TAG, "run record unavailable, running without it", it) }.getOrNull()
             } ?: RunSink.NONE
+            runSinkRef.set(sink)
             val trace = record?.takeIf { traceTicket != null }?.let { run ->
                 resources.acquire(Dispatchers.IO, traces.store::finish) { traces.start(traceTicket, run.runId) }
             }
@@ -914,7 +935,9 @@ class TaskRun(
                 SystemPrompt.identity(),
                 // 助手断开、被挪走只在这一步用的是手机时才查
                 gate = { w ->
-                    if (phoneScreen.acquired && dispatcher?.surface != WEB) phone?.screen?.let { awaitUserPick(it, taskGate, w) }
+                    if (phoneScreen.acquired && dispatcher?.surface != WEB) {
+                        phone?.screen?.let { awaitInterstitial(it, taskGate, allowUserInteraction, w) }
+                    }
                     taskGate.pass({ phoneScreen.acquired && dispatcher?.surface != WEB }, w)
                 }, knowledge = knowledge, sink = sink, trace = trace, installedApps = { apps },
                 // 选渠道用的事实:装了哪些 App、在 Mika 里登录过哪些网站、有没有内置浏览器
@@ -953,6 +976,14 @@ class TaskRun(
                 outwardPacing = if (runPolicy.enableAntiCrawlPacing) outwardPacing else OutwardPacing.Off,
                 runProfile = runProfile,
                 guardMode = runPolicy.guardMode,
+                interstitialGate = { w ->
+                    val screen = phone?.screen
+                    if (phoneScreen.acquired && screen != null && (dispatcher?.surface != WEB || screen.custodyState.value != null)) {
+                        awaitInterstitial(screen, taskGate, allowUserInteraction, w)
+                    } else {
+                        false
+                    }
+                },
             )
             loop = agent
             liveFeed = agent.events.subscribe(liveEvents)
@@ -1147,15 +1178,57 @@ class TaskRun(
     @Volatile private var sideScope: CoroutineScope? = null
 
     /**
-     * 系统在用户主屏上问打开哪一个(见 [AndroidScreen.userPick]):停在这里,胶囊上请用户在屏幕上选一下,选好自动接着做;
-     * 选出来的 App 要用户亲手处理的,留在主屏,请用户处理好了点继续。不在等时直接返回。
+     * 系统在主屏或虚拟屏上问用户选择应用 / 确认跳转（见 [AndroidScreen.custodyState]）：
+     * 停在这里通知胶囊与对话卡片等待用户操作；若确认框落在虚拟屏且开关关闭，用户点击「到主屏确认」后动态刷新状态。
+     * 若在无人值守模式下触达此步，直接返回 [DisplayCustodian.WaitResult.Unavailable]，不无限挂起。
      */
-    private suspend fun awaitUserPick(screen: AndroidScreen, gate: TaskGate, setWaiting: (TaskState?) -> Unit) {
-        val pick = screen.userPick.value ?: return
-        setWaiting(TaskState.Held(TaskGate.userStep(TaskGate.pickCopy(pick.app))))
-        val r = screen.awaitUserPick() as? AndroidScreen.PickResult.NeedsUser ?: return
-        gate.pauseForUser(TaskGate.finishCopy(r.app), setWaiting)
-        screen.afterUserStep(r)
+    private fun interstitialWaitingState(p: DisplayCustodian.PendingInterstitial): TaskState.Held {
+        val why = when (p.kind) {
+            InterstitialKind.CHOOSER -> TaskGate.pickCopy(p.appLabel)
+            InterstitialKind.JUMP_CONFIRM -> TaskGate.jumpConfirmCopy(
+                initiator = p.initiatorPackage?.let { ConfirmationNotifier.appLabel(service, it) } ?: p.appLabel,
+                target = p.targetLabel ?: p.targetPackage?.let { ConfirmationNotifier.appLabel(service, it) },
+                onVirtualDisplay = p.onVirtualDisplay,
+            )
+            InterstitialKind.NEEDS_USER -> TaskGate.finishCopy(p.appLabel)
+        }
+        val reason = if (p.onVirtualDisplay && p.kind == InterstitialKind.JUMP_CONFIRM) {
+            TaskGate.jumpConfirmOnVirtualDisplay(why)
+        } else {
+            TaskGate.userStep(why)
+        }
+        return TaskState.Held(reason)
+    }
+
+    private suspend fun awaitInterstitial(
+        screen: AndroidScreen,
+        gate: TaskGate,
+        allowUserInteraction: Boolean,
+        setWaiting: (TaskState?) -> Unit,
+    ): Boolean {
+        val initial = screen.currentCustodyState() ?: return false
+        if (!allowUserInteraction) {
+            screen.awaitInterstitial()
+            return true
+        }
+        setWaiting(interstitialWaitingState(initial))
+        val watcher = scope.launch {
+            screen.custodyState.collect { pending ->
+                if (pending != null && pending.id == initial.id) {
+                    setWaiting(interstitialWaitingState(pending))
+                }
+            }
+        }
+        val r = try {
+            screen.awaitInterstitial()
+        } finally {
+            watcher.cancel()
+        }
+        if (r is DisplayCustodian.WaitResult.NeedsUser) {
+            gate.pauseForUser(TaskGate.finishCopy(r.app), setWaiting)
+            screen.afterUserStep(r)
+        }
+        return true
     }
 
     /**
@@ -1165,6 +1238,18 @@ class TaskRun(
      */
     private fun watchTarget(p: PhoneSide, states: DeviceStateWatcher) {
         val side = sideScope ?: return
+        side.launch(Dispatchers.IO) {
+            p.screen.custodyState.collect { pending ->
+                val baseState = synchronized(publishLock) {
+                    maskedRunningState?.takeIf { _state.value == it.second }?.first
+                }
+                if (pending != null) {
+                    publish(baseState ?: _state.value)
+                } else if (baseState != null) {
+                    publish(baseState)
+                }
+            }
+        }
         side.launch(Dispatchers.IO) {
             p.screen.foregroundApps().collect { t ->
                 if (handoverRef?.handedOver != true) p.audio.opened(t.packageName, copyUser(t.userId))
@@ -1370,14 +1455,23 @@ class TaskRun(
         // 被挪走后到 gate 拦下之前,循环可能还在推理:对外先显示暂停
         // 循环自己报的终态不往外发:终态只由 [end] 在记好运行编号之后写,否则界面先收到结束、拿不到编号
         if (!TaskService.loopMayPublish(state)) return
+        val pendingInterstitial = if (state is TaskState.Running && interactiveInterstitials) {
+            phone?.screen?.custodyState?.value
+        } else null
         val shown = when {
             state is TaskState.Running && gate?.movedAwayPending == true -> TaskState.Held(TaskGate.paused(TaskGate.MOVED_AWAY))
             // 用户在借出的页面上操作:到关卡之前也先显示暂停
             state is TaskState.Running && gate?.userOnPagePending == true -> TaskState.Held(TaskGate.paused(TaskGate.USER_ON_PAGE))
+            state is TaskState.Running && pendingInterstitial != null -> interstitialWaitingState(pendingInterstitial)
             else -> state
         }
         synchronized(publishLock) {
             if (ended) return
+            maskedRunningState = if (state is TaskState.Running && pendingInterstitial != null && shown is TaskState.Held) {
+                state to shown
+            } else {
+                null
+            }
             setState(shown)
             awake?.onState(state)
         }

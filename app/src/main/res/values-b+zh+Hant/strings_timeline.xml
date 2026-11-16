@@ -105,4 +105,6 @@
     <string name="timeline_network_capture_off">網路擷取未開啟</string>
     <string name="timeline_network_body_empty">回應內容為空</string>
     <string name="timeline_network_truncated">內容較長，僅顯示部分預覽</string>
+    <string name="tag_jump_confirm_auto">已代點跳轉確認</string>
+    <string name="tag_jump_confirm_degraded">跳轉確認交由你處理</string>
 </resources>

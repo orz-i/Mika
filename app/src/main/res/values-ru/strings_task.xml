@@ -87,4 +87,10 @@
     <string name="screens_waiting">Ожидание</string>
     <string name="screens_needs_you">Нужны вы</string>
     <string name="screens_zoom">Увеличить этот экран</string>
+    <string name="action_confirm_on_main">Подтвердить на главном экране</string>
+    <string name="gate_jump_confirm_app_target">Приложение «%1$s» запрашивает открытие «%2$s». Подтвердите на экране</string>
+    <string name="gate_jump_confirm_app">«%1$s» запрашивает подтверждение на открытие другого приложения. Подтвердите на экране</string>
+    <string name="gate_jump_confirm_target">Подтвердите открытие «%1$s» на экране</string>
+    <string name="gate_jump_confirm_system">Система запрашивает подтверждение на открытие другого приложения. Подтвердите на экране</string>
+    <string name="gate_jump_confirm_vd_hint">Окно подтверждения открылось на фоновом экране Mika. Нажмите «Подтвердить на главном экране», чтобы проверить и разрешить.</string>
 </resources>

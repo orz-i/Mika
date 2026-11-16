@@ -93,4 +93,10 @@
     <string name="screens_waiting">بانتظار</string>
     <string name="screens_needs_you">تحتاج إليك</string>
     <string name="screens_zoom">تكبير هذه الشاشة</string>
+    <string name="action_confirm_on_main">التأكيد على الشاشة الرئيسية</string>
+    <string name="gate_jump_confirm_app_target">يطلب «%1$s» فتح «%2$s». يُرجى التأكيد على الشاشة</string>
+    <string name="gate_jump_confirm_app">يطلب «%1$s» تأكيد فتح تطبيق آخر. يُرجى التأكيد على الشاشة</string>
+    <string name="gate_jump_confirm_target">يُرجى التأكيد على الشاشة لفتح «%1$s»</string>
+    <string name="gate_jump_confirm_system">يطلب النظام تأكيد فتح تطبيق آخر. يُرجى التأكيد على الشاشة</string>
+    <string name="gate_jump_confirm_vd_hint">تظهر نافذة التأكيد على شاشة Mika الخلفية. اضغط على «التأكيد على الشاشة الرئيسية» للمراجعة والسماح.</string>
 </resources>

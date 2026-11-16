@@ -5,7 +5,9 @@ import android.os.Bundle
 import android.os.ParcelFileDescriptor
 import android.view.Surface
 import com.agent.use.common.DisplayConfig
+import com.agent.use.common.IAgentCustodyListener
 import com.agent.use.common.IAgentShell
+import com.agent.use.common.LaunchOrigin
 import com.agent.use.setup.CheckItem
 import com.agent.use.setup.DiagnosticReport
 import com.agent.use.setup.DiagnosticStatus
@@ -14,6 +16,7 @@ import com.wangzan101.mika.cap.phone.shell.asAgentShell
 import com.wangzan101.mika.shell.IMikaShell
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -101,11 +104,28 @@ class MikaAgentDisplayIntegrationTest {
         override fun listPackages(userId: Int): String = "package:com.test.app\n"
         override fun isSystemPackage(packageName: String?): Boolean = false
         override fun startShare(displayId: Int, packageName: String?, text: String?): Int = 0
-        override fun watchMainScreen(windowMs: Int): Int = 101
-        override fun mainArrivals(sinceUptimeMs: Long): Bundle = Bundle().apply {
-            putIntArray("taskIds", intArrayOf(202))
-            putStringArray("packages", arrayOf("com.test.escaped"))
+        var startedCustodyDisplayId: Int = -1
+        var stoppedCustodyDisplayId: Int = -1
+        var custodyListener: IAgentCustodyListener? = null
+        var queriedOriginTaskId: Int = -1
+        val lastOriginBundle: Bundle = Bundle()
+        override fun startCustody(displayId: Int, listener: IAgentCustodyListener?): Boolean {
+            startedCustodyDisplayId = displayId
+            custodyListener = listener
+            return true
         }
+        override fun stopCustody(displayId: Int) {
+            stoppedCustodyDisplayId = displayId
+        }
+        override fun launchOrigin(taskId: Int): Bundle {
+            queriedOriginTaskId = taskId
+            return lastOriginBundle
+        }
+        override fun resolveJumpTarget(
+            taskId: Int,
+            interstitialPackage: String?,
+            initiatorPackage: String?,
+        ): String? = null
         override fun userOfTask(taskId: Int): Int = 0
         override fun injectStroke(displayId: Int, xs: IntArray?, ys: IntArray?, times: LongArray?): Boolean = true
         override fun startSystemAction(displayId: Int, intent: Intent?, asMika: android.app.PendingIntent?): Int = 0
@@ -181,7 +201,22 @@ class MikaAgentDisplayIntegrationTest {
         assertNotNull(finishBundle)
         assertEquals(42, fakeShell.finishedDisplayId)
 
-        // 8. 验证原生网络捕获接口 (Mika 宿主桥接默认返回 null 以触发客户端 VPN 回退)
+        // 8. 验证常驻托管监听与启动来源查询桥接
+        val custodyListener = object : IAgentCustodyListener.Stub() {
+            override fun onTaskArrived(e: Bundle?) {}
+            override fun onTaskVanished(taskId: Int, lastDisplayId: Int, at: Long) {}
+        }
+        assertTrue(agentShell.startCustody(42, custodyListener))
+        assertEquals(42, fakeShell.startedCustodyDisplayId)
+        assertEquals(custodyListener, fakeShell.custodyListener)
+        val originBundle = agentShell.launchOrigin(777)
+        assertNotNull(originBundle)
+        assertEquals(777, fakeShell.queriedOriginTaskId)
+        assertSame(fakeShell.lastOriginBundle, originBundle)
+        agentShell.stopCustody(42)
+        assertEquals(42, fakeShell.stoppedCustodyDisplayId)
+
+        // 9. 验证原生网络捕获接口 (Mika 宿主桥接默认返回 null 以触发客户端 VPN 回退)
         assertEquals(null, agentShell.networkCapture)
     }
 

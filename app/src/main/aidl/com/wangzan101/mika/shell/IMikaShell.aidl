@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.os.ParcelFileDescriptor;
 import android.os.Bundle;
 import android.view.Surface;
+import com.agent.use.common.IAgentCustodyListener;
 
 // 运行在 shell 身份(uid 2000)进程里的常驻服务:经无线调试拉起的内置助手。
 interface IMikaShell {
@@ -65,11 +66,7 @@ interface IMikaShell {
     // 把一段文字分享给该包(ACTION_SEND text/plain,EXTRA_TEXT),启动到这块屏;返回值同 startApp,另有 5=该包没有收文字分享的页面;
     // 该包在主屏有任务时不启动、返回 1
     int startShare(int displayId, String packageName, String text) = 30;
-    // 从现在起盯着主屏 windowMs:这段时间里主屏最上面换了的任务都记下(见 mainArrivals);返回此刻主屏最上面的任务,没有为 -1。
-    // Agent 每个动作之前调:App 不从自己在 Mika 屏上的页面、而是从后台打开另一个 App 时,系统把它放到主屏,Mika 据此认出、挪回来
-    int watchMainScreen(int windowMs) = 31;
-    // sinceUptimeMs(SystemClock.uptimeMillis)之后主屏冒到最上面的任务,先后排;字段见 MainScreenWatch.toBundle。出错为 null
-    Bundle mainArrivals(long sinceUptimeMs) = 32;
+    // 事务号 31-32 已作废（原 watchMainScreen / mainArrivals，已由 startCustody / stopCustody + IAgentCustodyListener 取代，不复用）
     // 任务所属的用户(分身、工作资料是别的用户);任务不存在返回 -1
     int userOfTask(int taskId) = 33;
     // 在 Mika 自己的屏上按一根手指的一笔触摸:times[i] 毫秒(相对按下)时手指在 (xs[i], ys[i]);第一个点按下,最后一个点抬起。
@@ -122,6 +119,15 @@ interface IMikaShell {
 
     // 对 SystemUI 做一次定向点击,用于生物识别优先锁屏页上「用密码解锁」这类回退按钮;不含凭据。
     boolean revealDeviceCredentialTap(int x, int y) = 51;
+
+    // 为指定虚拟屏开启常驻任务托管监听（通过 IAgentCustodyListener.onTaskArrived / onTaskVanished 异步通知）
+    boolean startCustody(int displayId, IAgentCustodyListener listener) = 52;
+    // 停止指定虚拟屏的任务托管监听
+    void stopCustody(int displayId) = 53;
+    // 查询指定任务的启动来源（originUid / originPackage / originConfidence / managedDisplay）
+    Bundle launchOrigin(int taskId) = 54;
+    // 方案 1：从系统侧多源核验跳转确认弹窗拦截的真实目标应用包名，未知返回 null
+    String resolveJumpTarget(int taskId, String interstitialPackage, String initiatorPackage) = 55;
 
     // 沿用早先定下的销毁事务号;AIDL 要求要么全部方法编号要么都不编号
     void destroy() = 16777114;

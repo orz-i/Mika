@@ -80,6 +80,7 @@ interface TaskActions {
     fun withdrawSteer(conversationId: String, messageId: String): Boolean = false
     fun cancel()
     fun resume()
+    fun confirmOnMain() {}
     fun takeOver()
     fun handBack()
     fun finishedMyself()
@@ -94,6 +95,7 @@ interface TaskActions {
     // 并行任务时应用内的按钮带着屏上的对话,只作用于该对话的任务;它已经没有任务就作废。默认同不带对话的版本。
     fun cancelIn(conversationId: String) = cancel()
     fun resumeIn(conversationId: String) = resume()
+    fun confirmOnMainIn(conversationId: String) = confirmOnMain()
     fun takeOverIn(conversationId: String) = takeOver()
     fun handBackIn(conversationId: String) = handBack()
     fun finishedMyselfIn(conversationId: String) = finishedMyself()
@@ -136,8 +138,8 @@ sealed interface ExchangeStatus {
      * [key] 是这次申报的编号,按钮带着它,点在旧卡片上不算数。
      */
     data class NeedsConfirmation(val title: String, val body: String, val key: Int) : ExchangeStatus
-    /** 停下来等;[resumable] 时点「继续」接着做,否则条件满足后自动继续(卡片上不给「继续」)。 */
-    data class Paused(val why: String, val resumable: Boolean = true) : ExchangeStatus
+    /** 停下来等;[resumable] 时点「继续」接着做,[confirmOnMain] 时点「到主屏确认」,否则条件满足后自动继续。 */
+    data class Paused(val why: String, val resumable: Boolean = true, val confirmOnMain: Boolean = false) : ExchangeStatus
     /** 还没开始,排在开始队列里;轮到时自动开始,只能取消。 */
     data class Queued(val why: String) : ExchangeStatus
     /**
@@ -1382,6 +1384,7 @@ class ChatViewModel(
         liveIndex = -1
     }
     fun resume() = act({ actions.resume() }) { actions.resumeIn(it) }
+    fun confirmOnMain() = act({ actions.confirmOnMain() }) { actions.confirmOnMainIn(it) }
     fun takeOver() = act({ actions.takeOver() }) { actions.takeOverIn(it) }
     fun handBack() = act({ actions.handBack() }) { actions.handBackIn(it) }
     fun finishedMyself() = act({ actions.finishedMyself() }) { actions.finishedMyselfIn(it) }
@@ -1919,7 +1922,11 @@ class ChatViewModel(
                 status = when {
                     s.reason == TaskGate.LOCKED -> ExchangeStatus.WaitingUnlock
                     s.reason.queued -> ExchangeStatus.Queued(s.reason.why)
-                    else -> ExchangeStatus.Paused(s.reason.why, s.reason.resumable)
+                    else -> ExchangeStatus.Paused(
+                        s.reason.why,
+                        s.reason.resumable,
+                        confirmOnMain = s.reason.code == com.wangzan101.mika.task.TaskGate.WAITING_JUMP_CONFIRM_VD,
+                    )
                 },
                 waitingForModel = false, draft = null,
             )

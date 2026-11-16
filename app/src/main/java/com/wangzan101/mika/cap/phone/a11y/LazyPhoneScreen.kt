@@ -114,6 +114,7 @@ class LazyPhoneScreen(
     override suspend fun otherProfiles(): Map<String, List<String>> = port?.otherProfiles() ?: emptyMap()
     override suspend fun appCopies(): List<AppCopy> = port?.appCopies() ?: appCopies.invoke()
     override suspend fun checkScreen(): ScreenCheck? = port?.checkScreen()
+    override suspend fun drainSettledSpill() = port?.drainSettledSpill()
     override suspend fun isProtected() = port?.isProtected() ?: false
     override suspend fun frameGrid() = port?.frameGrid()
     override val network: com.wangzan101.mika.core.cap.phone.PhoneNetworkPort? get() = port?.network ?: networkProvider?.invoke()

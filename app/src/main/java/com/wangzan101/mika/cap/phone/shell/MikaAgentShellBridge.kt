@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.Surface
 import com.agent.use.common.DisplayConfig
+import com.agent.use.common.IAgentCustodyListener
 import com.agent.use.common.IAgentShell
 import com.agent.use.common.network.INetworkCapture
 import com.wangzan101.mika.shell.IMikaShell
@@ -156,12 +157,24 @@ class MikaAgentShellBridge(private val mikaShell: IMikaShell) : IAgentShell {
         return mikaShell.visibleOnMainScreen(packageName, userId)
     }
 
-    override fun watchMainScreen(windowMs: Int): Int {
-        return mikaShell.watchMainScreen(windowMs)
+    override fun startCustody(displayId: Int, listener: IAgentCustodyListener?): Boolean {
+        return mikaShell.startCustody(displayId, listener)
     }
 
-    override fun mainArrivals(sinceUptimeMs: Long): Bundle? {
-        return mikaShell.mainArrivals(sinceUptimeMs)
+    override fun stopCustody(displayId: Int) {
+        mikaShell.stopCustody(displayId)
+    }
+
+    override fun launchOrigin(taskId: Int): Bundle? {
+        return mikaShell.launchOrigin(taskId)
+    }
+
+    override fun resolveJumpTarget(
+        taskId: Int,
+        interstitialPackage: String?,
+        initiatorPackage: String?,
+    ): String? {
+        return mikaShell.resolveJumpTarget(taskId, interstitialPackage, initiatorPackage)
     }
 
     override fun runSystemCommand(displayId: Int, command: String): Bundle {

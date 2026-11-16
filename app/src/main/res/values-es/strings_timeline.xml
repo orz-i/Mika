@@ -113,4 +113,6 @@
     <string name="timeline_network_capture_off">La captura de red no está activa</string>
     <string name="timeline_network_body_empty">El cuerpo de la respuesta está vacío</string>
     <string name="timeline_network_truncated">Contenido recortado; solo se muestra una vista previa</string>
+    <string name="tag_jump_confirm_auto">Salto permitido automáticamente</string>
+    <string name="tag_jump_confirm_degraded">Confirmación de salto dejada al usuario</string>
 </resources>

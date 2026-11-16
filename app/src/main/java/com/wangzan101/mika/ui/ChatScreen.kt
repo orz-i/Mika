@@ -1108,6 +1108,7 @@ private fun StatusCard(
         }
         is ExchangeStatus.Paused -> NeedCard(stringResource(if (status.resumable) R.string.chat_paused else R.string.chat_waiting_for_you), status.why) {
             CardButton(stringResource(R.string.action_cancel_task), onClick = vm::cancel)
+            if (status.confirmOnMain) CardButton(stringResource(R.string.action_confirm_on_main), primary = true, onClick = vm::confirmOnMain)
             if (status.resumable) CardButton(stringResource(R.string.chat_continue), primary = true, onClick = vm::resume)
         }
         // 排队等开始:轮到时自动开始,点继续不能插队,只给取消

@@ -120,6 +120,38 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(SELF_CONFIG, on).commit()
     }
 
+    /**
+     * 跳转授权托管：应用在任务期间跳转到其他应用时，系统弹出的"是否打开"确认由 Mika 代为允许（仅本次）。
+     * 默认关闭；运行时权限、账号登录、付款确认始终由用户操作，也不会勾选"始终允许"。
+     */
+    fun jumpConfirmHosting(): Boolean = prefs.getBoolean(JUMP_CONFIRM_HOSTING, false)
+
+    fun setJumpConfirmHosting(on: Boolean) {
+        val editor = prefs.edit().putBoolean(JUMP_CONFIRM_HOSTING, on)
+        if (on) editor.remove(JUMP_CONFIRM_AUTO_BLOCKED_VERSION)
+        editor.commit()
+    }
+
+    /**
+     * 本机无障碍代点确认框失效后的自动熔断标记：按当前应用版本号记录，
+     * 用户主动清理（或重新开启托管）/ 应用升级到新版本后自动解除。
+     */
+    fun jumpConfirmAutoBlocked(versionCode: Int): Boolean {
+        val blockedVersion = prefs.getInt(JUMP_CONFIRM_AUTO_BLOCKED_VERSION, NO_BLOCKED_VERSION)
+        return blockedVersion != NO_BLOCKED_VERSION && blockedVersion == versionCode
+    }
+
+    fun markJumpConfirmAutoBlocked(versionCode: Int) {
+        prefs.edit()
+            .putBoolean(JUMP_CONFIRM_HOSTING, false)
+            .putInt(JUMP_CONFIRM_AUTO_BLOCKED_VERSION, versionCode)
+            .commit()
+    }
+
+    fun clearJumpConfirmAutoBlocked() {
+        prefs.edit().remove(JUMP_CONFIRM_AUTO_BLOCKED_VERSION).commit()
+    }
+
     /** 悬浮胶囊:关闭、有任务时显示(默认)、一直显示。 */
     fun capsuleMode(): CapsuleMode = CapsuleMode.parse(prefs.getString(CAPSULE_MODE, null))
 
@@ -214,6 +246,9 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val MUTE_TARGET = "mute_target"
         private const val OPERATING_PACE = "operating_pace"
         private const val SELF_CONFIG = "self_config"
+        private const val JUMP_CONFIRM_HOSTING = "jump_confirm_hosting"
+        private const val JUMP_CONFIRM_AUTO_BLOCKED_VERSION = "jump_confirm_auto_blocked_version"
+        private const val NO_BLOCKED_VERSION = -1
         private const val THEME_MODE = "theme_mode"
         private const val CAPSULE_MODE = "capsule_mode"
         private const val CAPSULE_IDLE_OPACITY = "capsule_idle_opacity"

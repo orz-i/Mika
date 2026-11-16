@@ -81,4 +81,10 @@
     <string name="screens_waiting">در انتظار</string>
     <string name="screens_needs_you">به توجه شما نیاز دارد</string>
     <string name="screens_zoom">بزرگ کردن این صفحه</string>
+    <string name="action_confirm_on_main">تأیید در صفحه اصلی</string>
+    <string name="gate_jump_confirm_app_target">«%1$s» درخواست باز کردن «%2$s» را دارد. لطفاً روی صفحه تأیید کنید</string>
+    <string name="gate_jump_confirm_app">«%1$s» برای باز کردن برنامه دیگری تأیید می‌خواهد. لطفاً روی صفحه تأیید کنید</string>
+    <string name="gate_jump_confirm_target">لطفاً برای باز کردن «%1$s» روی صفحه تأیید کنید</string>
+    <string name="gate_jump_confirm_system">سیستم برای باز کردن برنامه دیگری تأیید می‌خواهد. لطفاً روی صفحه تأیید کنید</string>
+    <string name="gate_jump_confirm_vd_hint">پنجره تأیید در صفحه پس‌زمینه Mika است. برای بررسی و اجازه دادن، روی «تأیید در صفحه اصلی» بزنید.</string>
 </resources>

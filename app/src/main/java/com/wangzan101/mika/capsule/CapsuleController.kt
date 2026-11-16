@@ -1279,6 +1279,7 @@ class CapsuleController(
             collapse()
         }
         override fun resume(runKey: String) = TaskService.resume(context, runKey)
+        override fun confirmOnMain(runKey: String) = TaskService.confirmOnMain(context, runKey)
         override fun answer(runKey: String, text: String) = TaskService.answer(context, text, runKey)
         override fun approve(runKey: String, requestKey: Int) = TaskService.approve(context, requestKey, runKey)
         override fun decline(runKey: String, requestKey: Int) = TaskService.decline(context, requestKey, runKey)

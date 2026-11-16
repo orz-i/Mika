@@ -113,4 +113,6 @@
     <string name="timeline_network_capture_off">A captura de rede não está ativa</string>
     <string name="timeline_network_body_empty">O corpo da resposta está vazio</string>
     <string name="timeline_network_truncated">Conteúdo truncado; exibindo apenas prévia</string>
+    <string name="tag_jump_confirm_auto">Troca de app permitida automaticamente</string>
+    <string name="tag_jump_confirm_degraded">Confirmação de troca deixada para você</string>
 </resources>

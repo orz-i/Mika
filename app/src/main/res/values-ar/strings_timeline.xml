@@ -125,4 +125,6 @@
     <string name="timeline_network_capture_off">التقاط الشبكة غير نشط</string>
     <string name="timeline_network_body_empty">محتوى الاستجابة فارغ</string>
     <string name="timeline_network_truncated">تم اقتطاع المحتوى؛ يتم عرض معاينة جزئية فقط</string>
+    <string name="tag_jump_confirm_auto">تم تأكيد الانتقال تلقائيًا</string>
+    <string name="tag_jump_confirm_degraded">تأكيد الانتقال متروك لك</string>
 </resources>

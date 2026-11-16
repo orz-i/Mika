@@ -109,4 +109,6 @@
     <string name="timeline_network_capture_off">Network capture is not active</string>
     <string name="timeline_network_body_empty">Response body is empty</string>
     <string name="timeline_network_truncated">Content truncated; showing preview only</string>
+    <string name="tag_jump_confirm_auto">Auto-allowed app jump</string>
+    <string name="tag_jump_confirm_degraded">Jump confirm left to you</string>
 </resources>

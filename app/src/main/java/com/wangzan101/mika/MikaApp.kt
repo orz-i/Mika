@@ -258,6 +258,11 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
         com.wangzan101.mika.settings.AppAccessStore(java.io.File(filesDir, "app-access.json"))
     }
 
+    /** 方案 2：跳转授权目标别名映射 Profile（自动学习 + 设置页可配置）。 */
+    val jumpConfirmProfiles: com.wangzan101.mika.settings.JumpConfirmProfileStore by lazy {
+        com.wangzan101.mika.settings.JumpConfirmProfileStore(java.io.File(filesDir, "jump-confirm-profiles.json"))
+    }
+
     /** 首页推荐任务。文件还不存在时,由界面用当前语言的内置示例初始化一次。 */
     val recommendedTasks: com.wangzan101.mika.settings.RecommendedTaskStore by lazy {
         com.wangzan101.mika.settings.RecommendedTaskStore(java.io.File(filesDir, com.wangzan101.mika.settings.RecommendedTaskStore.FILE))
@@ -307,6 +312,7 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
                 override fun withdrawSteer(conversationId: String, messageId: String) = taskState.run(conversationId)?.withdrawSteer(messageId) ?: false
                 override fun cancel() = TaskService.cancel(app)
                 override fun resume() = TaskService.resume(app)
+                override fun confirmOnMain() = TaskService.confirmOnMain(app)
                 override fun takeOver() = TaskService.takeOver(app)
                 override fun handBack() = TaskService.handBack(app)
                 override fun finishedMyself() = TaskService.finishedMyself(app)
@@ -320,6 +326,7 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
                 private fun key(conversationId: String) = taskState.run(conversationId)?.key
                 override fun cancelIn(conversationId: String) { key(conversationId)?.let { TaskService.cancel(app, it) } }
                 override fun resumeIn(conversationId: String) { key(conversationId)?.let { TaskService.resume(app, it) } }
+                override fun confirmOnMainIn(conversationId: String) { key(conversationId)?.let { TaskService.confirmOnMain(app, it) } }
                 override fun takeOverIn(conversationId: String) { key(conversationId)?.let { TaskService.takeOver(app, runKey = it) } }
                 override fun handBackIn(conversationId: String) { key(conversationId)?.let { TaskService.handBack(app, runKey = it) } }
                 override fun finishedMyselfIn(conversationId: String) { key(conversationId)?.let { TaskService.finishedMyself(app, runKey = it) } }

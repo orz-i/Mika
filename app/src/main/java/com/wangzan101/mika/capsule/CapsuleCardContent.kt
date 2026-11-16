@@ -134,6 +134,7 @@ object CardCopy {
     val STOP: String get() = tr(R.string.chat_stop)
     val TAKE_OVER: String get() = tr(R.string.action_take_over)
     val RESUME: String get() = tr(R.string.chat_continue)
+    val CONFIRM_ON_MAIN: String get() = tr(R.string.action_confirm_on_main)
     val APPROVE_ONCE_ONLY: String get() = tr(R.string.card_approve_once)
     val DECLINE: String get() = tr(R.string.action_decline)
     val SEE_PROCESS: String get() = tr(R.string.card_see_process)
@@ -158,6 +159,7 @@ interface CardActions {
     fun stop(runKey: String)
     fun takeOver(runKey: String)
     fun resume(runKey: String)
+    fun confirmOnMain(runKey: String) {}
     fun answer(runKey: String, text: String)
     fun approve(runKey: String, requestKey: Int)
     fun decline(runKey: String, requestKey: Int)
@@ -737,9 +739,15 @@ internal fun Pinned(content: CardContent?, key: String, actions: CardActions) {
                 Spacer(Modifier.height(0.dp))
                 content.options.forEach { o -> Action(o, ButtonKind.Tonal) { actions.answer(key, o) } }
             }
-            is CardContent.Held -> if (content.resumable) {
-                Spacer(Modifier.height(0.dp))
-                Action(CardCopy.RESUME, ButtonKind.Primary) { actions.resume(key) }
+            is CardContent.Held -> {
+                if (content.confirmOnMain) {
+                    Spacer(Modifier.height(0.dp))
+                    Action(CardCopy.CONFIRM_ON_MAIN, ButtonKind.Primary) { actions.confirmOnMain(key) }
+                }
+                if (content.resumable) {
+                    Spacer(Modifier.height(0.dp))
+                    Action(CardCopy.RESUME, ButtonKind.Primary) { actions.resume(key) }
+                }
             }
             else -> Unit
         }

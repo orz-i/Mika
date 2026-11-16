@@ -78,4 +78,10 @@
     <string name="screens_waiting">等待中</string>
     <string name="screens_needs_you">等你處理</string>
     <string name="screens_zoom">放大這塊螢幕</string>
+    <string name="action_confirm_on_main">到主螢幕確認</string>
+    <string name="gate_jump_confirm_app_target">「%1$s」正在請求開啟「%2$s」，請在螢幕上確認</string>
+    <string name="gate_jump_confirm_app">「%1$s」正在請求開啟其他應用程式，請在螢幕上確認</string>
+    <string name="gate_jump_confirm_target">請在螢幕上確認開啟「%1$s」</string>
+    <string name="gate_jump_confirm_system">系統正在確認是否允許開啟其他應用程式，請在螢幕上確認</string>
+    <string name="gate_jump_confirm_vd_hint">確認彈窗在後台螢幕上，點「到主螢幕確認」查看並操作。</string>
 </resources>

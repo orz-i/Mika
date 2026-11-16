@@ -105,4 +105,6 @@
     <string name="timeline_network_capture_off">Penangkapan jaringan tidak aktif</string>
     <string name="timeline_network_body_empty">Isi respons kosong</string>
     <string name="timeline_network_truncated">Konten dipotong; hanya pratinjau yang ditampilkan</string>
+    <string name="tag_jump_confirm_auto">Loncatan diizinkan otomatis</string>
+    <string name="tag_jump_confirm_degraded">Konfirmasi loncatan diserahkan ke Anda</string>
 </resources>

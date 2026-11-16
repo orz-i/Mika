@@ -78,4 +78,10 @@
     <string name="screens_waiting">대기 중</string>
     <string name="screens_needs_you">확인 필요</string>
     <string name="screens_zoom">이 화면 확대</string>
+    <string name="action_confirm_on_main">메인 화면에서 확인</string>
+    <string name="gate_jump_confirm_app_target">‘%1$s’에서 ‘%2$s’을(를) 열려고 합니다. 화면에서 확인해 주세요</string>
+    <string name="gate_jump_confirm_app">‘%1$s’에서 다른 앱을 열도록 확인을 요청하고 있습니다. 화면에서 확인해 주세요</string>
+    <string name="gate_jump_confirm_target">‘%1$s’을(를) 열려면 화면에서 확인해 주세요</string>
+    <string name="gate_jump_confirm_system">시스템에서 다른 앱을 열도록 허용할지 확인하고 있습니다. 화면에서 확인해 주세요</string>
+    <string name="gate_jump_confirm_vd_hint">확인 창이 백그라운드 화면에 있습니다. ‘메인 화면에서 확인’을 눌러 확인 후 허용해 주세요.</string>
 </resources>
