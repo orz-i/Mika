@@ -34,6 +34,7 @@ import com.wangzan101.mika.ui.components.RadioRow
 import com.wangzan101.mika.ui.components.RowActions
 import com.wangzan101.mika.ui.components.TileTone
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -111,7 +112,7 @@ fun DeviceAccessSection(settings: DeviceAccessSettings) {
         }
         FooterNote(stringResource(if (kind == CredentialKind.Pin) R.string.device_access_pin_hint else R.string.device_access_password_hint))
     }
-    if (failed) FooterNote(stringResource(R.string.device_access_save_failed))
+    if (failed) FooterNote(stringResource(R.string.device_access_save_failed), color = MikaTheme.colors.bad)
 }
 
 private fun Context.activity(): Activity? = when (this) {

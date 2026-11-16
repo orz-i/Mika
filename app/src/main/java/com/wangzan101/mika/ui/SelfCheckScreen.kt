@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,6 +26,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -56,6 +58,7 @@ import com.wangzan101.mika.ui.components.PageScaffold
 import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.TileTone
 import com.wangzan101.mika.ui.components.ValueTone
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import kotlinx.coroutines.Dispatchers
@@ -219,9 +222,13 @@ fun SelfCheckContent(
             val text = remember(state) { render(state) }
             GroupLabel(stringResource(R.string.selfcheck_report))
             val c = MikaTheme.colors
+            val reportShape = RoundedCornerShape(14.dp)
             Box(
                 Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 360.dp).testTag("selfcheck-report")
-                    .background(c.fill, RoundedCornerShape(12.dp)).verticalScroll(rememberScrollState())
+                    .clip(reportShape)
+                    .background(c.glassSubtle, reportShape)
+                    .border(0.75.dp, specularBorderBrush(c), reportShape)
+                    .verticalScroll(rememberScrollState())
                     .horizontalScroll(rememberScrollState()).padding(12.dp),
             ) {
                 Text(text, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = c.ink2)

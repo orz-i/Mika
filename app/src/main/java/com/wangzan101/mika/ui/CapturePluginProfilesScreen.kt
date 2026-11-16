@@ -1,6 +1,9 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -8,11 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -42,11 +45,14 @@ import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.GroupLabel
 import com.wangzan101.mika.ui.components.ListRow
 import com.wangzan101.mika.ui.components.MikaDialog
+import com.wangzan101.mika.ui.components.MikaSwitch
 import com.wangzan101.mika.ui.components.PageScaffold
+import com.wangzan101.mika.ui.components.PillTone
 import com.wangzan101.mika.ui.components.RowChevron
-import com.wangzan101.mika.ui.components.RowValue
+import com.wangzan101.mika.ui.components.StatusPill
 import com.wangzan101.mika.ui.components.TileTone
-import com.wangzan101.mika.ui.components.ValueTone
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
@@ -401,9 +407,9 @@ fun CapturePluginProfilesContent(
                     else -> stringResource(R.string.network_capture_plugins_generic_only_sub)
                 }
                 val (badge, tone) = when {
-                    offsetsDisabled -> stringResource(R.string.network_capture_plugins_tag_disabled) to ValueTone.Warn
-                    entry.isOverridden -> stringResource(R.string.network_capture_plugins_tag_custom) to ValueTone.Ok
-                    else -> stringResource(R.string.network_capture_plugins_tag_builtin) to ValueTone.Plain
+                    offsetsDisabled -> stringResource(R.string.network_capture_plugins_tag_disabled) to PillTone.Warn
+                    entry.isOverridden -> stringResource(R.string.network_capture_plugins_tag_custom) to PillTone.Ok
+                    else -> stringResource(R.string.network_capture_plugins_tag_builtin) to PillTone.Neutral
                 }
                 ListRow(
                     icon = MikaIcons.Key,
@@ -416,8 +422,11 @@ fun CapturePluginProfilesContent(
                         draft = CapturePluginDraft.fromEntry(entry)
                     },
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RowValue(badge, tone)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        StatusPill(badge, tone)
                         RowChevron()
                     }
                 }
@@ -480,8 +489,20 @@ fun CapturePluginProfilesContent(
                         }
                     }
 
+                    val c = MikaTheme.colors
+                    val toggleShape = RoundedCornerShape(12.dp)
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                            .clip(toggleShape)
+                            .background(c.glassSubtle, toggleShape)
+                            .border(0.5.dp, specularBorderBrush(c), toggleShape)
+                            .clickable {
+                                invalidDraft = false
+                                draft = currentDraft.copy(quickOffsetsEnabled = !currentDraft.quickOffsetsEnabled)
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -489,15 +510,15 @@ fun CapturePluginProfilesContent(
                             Text(
                                 stringResource(R.string.network_capture_plugins_quick_toggle),
                                 style = MikaType.Body,
-                                color = MikaTheme.colors.ink,
+                                color = c.ink,
                             )
                             Text(
                                 stringResource(R.string.network_capture_plugins_quick_toggle_sub),
                                 style = MikaType.Caption,
-                                color = MikaTheme.colors.ink3,
+                                color = c.ink3,
                             )
                         }
-                        Switch(
+                        MikaSwitch(
                             checked = currentDraft.quickOffsetsEnabled,
                             onCheckedChange = { on ->
                                 invalidDraft = false
@@ -608,7 +629,7 @@ fun CapturePluginProfilesContent(
                     if (invalidDraft) {
                         Text(
                             stringResource(R.string.network_capture_plugins_invalid),
-                            color = MaterialTheme.colorScheme.error,
+                            color = MikaTheme.colors.bad,
                             style = MikaType.Caption,
                             modifier = Modifier.padding(top = 6.dp),
                         )
@@ -678,12 +699,22 @@ fun CapturePluginProfilesContent(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     )
-                    Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                    val c = MikaTheme.colors
+                    val pickerShape = RoundedCornerShape(12.dp)
+                    Column(
+                        Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         filtered.forEach { (pkg, label) ->
+                            val interaction = remember(pkg) { MutableInteractionSource() }
                             Column(
                                 Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .clip(pickerShape)
+                                    .mikaPress(interaction, pressedScale = 0.985f, shape = pickerShape)
+                                    .background(c.glassSubtle, pickerShape)
+                                    .border(0.5.dp, specularBorderBrush(c), pickerShape)
+                                    .clickable(interactionSource = interaction, indication = null) {
                                         if (pickMode == PluginAppPickMode.DraftPackage && currentDraft != null) {
                                             invalidDraft = false
                                             draft = currentDraft.copy(packageName = pkg)
@@ -692,10 +723,10 @@ fun CapturePluginProfilesContent(
                                         }
                                         appPickMode = null
                                     }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                    .padding(vertical = 8.dp, horizontal = 12.dp),
                             ) {
-                                Text(label, style = MikaType.Body, color = MikaTheme.colors.ink)
-                                Text(pkg, style = MikaType.Caption, color = MikaTheme.colors.ink3)
+                                Text(label, style = MikaType.Body, color = c.ink)
+                                Text(pkg, style = MikaType.Caption, color = c.ink3)
                             }
                         }
                     }
@@ -773,7 +804,11 @@ fun CapturePluginProfilesContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.padding(4.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(4.dp),
+                        color = MikaTheme.colors.accent,
+                        trackColor = MikaTheme.colors.accentSoft,
+                    )
                     Text(stringResource(R.string.network_capture_plugins_scanning_body, activeScanPkg))
                 }
             },

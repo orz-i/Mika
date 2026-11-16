@@ -4,9 +4,15 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.wangzan101.mika.ui.components.MikaDialog
+import com.wangzan101.mika.ui.components.specularBorderBrush
+import com.wangzan101.mika.ui.theme.MikaType
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -204,8 +210,9 @@ private fun PortDialog(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Uni
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.mcp_port_title)) },
         text = {
+            val c = MikaTheme.colors
             Column {
-                Text(stringResource(R.string.mcp_port_dialog_sub), Modifier.padding(bottom = 8.dp))
+                Text(stringResource(R.string.mcp_port_dialog_sub), Modifier.padding(bottom = 8.dp), style = MikaType.Caption, color = c.ink2)
                 RadioRow(stringResource(R.string.mcp_port_default, McpSettings.DEFAULT_PORT), selected = current == McpSettings.DEFAULT_PORT,
                     onClick = { onPick(McpSettings.DEFAULT_PORT) }, first = true)
                 OutlinedTextField(
@@ -218,7 +225,7 @@ private fun PortDialog(current: Int, onPick: (Int) -> Unit, onDismiss: () -> Uni
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
                 if (custom.isNotEmpty() && value == null) {
-                    Text(stringResource(R.string.mcp_port_invalid), Modifier.padding(top = 4.dp))
+                    Text(stringResource(R.string.mcp_port_invalid), Modifier.padding(top = 4.dp), style = MikaType.Hint, color = c.bad)
                 }
             }
         },
@@ -337,10 +344,21 @@ private fun GuideStep(title: String, body: String, button: String, onClick: () -
     }
 }
 
+private val CommandShape = RoundedCornerShape(12.dp)
+
 @Composable
 internal fun CommandText(text: String, modifier: Modifier = Modifier) {
-    Text(text, modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        fontFamily = FontFamily.Monospace, fontSize = 14.sp, lineHeight = 20.sp, color = MikaTheme.colors.ink)
+    val c = MikaTheme.colors
+    Box(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .background(c.glassSubtle, CommandShape)
+            .border(0.75.dp, specularBorderBrush(c), CommandShape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(text, fontFamily = FontFamily.Monospace, fontSize = 13.5.sp, lineHeight = 20.sp, color = c.ink)
+    }
 }
 
 private fun clock(ms: Long): String =

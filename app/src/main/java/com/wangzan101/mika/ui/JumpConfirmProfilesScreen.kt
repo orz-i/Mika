@@ -1,14 +1,18 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -20,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -38,7 +43,11 @@ import com.wangzan101.mika.ui.components.MikaDialog
 import com.wangzan101.mika.ui.components.MikaSwitch
 import com.wangzan101.mika.ui.components.PageScaffold
 import com.wangzan101.mika.ui.components.RowChevron
+import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.TileTone
+import com.wangzan101.mika.ui.components.ValueTone
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
@@ -121,7 +130,7 @@ fun JumpConfirmProfilesContent(
                     tone = TileTone.Warn,
                     onClick = onReset,
                 ) {
-                    Text(stringResource(R.string.settings_jump_confirm_profiles_reset), color = MikaTheme.colors.accent)
+                    RowValue(stringResource(R.string.settings_jump_confirm_profiles_reset), ValueTone.Link)
                 }
             }
             return@PageScaffold
@@ -286,7 +295,7 @@ fun JumpConfirmProfilesContent(
                     if (invalidDraft) {
                         Text(
                             stringResource(R.string.settings_jump_confirm_profiles_invalid),
-                            color = MaterialTheme.colorScheme.error,
+                            color = MikaTheme.colors.bad,
                             style = MikaType.Caption,
                             modifier = Modifier.padding(top = 6.dp),
                         )
@@ -365,12 +374,22 @@ fun JumpConfirmProfilesContent(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     )
-                    Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                    val c = MikaTheme.colors
+                    val pickerShape = RoundedCornerShape(12.dp)
+                    Column(
+                        Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
                         filtered.forEach { (pkg, label) ->
+                            val interaction = remember(pkg) { MutableInteractionSource() }
                             Column(
                                 Modifier
                                     .fillMaxWidth()
-                                    .clickable {
+                                    .clip(pickerShape)
+                                    .mikaPress(interaction, pressedScale = 0.985f, shape = pickerShape)
+                                    .background(c.glassSubtle, pickerShape)
+                                    .border(0.5.dp, specularBorderBrush(c), pickerShape)
+                                    .clickable(interactionSource = interaction, indication = null) {
                                         invalidDraft = false
                                         draft = if (field == AppPickField.Initiator) {
                                             currentDraft.copy(initiatorPackage = pkg)
@@ -379,10 +398,10 @@ fun JumpConfirmProfilesContent(
                                         }
                                         pickingField = null
                                     }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                    .padding(vertical = 8.dp, horizontal = 12.dp),
                             ) {
-                                Text(label, style = MikaType.Body, color = MikaTheme.colors.ink)
-                                Text(pkg, style = MikaType.Caption, color = MikaTheme.colors.ink3)
+                                Text(label, style = MikaType.Body, color = c.ink)
+                                Text(pkg, style = MikaType.Caption, color = c.ink3)
                             }
                         }
                     }

@@ -13,6 +13,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +40,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.geometry.CornerRadius
@@ -71,8 +75,12 @@ import com.wangzan101.mika.ui.ScreenCopy
 import com.wangzan101.mika.ui.components.ButtonSize
 import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.MikaLogo
+import com.wangzan101.mika.ui.components.drawGlassSheen
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaColors
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaMotion
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import kotlin.math.ceil
@@ -193,10 +201,18 @@ private fun Capsule(view: CapsuleView.Shown, end: Boolean, onTap: () -> Unit, ta
             )
         }.then(if (holding) Modifier.testTag("capsule-holding") else Modifier),
     ) {
+        val tapInteraction = remember { MutableInteractionSource() }
+        val tapPressed by tapInteraction.collectIsPressedAsState()
+        val pressBoost by animateFloatAsState(
+            targetValue = if (tapPressed) 1f else 0f,
+            animationSpec = MikaMotion.pressSpring(still),
+            label = "capsule-press-boost",
+        )
         Box(
             Modifier.testTag(if (view.pill) "capsule" else "capsule-ball")
-                .morphGlass(morph, end, c, need, alpha)
-                .clickable(onClickLabel = tapLabel, role = Role.Button, onClick = onTap)
+                .mikaPress(tapInteraction, pressedScale = 0.95f, specularBoost = false)
+                .morphGlass(morph, end, c, need, alpha, pressBoost)
+                .clickable(interactionSource = tapInteraction, indication = null, onClickLabel = tapLabel, role = Role.Button, onClick = onTap)
                 .then(if (view.pill) Modifier else Modifier.semantics { contentDescription = CapsuleCopy.describe(view) })
                 .then(a11y)
                 .morphLayout(morph, end),
@@ -379,24 +395,52 @@ private fun Modifier.morphLayout(m: Morph, end: Boolean): Modifier = layout { me
  * 玻璃底(同 [glass]),只画看得见的那一段宽、贴着停靠的那一边:阴影、裁切、底色和描边都按它,宽度变时只重画图层。
  * [alpha] 淡底和里面的图标。
  */
-private fun Modifier.morphGlass(m: Morph, end: Boolean, c: MikaColors, need: Boolean, alpha: Float): Modifier =
-    graphicsLayer {
+private fun Modifier.morphGlass(
+    m: Morph,
+    end: Boolean,
+    c: MikaColors,
+    need: Boolean,
+    alpha: Float,
+    pressBoost: Float,
+): Modifier {
+    val fillAlpha = if (c.isDark) 0.90f else 0.94f
+    val sheenAlpha = if (c.isDark) 0.14f else 0.22f
+    val borderBrush = specularBorderBrush(c)
+    return graphicsLayer {
         this.alpha = alpha
         shadowElevation = 8.dp.toPx()
-        ambientShadowColor = c.floatShadow.copy(alpha = 0.25f)
-        spotShadowColor = c.floatShadow.copy(alpha = 0.3f)
+        ambientShadowColor = c.floatShadow.copy(alpha = if (c.isDark) 0.42f else 0.25f)
+        spotShadowColor = c.floatShadow.copy(alpha = if (c.isDark) 0.50f else 0.30f)
         shape = EdgePill(m.width.value, end)
         clip = true
     }.drawWithContent {
         val pill = EdgePill(m.width.value, end)
         val o = pill.createOutline(size, layoutDirection, this)
-        drawOutline(o, c.surface.copy(alpha = 0.95f))
+        drawOutline(o, c.glassCardElevated.copy(alpha = fillAlpha))
         if (need) drawOutline(o, c.warnSoft)
+        if (sheenAlpha > 0f && size.width > 0f) {
+            drawOutline(
+                o,
+                Brush.radialGradient(
+                    colors = listOf(Color.White.copy(alpha = sheenAlpha), Color.Transparent),
+                    center = Offset.Zero,
+                    radius = (size.width * 0.82f).coerceAtLeast(1f),
+                ),
+            )
+        }
         drawContent()
-        val stroke = (if (need) 1.dp else 0.5.dp).toPx()
-        drawOutline(EdgePill(m.width.value, end, inset = stroke / 2).createOutline(size, layoutDirection, this),
-            if (need) c.warnSolid.copy(alpha = 0.5f) else c.glassEdge, style = Stroke(stroke))
+        if (pressBoost > 0.005f && c.specularPress.alpha > 0f) {
+            drawOutline(o, c.specularPress.copy(alpha = c.specularPress.alpha * pressBoost))
+        }
+        val stroke = (if (need) 1.dp else 0.75.dp).toPx()
+        val strokeOutline = EdgePill(m.width.value, end, inset = stroke / 2).createOutline(size, layoutDirection, this)
+        if (need) {
+            drawOutline(strokeOutline, c.warnSolid.copy(alpha = 0.55f), style = Stroke(stroke))
+        } else {
+            drawOutline(strokeOutline, borderBrush, style = Stroke(stroke))
+        }
     }
+}
 
 /** 宽 [width](0 或超出时按整块)、贴着一边([end] 时逻辑末端)的胶囊形;[inset] 往里收(画描边用)。 */
 private class EdgePill(private val width: Float, private val end: Boolean, private val inset: Float = 0f) : Shape {
@@ -428,9 +472,16 @@ private fun TakeoverBar(view: CapsuleView.Shown, onStop: () -> Unit, onHandBack:
             Text(view.text, style = CapsuleText, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             view.detail?.let { Text(it, style = BarDetail, color = c.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
+        val stopInteraction = remember { MutableInteractionSource() }
         Box(
-            Modifier.clip(MikaShapes.Pill).clickable(role = Role.Button, onClick = onStop)
-                .heightIn(min = 36.dp).padding(horizontal = 10.dp),
+            Modifier
+                .mikaPress(stopInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                .clip(MikaShapes.Pill)
+                .background(c.glassTonal, MikaShapes.Pill)
+                .border(0.5.dp, specularBorderBrush(c), MikaShapes.Pill)
+                .clickable(interactionSource = stopInteraction, indication = null, role = Role.Button, onClick = onStop)
+                .heightIn(min = 36.dp)
+                .padding(horizontal = 12.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(CapsuleCopy.STOP, style = CapsuleText.copy(fontWeight = FontWeight.Normal), color = c.ink2, maxLines = 1)
@@ -446,11 +497,26 @@ private fun CapsuleLogo() {
 }
 
 /**
- * 浮在别的 App 上的玻璃底:浮层窗口里拿不到下面 App 的画面做模糊,用接近不透明的卡片底、细描边和悬浮阴影;
+ * 浮在别的 App 上的玻璃底（严禁引用主窗 LocalGlassBackdrop）：自包含高通透磨砂底 + 径向光泽 + 方向性高光描边 + 悬浮阴影；
  * 需要你时叠一层淡橙、描边变橙。
  */
-internal fun Modifier.glass(c: MikaColors, shape: Shape, need: Boolean): Modifier =
-    shadow(8.dp, shape, clip = false, ambientColor = c.floatShadow.copy(alpha = 0.25f), spotColor = c.floatShadow.copy(alpha = 0.3f))
+internal fun Modifier.glass(c: MikaColors, shape: Shape, need: Boolean): Modifier {
+    val fillAlpha = if (c.isDark) 0.90f else 0.94f
+    val sheenAlpha = if (c.isDark) 0.14f else 0.20f
+    return shadow(
+        8.dp, shape, clip = false,
+        ambientColor = c.floatShadow.copy(alpha = if (c.isDark) 0.42f else 0.25f),
+        spotColor = c.floatShadow.copy(alpha = if (c.isDark) 0.50f else 0.30f),
+    )
         .clip(shape)
-        .background(c.surface.copy(alpha = 0.95f))
-        .then(if (need) Modifier.background(c.warnSoft).border(1.dp, c.warnSolid.copy(alpha = 0.5f), shape) else Modifier.border(0.5.dp, c.glassEdge, shape))
+        .drawWithContent {
+            drawRect(c.glassCardElevated.copy(alpha = fillAlpha))
+            if (need) drawRect(c.warnSoft)
+            drawGlassSheen(sheenAlpha)
+            drawContent()
+        }
+        .then(
+            if (need) Modifier.border(1.dp, c.warnSolid.copy(alpha = 0.55f), shape)
+            else Modifier.border(0.75.dp, specularBorderBrush(c), shape),
+        )
+}

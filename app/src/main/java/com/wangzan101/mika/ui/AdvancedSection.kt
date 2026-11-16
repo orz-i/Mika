@@ -2,14 +2,22 @@ package com.wangzan101.mika.ui
 
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import com.wangzan101.mika.ui.components.MikaDialog
-import androidx.compose.material3.OutlinedTextField
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.theme.MikaShapes
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -232,15 +240,24 @@ private fun UsageGroup(
                     onClick = if (w.busy) null else ({ onClear(w) }),
                 ) {
                     if (w.conversationId != null) {
-                        Text(
-                            tr(R.string.terminal_open_action),
+                        val interaction = remember { MutableInteractionSource() }
+                        Box(
                             Modifier
-                                .clickable { onOpenTerminal(w) }
-                                .padding(end = 12.dp)
+                                .padding(end = 10.dp)
+                                .mikaPress(interaction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                                .clip(MikaShapes.Pill)
+                                .background(c.accentSoft, MikaShapes.Pill)
+                                .border(0.5.dp, c.accent.copy(alpha = 0.24f), MikaShapes.Pill)
+                                .clickable(interactionSource = interaction, indication = null, role = Role.Button) { onOpenTerminal(w) }
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
                                 .testTag("sandbox-workspace-terminal"),
-                            style = MikaType.Caption,
-                            color = c.accent,
-                        )
+                        ) {
+                            Text(
+                                tr(R.string.terminal_open_action),
+                                style = MikaType.Hint.copy(fontWeight = FontWeight.SemiBold),
+                                color = c.accent,
+                            )
+                        }
                     }
                     RowValue(SandboxCopy.size(w.bytes))
                 }

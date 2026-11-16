@@ -29,6 +29,7 @@ import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.MikaSwitch
 import com.wangzan101.mika.ui.components.RowActions
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -121,9 +122,9 @@ internal fun RelayControls(config: RelayConfig, state: RelayState, busy: Boolean
         FooterNote(stringResource(if (mcp) R.string.relay_client_help else R.string.relay_cli_help))
     }
     FooterNote(stringResource(R.string.relay_intro))
-    if (failed) FooterNote(stringResource(R.string.relay_failed))
+    if (failed) FooterNote(stringResource(R.string.relay_failed), color = MikaTheme.colors.bad)
     if (confirm) MikaDialog(onDismissRequest = { confirm = false },
         title = { Text(stringResource(R.string.relay_unpair)) }, text = { Text(stringResource(R.string.relay_unpair_body)) },
-        confirmButton = { TextButton({ confirm = false; onUnpair() }) { Text(stringResource(R.string.relay_unpair)) } },
+        confirmButton = { TextButton({ confirm = false; onUnpair() }) { Text(stringResource(R.string.relay_unpair), color = MikaTheme.colors.bad) } },
         dismissButton = { TextButton({ confirm = false }) { Text(stringResource(R.string.cancel)) } })
 }

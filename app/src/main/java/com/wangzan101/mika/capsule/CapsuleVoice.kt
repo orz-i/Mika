@@ -33,9 +33,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
@@ -59,7 +62,10 @@ import com.wangzan101.mika.ui.ChatCopy
 import com.wangzan101.mika.ui.Spinner
 import com.wangzan101.mika.ui.VoiceCopy
 import com.wangzan101.mika.ui.VoiceWave
+import com.wangzan101.mika.ui.components.GlassMaterials
+import com.wangzan101.mika.ui.components.liquidGlass
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaMotion
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.voice.HoldToTalk
 import com.wangzan101.mika.voice.SpeechEngineSpec
@@ -357,19 +363,24 @@ private fun Targets(talk: CapsuleTalk, show: Boolean, onPlaced: (Rect, Rect) -> 
 @Composable
 private fun Target(icon: ImageVector, label: String, hot: Boolean, bad: Boolean, onPlaced: (Rect) -> Unit) {
     val c = MikaTheme.colors
-    val scale by animateFloatAsState(if (hot) 1.18f else 1f, if (MikaTheme.reduceMotion) snap() else tween(150), label = "target")
-    val fill = when {
-        !hot -> c.surface.copy(alpha = 0.95f)
-        bad -> c.bad
-        else -> c.accent
+    val scale by animateFloatAsState(if (hot) 1.18f else 1f, MikaMotion.pressSpring(MikaTheme.reduceMotion), label = "target")
+    val idleGlass = Modifier.liquidGlass(GlassMaterials.IconCircle, backdrop = null, shape = CircleShape)
+    val hotBg = if (bad) c.bad else c.accent
+    val surfaceMod = if (hot) {
+        Modifier
+            .shadow(12.dp, CircleShape, clip = false, ambientColor = hotBg.copy(alpha = 0.45f), spotColor = hotBg.copy(alpha = 0.55f))
+            .clip(CircleShape)
+            .background(Brush.verticalGradient(listOf(hotBg.copy(alpha = 0.90f), hotBg)), CircleShape)
+            .border(0.85.dp, Color.White.copy(alpha = 0.45f), CircleShape)
+    } else {
+        idleGlass
     }
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(
             Modifier.size(TargetSize)
                 .onGloballyPositioned { onPlaced(it.boundsInWindow()) }
                 .graphicsLayer { scaleX = scale; scaleY = scale }
-                .glass(c, CircleShape, need = false)
-                .background(fill, CircleShape)
+                .then(surfaceMod)
                 .testTag(if (bad) "capsule-voice-cancel" else "capsule-voice-edit"),
             contentAlignment = Alignment.Center,
         ) {
@@ -390,7 +401,7 @@ private fun Panel(talk: CapsuleTalk, state: HoldToTalk.State, below: Boolean) {
     val edit = aim == CapsuleVoice.Drop.Edit
     Column(
         Modifier.padding(horizontal = 14.dp).widthIn(max = 520.dp).fillMaxWidth()
-            .glass(c, PanelShape, need = false)
+            .liquidGlass(GlassMaterials.VoiceCard, backdrop = null, shape = PanelShape)
             .then(if (cancel) Modifier.border(1.5.dp, c.bad, PanelShape) else Modifier)
             .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 14.dp)
             .testTag("capsule-voice-panel"),
@@ -405,7 +416,10 @@ private fun Panel(talk: CapsuleTalk, state: HoldToTalk.State, below: Boolean) {
             Text(talk.title, Modifier.weight(1f, fill = false), style = HeadText, color = c.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (talk.engine.isNotEmpty()) {
                 Text(
-                    talk.engine, Modifier.background(c.fill, RoundedCornerShape(7.dp)).padding(horizontal = 8.dp, vertical = 2.dp),
+                    talk.engine,
+                    Modifier.background(c.glassSubtle, RoundedCornerShape(7.dp))
+                        .border(0.5.dp, c.glassEdge, RoundedCornerShape(7.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
                     style = ChipText, color = c.ink2, maxLines = 1,
                 )
             }

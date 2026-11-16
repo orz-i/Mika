@@ -1,12 +1,18 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import com.wangzan101.mika.ui.components.MikaDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -17,7 +23,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -25,16 +33,21 @@ import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.R
 import com.wangzan101.mika.settings.McpServerConfig
 import com.wangzan101.mika.settings.McpServerStore
+import com.wangzan101.mika.ui.components.FooterNote
 import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.GroupLabel
 import com.wangzan101.mika.ui.components.ListRow
 import com.wangzan101.mika.ui.components.MikaSwitch
 import com.wangzan101.mika.ui.components.PageScaffold
 import com.wangzan101.mika.ui.components.SegmentedControl
-import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.ButtonSize
+import com.wangzan101.mika.ui.components.TileTone
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaTheme
+import com.wangzan101.mika.ui.theme.MikaType
 import android.content.Intent
 import android.net.Uri
 import kotlinx.coroutines.launch
@@ -67,6 +80,11 @@ fun McpServersScreen(store: McpServerStore, onBack: () -> Unit) {
                         } ?: address),
                         detail = state?.let { address },
                         first = i == 0,
+                        tone = when {
+                            state == null -> TileTone.Neutral
+                            state.ok -> TileTone.Ok
+                            else -> TileTone.Warn
+                        },
                         onClick = { editing = server },
                     ) {
                         MikaSwitch(server.enabled, { on -> store.setEnabled(server.id, on) })
@@ -90,10 +108,7 @@ fun McpServersScreen(store: McpServerStore, onBack: () -> Unit) {
             )
         }
         GroupLabel(stringResource(R.string.mcp_servers_help))
-        Text(
-            stringResource(R.string.mcp_servers_help_text),
-            Modifier.padding(horizontal = 16.dp),
-        )
+        FooterNote(stringResource(R.string.mcp_servers_help_text))
     }
 
     if (adding || editing != null) {
@@ -168,7 +183,8 @@ private fun McpServerDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(if (initial == null) R.string.mcp_servers_add else R.string.mcp_servers_edit)) },
         text = {
-            Column {
+            val c = MikaTheme.colors
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.mcp_servers_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 SegmentedControl(
                     options = transportLabels,
@@ -183,7 +199,7 @@ private fun McpServerDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     )
-                    Text(stringResource(R.string.mcp_servers_stdio_help), Modifier.padding(top = 4.dp))
+                    Text(stringResource(R.string.mcp_servers_stdio_help), Modifier.padding(top = 4.dp), style = MikaType.Hint, color = c.ink3)
                 } else {
                     OutlinedTextField(url, { url = it }, label = { Text(stringResource(R.string.mcp_servers_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                     if (!oauth) {
@@ -228,10 +244,15 @@ private fun McpServerDialog(
                 }
                 if (transport != "stdio") ToggleRow(stringResource(R.string.mcp_servers_allow_local_http), allowLocal) { allowLocal = it }
                 ToggleRow(stringResource(R.string.mcp_servers_trust_annotations), trustAnnotations) { trustAnnotations = it }
-                error?.let { Text(it, Modifier.padding(top = 6.dp)) }
-                if (testing) Text(stringResource(R.string.mcp_servers_testing), Modifier.padding(top = 6.dp))
-                if (signingIn) Text(stringResource(R.string.mcp_servers_signing_in), Modifier.padding(top = 6.dp))
-                if (initial != null) TextButton({ store.remove(initial.id); onChanged() }) { Text(stringResource(R.string.mcp_servers_delete)) }
+                error?.let {
+                    val positive = it == signInOk || it.startsWith("OK:")
+                    Text(it, Modifier.padding(top = 6.dp), style = MikaType.Caption, color = if (positive) c.ok else c.bad)
+                }
+                if (testing) Text(stringResource(R.string.mcp_servers_testing), Modifier.padding(top = 6.dp), style = MikaType.Caption, color = c.ink3)
+                if (signingIn) Text(stringResource(R.string.mcp_servers_signing_in), Modifier.padding(top = 6.dp), style = MikaType.Caption, color = c.ink3)
+                if (initial != null) TextButton({ store.remove(initial.id); onChanged() }) {
+                    Text(stringResource(R.string.mcp_servers_delete), color = c.bad)
+                }
             }
         },
         confirmButton = {
@@ -258,8 +279,23 @@ private fun McpServerDialog(
 
 @Composable
 private fun ToggleRow(title: String, checked: Boolean, onChecked: (Boolean) -> Unit) {
-    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-        Checkbox(checked, onCheckedChange = onChecked)
-        Text(title, Modifier.padding(start = 4.dp))
+    val c = MikaTheme.colors
+    val shape = RoundedCornerShape(12.dp)
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clip(shape)
+            .mikaPress(interaction, pressedScale = 0.985f, shape = shape)
+            .background(c.glassSubtle, shape)
+            .border(0.5.dp, specularBorderBrush(c), shape)
+            .clickable(interactionSource = interaction, indication = null) { onChecked(!checked) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(title, Modifier.weight(1f), style = MikaType.Body, color = c.ink)
+        MikaSwitch(checked, onChecked)
     }
 }

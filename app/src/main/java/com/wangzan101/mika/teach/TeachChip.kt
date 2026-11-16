@@ -4,18 +4,25 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -25,8 +32,14 @@ import com.wangzan101.mika.cap.phone.a11y.OverlayPlacement
 import com.wangzan101.mika.cap.phone.a11y.OverlayWindow
 import com.wangzan101.mika.cap.phone.a11y.ScreenAccessibility
 import com.wangzan101.mika.core.teach.TeachPhase
+import com.wangzan101.mika.ui.components.GlassMaterials
+import com.wangzan101.mika.ui.components.liquidGlass
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
+import com.wangzan101.mika.ui.theme.animationsOff
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -72,6 +85,8 @@ class TeachChip(
     }
 }
 
+private val TeachChipMaterial = GlassMaterials.FloatingPill.copy(shadowElevation = 8.dp)
+
 @Composable
 private fun TeachChipBar(
     phase: MutableStateFlow<TeachPhase>,
@@ -81,32 +96,68 @@ private fun TeachChipBar(
 ) {
     val current by phase.collectAsState()
     val recording = current == TeachPhase.Recording
-    MikaTheme {
+    val context = LocalContext.current
+    val reduceMotion = remember(context) { animationsOff(context) }
+    MikaTheme(reduceMotion = reduceMotion) {
         val c = MikaTheme.colors
-        Row(
-            Modifier.testTag("teach-chip").clip(RoundedCornerShape(20.dp)).background(c.ink).padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(
-                stringResource(if (recording) R.string.teach_learning else R.string.teach_paused),
-                style = MikaType.Body,
-                color = c.bg,
-            )
-            ChipAction(stringResource(if (recording) R.string.teach_pause else R.string.teach_resume)) {
-                if (recording) onPause() else onResume()
+        Box(Modifier.padding(8.dp)) {
+            Row(
+                Modifier
+                    .testTag("teach-chip")
+                    .liquidGlass(TeachChipMaterial, backdrop = null, shape = MikaShapes.Pill)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(Modifier.size(8.dp).background(if (recording) c.bad else c.warnSolid, CircleShape))
+                Text(
+                    stringResource(if (recording) R.string.teach_learning else R.string.teach_paused),
+                    style = MikaType.BodyStrong,
+                    color = c.ink,
+                )
+                ChipAction(
+                    stringResource(if (recording) R.string.teach_pause else R.string.teach_resume),
+                    tint = if (recording) c.ink else c.accent,
+                    bg = if (recording) c.glassTonal else c.accentSoft,
+                    border = if (recording) null else c.accent.copy(alpha = 0.25f),
+                ) {
+                    if (recording) onPause() else onResume()
+                }
+                ChipAction(
+                    stringResource(R.string.teach_end),
+                    tint = c.bad,
+                    bg = c.badSoft,
+                    border = c.bad.copy(alpha = 0.25f),
+                    onClick = onEnd,
+                )
             }
-            ChipAction(stringResource(R.string.teach_end), onEnd)
         }
     }
 }
 
 @Composable
-private fun ChipAction(label: String, onClick: () -> Unit) {
-    Text(
-        label,
-        Modifier.clickable(role = Role.Button, onClick = onClick).padding(vertical = 4.dp),
-        style = MikaType.Body,
-        color = MikaTheme.colors.bg,
-    )
+private fun ChipAction(
+    label: String,
+    tint: Color,
+    bg: Color,
+    border: Color?,
+    onClick: () -> Unit,
+) {
+    val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        Modifier
+            .mikaPress(interaction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+            .clip(MikaShapes.Pill)
+            .background(bg, MikaShapes.Pill)
+            .then(
+                if (border != null) Modifier.border(0.5.dp, border, MikaShapes.Pill)
+                else Modifier.border(0.5.dp, specularBorderBrush(c), MikaShapes.Pill),
+            )
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MikaType.Caption, color = tint)
+    }
 }

@@ -9,9 +9,11 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -35,12 +38,14 @@ import com.wangzan101.mika.ui.components.EmptyNote
 import com.wangzan101.mika.ui.components.FooterNote
 import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.GroupLabel
+import com.wangzan101.mika.ui.components.Hairline
 import com.wangzan101.mika.ui.components.ListRow
 import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.PageScaffold
 import com.wangzan101.mika.ui.components.RowActions
 import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.SegmentedControl
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.Dispatchers
@@ -135,14 +140,23 @@ object RunMetricsCopy {
 fun RunMetricsSummary(m: RunMetrics) {
     val c = MikaTheme.colors
     var open by rememberSaveable { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(12.dp)
     Column(
-        Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }.testTag("run-metrics-summary")
+        Modifier.fillMaxWidth()
+            .clip(shape)
+            .mikaPress(interaction, pressedScale = 0.988f, shape = shape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button) { open = !open }
+            .testTag("run-metrics-summary")
             .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 10.dp),
     ) {
         Text(RunMetricsCopy.summaryLine(m), style = MikaType.Caption, color = c.ink2)
         Text(if (open) tr(R.string.collapse) else tr(R.string.metrics_where_time), Modifier.padding(top = 2.dp), style = MikaType.Hint, color = c.accent)
     }
-    if (open) RunMetricsCopy.breakdown(m).forEach { (k, v) -> ListRow(null, k) { RowValue(v) } }
+    if (open) {
+        Hairline(16.dp)
+        RunMetricsCopy.breakdown(m).forEach { (k, v) -> ListRow(null, k) { RowValue(v) } }
+    }
 }
 
 /** 开发者选项 › 运行统计:从小结存储里读最近几次,算平均和中位数;能把这几次的小结复制或分享成 JSON。 */

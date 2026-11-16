@@ -9,13 +9,22 @@ import androidx.compose.ui.platform.testTag
 import com.wangzan101.mika.settings.FeatureFlags
 import com.wangzan101.mika.settings.ThemeMode
 import com.wangzan101.mika.ui.components.MikaSwitch
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.shape.CircleShape
 import com.wangzan101.mika.ui.components.MikaDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -25,7 +34,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wangzan101.mika.capsule.CapsuleIdleOpacity
@@ -47,7 +62,10 @@ import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.TileTone
 import com.wangzan101.mika.ui.components.ValueTone
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import com.wangzan101.mika.core.cap.phone.OperatingPace
@@ -332,8 +350,9 @@ private fun StepLimitDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings_step_limit)) },
         text = {
+            val c = MikaTheme.colors
             Column {
-                Text(stringResource(R.string.settings_step_limit_sub), Modifier.padding(bottom = 8.dp))
+                Text(stringResource(R.string.settings_step_limit_sub), Modifier.padding(bottom = 8.dp), style = MikaType.Caption, color = c.ink2)
                 RadioRow(stringResource(R.string.settings_step_limit_off), selected = current == null, onClick = { onPick(null) }, first = true)
                 STEP_LIMIT_PRESETS.forEach { n ->
                     RadioRow(trPlural(R.plurals.chat_steps_n, n), selected = current == n, onClick = { onPick(n) })
@@ -345,7 +364,7 @@ private fun StepLimitDialog(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 )
                 if (custom.isNotEmpty() && customValue == null) {
-                    Text(stringResource(R.string.settings_step_limit_invalid), Modifier.padding(top = 4.dp))
+                    Text(stringResource(R.string.settings_step_limit_invalid), Modifier.padding(top = 4.dp), style = MikaType.Hint, color = c.bad)
                 }
             }
         },
@@ -379,25 +398,42 @@ private fun paceDetail(p: OperatingPace): String = stringResource(
 /** 同时进行几个任务:设备不支持时灰掉、写明原因,上限固定为 1。 */
 @Composable
 private fun ParallelRow(p: ParallelSetting, onMax: (Int) -> Unit) {
+    val c = MikaTheme.colors
     val supported = p.limit.reason == null
     ListRow(
         MikaIcons.Phone, stringResource(R.string.settings_parallel),
         subtitle = p.limit.reason ?: stringResource(R.string.settings_parallel_sub),
-        titleColor = if (supported) MikaTheme.colors.ink else MikaTheme.colors.ink3,
+        titleColor = if (supported) c.ink else c.ink3,
     ) {
         if (!supported) {
             RowValue(trPlural(R.plurals.settings_count_tasks, 1))
             return@ListRow
         }
-        Text(
-            "−", Modifier.clickable(enabled = p.max > 1) { onMax(p.max - 1) }.padding(horizontal = 10.dp, vertical = 4.dp),
-            fontSize = 18.sp, color = if (p.max > 1) MikaTheme.colors.accent else MikaTheme.colors.ink3,
-        )
-        RowValue(trPlural(R.plurals.settings_count_tasks, p.max))
-        Text(
-            "+", Modifier.clickable(enabled = p.max < 3) { onMax(p.max + 1) }.padding(horizontal = 10.dp, vertical = 4.dp),
-            fontSize = 18.sp, color = if (p.max < 3) MikaTheme.colors.accent else MikaTheme.colors.ink3,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StepperPill("−", enabled = p.max > 1) { onMax(p.max - 1) }
+            RowValue(trPlural(R.plurals.settings_count_tasks, p.max))
+            StepperPill("+", enabled = p.max < 3) { onMax(p.max + 1) }
+        }
+    }
+}
+
+@Composable
+private fun StepperPill(label: String, enabled: Boolean, onClick: () -> Unit) {
+    val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        Modifier
+            .mikaPress(interaction, enabled = enabled, pressedScale = 0.92f, shape = CircleShape)
+            .sizeIn(minWidth = 32.dp, minHeight = 28.dp)
+            .clip(CircleShape)
+            .background(c.glassSubtle, CircleShape)
+            .border(0.75.dp, specularBorderBrush(c), CircleShape)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.4f)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) c.accent else c.ink3)
     }
 }
 
@@ -446,11 +482,12 @@ fun CapsuleScreen(
         }
         GroupLabel(CapsuleSettingsCopy.IDLE_OPACITY)
         GroupCard {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                ListRow(
-                    MikaIcons.Photo, CapsuleSettingsCopy.IDLE_OPACITY, CapsuleSettingsCopy.IDLE_OPACITY_DETAIL,
-                    first = true, titleColor = if (mode == CapsuleMode.Off) MikaTheme.colors.ink3 else androidx.compose.ui.graphics.Color.Unspecified,
-                ) { RowValue("${idleOpacity.percent}%") }
+            val c = MikaTheme.colors
+            ListRow(
+                MikaIcons.Photo, CapsuleSettingsCopy.IDLE_OPACITY, CapsuleSettingsCopy.IDLE_OPACITY_DETAIL,
+                first = true, titleColor = if (mode == CapsuleMode.Off) c.ink3 else Color.Unspecified,
+            ) { RowValue("${idleOpacity.percent}%") }
+            Box(Modifier.fillMaxWidth().padding(start = 60.dp, end = 16.dp, bottom = 10.dp)) {
                 Slider(
                     value = CapsuleIdleOpacity.entries.indexOf(idleOpacity).toFloat(),
                     onValueChange = {
@@ -460,6 +497,16 @@ fun CapsuleScreen(
                     valueRange = 0f..3f,
                     steps = 2,
                     enabled = mode != CapsuleMode.Off,
+                    colors = SliderDefaults.colors(
+                        thumbColor = c.thumb,
+                        activeTrackColor = c.accent,
+                        inactiveTrackColor = c.glassTonal,
+                        activeTickColor = Color.Transparent,
+                        inactiveTickColor = Color.Transparent,
+                        disabledThumbColor = c.ink3,
+                        disabledActiveTrackColor = c.hair,
+                        disabledInactiveTrackColor = c.glassSubtle,
+                    ),
                     modifier = Modifier.testTag("capsule-idle-opacity"),
                 )
             }
@@ -548,10 +595,25 @@ fun RoutesScreen(count: Int?, onClear: () -> Unit, onBack: () -> Unit) {
                 MikaIcons.Route, stringResource(R.string.routes_saved),
                 if (count == null) stringResource(R.string.loading) else trPlural(R.plurals.routes_count, count), first = true,
             ) {
-                if (count != null && count > 0) Text(
-                    stringResource(R.string.routes_clear_all), Modifier.clickable { confirmClear = true }.padding(4.dp),
-                    style = MikaType.Value, color = MikaTheme.colors.bad,
-                )
+                if (count != null && count > 0) {
+                    val c = MikaTheme.colors
+                    val interaction = remember { MutableInteractionSource() }
+                    Box(
+                        Modifier
+                            .mikaPress(interaction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                            .clip(MikaShapes.Pill)
+                            .background(c.badSoft, MikaShapes.Pill)
+                            .border(0.5.dp, c.bad.copy(alpha = 0.25f), MikaShapes.Pill)
+                            .clickable(interactionSource = interaction, indication = null, role = Role.Button) { confirmClear = true }
+                            .padding(horizontal = 11.dp, vertical = 5.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.routes_clear_all),
+                            style = MikaType.Caption.copy(fontWeight = FontWeight.SemiBold),
+                            color = c.bad,
+                        )
+                    }
+                }
             }
         }
     }
@@ -560,7 +622,7 @@ fun RoutesScreen(count: Int?, onClear: () -> Unit, onBack: () -> Unit) {
             onDismissRequest = { confirmClear = false },
             title = { Text(stringResource(R.string.routes_clear_title)) },
             text = { Text(stringResource(R.string.routes_clear_body)) },
-            confirmButton = { TextButton({ confirmClear = false; onClear() }) { Text(stringResource(R.string.clear)) } },
+            confirmButton = { TextButton({ confirmClear = false; onClear() }) { Text(stringResource(R.string.clear), color = MikaTheme.colors.bad) } },
             dismissButton = { TextButton({ confirmClear = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }

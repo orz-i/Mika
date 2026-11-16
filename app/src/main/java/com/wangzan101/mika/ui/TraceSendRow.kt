@@ -1,5 +1,6 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -25,6 +26,7 @@ import com.wangzan101.mika.record.OtlpSender
 import com.wangzan101.mika.ui.components.ListRow
 import com.wangzan101.mika.ui.components.MikaDialog
 import com.wangzan101.mika.ui.components.RowChevron
+import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -68,7 +70,14 @@ internal fun TraceSendRow(archive: TraceArchive) {
         is OtlpReceipt.HttpError -> stringResource(R.string.trace_http_error, r.code)
         null -> if (sender.failed) stringResource(R.string.trace_send_failed) else null
     }
-    if (message != null) Text(message, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MikaType.Hint)
+    val c = MikaTheme.colors
+    val messageColor = when (sender.receipt) {
+        OtlpReceipt.Accepted -> c.ok
+        OtlpReceipt.AcceptedWithWarning -> c.warn
+        is OtlpReceipt.Rejected, is OtlpReceipt.HttpError -> c.bad
+        null -> if (sender.failed) c.bad else c.ink3
+    }
+    if (message != null) Text(message, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MikaType.Hint, color = messageColor)
     if (dialog) {
         // Credentials live only in this dialog and the single user-initiated request.
         var address by remember { mutableStateOf("") }
@@ -78,7 +87,7 @@ internal fun TraceSendRow(archive: TraceArchive) {
         val validHeader = OtlpSender.validHeader(name, value)
         MikaDialog(onDismissRequest = { dialog = false }, title = { Text(stringResource(R.string.trace_send)) },
             text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(address, { address = it }, Modifier.testTag("trace-endpoint"), singleLine = true, isError = address.isNotBlank() && !validAddress,
                         label = { Text(stringResource(R.string.trace_endpoint)) },
                         supportingText = { Text(stringResource(R.string.trace_endpoint_hint)) })

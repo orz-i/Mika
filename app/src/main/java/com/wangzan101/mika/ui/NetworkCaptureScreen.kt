@@ -3,10 +3,17 @@ package com.wangzan101.mika.ui
 import android.net.VpnService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,7 +43,9 @@ import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.TileTone
 import com.wangzan101.mika.ui.components.ValueTone
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.Dispatchers
@@ -254,12 +263,23 @@ fun NetworkCaptureContent(
                 stringResource(R.string.network_capture_cache_count, cacheCount),
             ) {
                 if (cacheCount > 0) {
-                    Text(
-                        stringResource(R.string.network_capture_cache_clear),
-                        Modifier.clickable(onClick = onClearCache).padding(4.dp),
-                        style = MikaType.Value,
-                        color = MikaTheme.colors.bad,
-                    )
+                    val c = MikaTheme.colors
+                    val interaction = remember { MutableInteractionSource() }
+                    Box(
+                        Modifier
+                            .mikaPress(interaction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                            .clip(MikaShapes.Pill)
+                            .background(c.badSoft, MikaShapes.Pill)
+                            .border(0.5.dp, c.bad.copy(alpha = 0.25f), MikaShapes.Pill)
+                            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClearCache)
+                            .padding(horizontal = 11.dp, vertical = 5.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.network_capture_cache_clear),
+                            style = MikaType.Caption.copy(fontWeight = FontWeight.SemiBold),
+                            color = c.bad,
+                        )
+                    }
                 }
             }
         }

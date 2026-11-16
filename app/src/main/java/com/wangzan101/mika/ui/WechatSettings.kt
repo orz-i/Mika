@@ -1,7 +1,13 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
@@ -18,8 +24,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.R
@@ -39,7 +48,9 @@ import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.StateCard
 import com.wangzan101.mika.ui.components.StatusPill
 import com.wangzan101.mika.ui.components.TileTone
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import com.wangzan101.mika.wechat.WechatConnectionState
@@ -256,8 +267,23 @@ fun WechatSettingsScreen(runtime: WechatRuntime, onBack: () -> Unit) {
                 stringResource(R.string.wechat_rebind), ::startLogin, Modifier.fillMaxWidth(),
                 kind = ButtonKind.Secondary, enabled = !loginBusy && !actionBusy,
             )
-            TextButton({ confirmUnbind = true }, Modifier.fillMaxWidth(), enabled = !actionBusy && !loginBusy) {
-                Text(stringResource(R.string.wechat_unbind), color = MikaTheme.colors.bad)
+            val c = MikaTheme.colors
+            val unbindEnabled = !actionBusy && !loginBusy
+            val unbindInteraction = remember { MutableInteractionSource() }
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp)
+                    .mikaPress(unbindInteraction, enabled = unbindEnabled, pressedScale = 0.965f, shape = MikaShapes.Button)
+                    .height(42.dp)
+                    .clip(MikaShapes.Button)
+                    .background(c.badSoft, MikaShapes.Button)
+                    .border(0.75.dp, c.bad.copy(alpha = 0.24f), MikaShapes.Button)
+                    .clickable(interactionSource = unbindInteraction, indication = null, enabled = unbindEnabled, role = Role.Button) { confirmUnbind = true }
+                    .alpha(if (unbindEnabled) 1f else 0.45f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(stringResource(R.string.wechat_unbind), style = MikaType.BodyStrong, color = c.bad)
             }
         }
         actionError?.let { FooterNote(it, color = MikaTheme.colors.bad) }

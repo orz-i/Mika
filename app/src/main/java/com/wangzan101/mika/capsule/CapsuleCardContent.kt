@@ -12,11 +12,13 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -108,6 +110,8 @@ import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.MikaLogo
 import com.wangzan101.mika.ui.components.StepItem
 import com.wangzan101.mika.ui.components.StepState
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaMotion
 import com.wangzan101.mika.ui.theme.MikaShapes
@@ -355,9 +359,15 @@ private fun InputRow(field: CardInput, ui: CardInputUi, actions: CardActions, st
 @Composable
 private fun CameraKey(onClick: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier.testTag("capsule-camera").size(38.dp).clip(MikaShapes.Pill).background(c.ink.copy(alpha = 0.05f))
-            .clickable(role = Role.Button, onClickLabel = ScreenCopy.CAMERA, onClick = onClick)
+        Modifier.testTag("capsule-camera")
+            .mikaPress(interaction, pressedScale = 0.92f, shape = MikaShapes.Pill)
+            .size(38.dp)
+            .clip(MikaShapes.Pill)
+            .background(c.glassSubtle, MikaShapes.Pill)
+            .border(0.75.dp, specularBorderBrush(c), MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = ScreenCopy.CAMERA, onClick = onClick)
             .semantics { contentDescription = ScreenCopy.CAMERA },
         contentAlignment = Alignment.Center,
     ) {
@@ -370,9 +380,16 @@ private fun CameraKey(onClick: () -> Unit) {
 private fun ScreenChip(p: PendingScreen, onRemove: () -> Unit) {
     val c = MikaTheme.colors
     val s = p.shot.screen
+    val chipShape = RoundedCornerShape(12.dp)
+    val removeInteraction = remember { MutableInteractionSource() }
     Row(
-        Modifier.testTag("capsule-attachment").padding(top = 8.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(c.ink.copy(alpha = 0.05f)).padding(6.dp),
+        Modifier.testTag("capsule-attachment")
+            .padding(top = 8.dp)
+            .fillMaxWidth()
+            .clip(chipShape)
+            .background(c.glassSubtle, chipShape)
+            .border(0.75.dp, specularBorderBrush(c), chipShape)
+            .padding(6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (s.blocked) Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) { Icon(MikaIcons.Lock, null, Modifier.size(16.dp), tint = c.ink2) }
@@ -382,8 +399,11 @@ private fun ScreenChip(p: PendingScreen, onRemove: () -> Unit) {
             Text(ScreenCopy.detail(s), style = Sub, color = c.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Box(
-            Modifier.testTag("capsule-attachment-remove").size(26.dp).clip(MikaShapes.Pill)
-                .clickable(role = Role.Button, onClickLabel = ScreenCopy.REMOVE, onClick = onRemove)
+            Modifier.testTag("capsule-attachment-remove")
+                .mikaPress(removeInteraction, pressedScale = 0.90f, shape = MikaShapes.Pill)
+                .size(26.dp)
+                .clip(MikaShapes.Pill)
+                .clickable(interactionSource = removeInteraction, indication = null, role = Role.Button, onClickLabel = ScreenCopy.REMOVE, onClick = onRemove)
                 .semantics { contentDescription = ScreenCopy.REMOVE },
             contentAlignment = Alignment.Center,
         ) {
@@ -396,14 +416,27 @@ private fun ScreenChip(p: PendingScreen, onRemove: () -> Unit) {
 @Composable
 private fun SendKey(enabled: Boolean, onSend: () -> Unit, start: Dp = 0.dp) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier.testTag("capsule-send").padding(start = start).size(KeySize).clip(MikaShapes.Pill)
-            .background(if (enabled) c.accent else c.ink3.copy(alpha = 0.3f))
-            .clickable(enabled = enabled, role = Role.Button, onClickLabel = CardCopy.SEND, onClick = onSend)
+        Modifier.testTag("capsule-send")
+            .padding(start = start)
+            .mikaPress(interaction, enabled = enabled, pressedScale = 0.92f, shape = MikaShapes.Pill)
+            .size(KeySize)
+            .clip(MikaShapes.Pill)
+            .then(
+                if (enabled) {
+                    Modifier.background(Brush.verticalGradient(listOf(c.accentHighlight, c.accent)), MikaShapes.Pill)
+                        .border(0.75.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.08f))), MikaShapes.Pill)
+                } else {
+                    Modifier.background(c.glassTonal, MikaShapes.Pill)
+                        .border(0.5.dp, c.glassEdge, MikaShapes.Pill)
+                },
+            )
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClickLabel = CardCopy.SEND, onClick = onSend)
             .semantics { contentDescription = CardCopy.SEND },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(MikaIcons.Up, null, Modifier.size(17.dp), tint = Color.White)
+        Icon(MikaIcons.Up, null, Modifier.size(17.dp), tint = if (enabled) c.onAccent else c.ink3)
     }
 }
 
@@ -414,14 +447,23 @@ private fun InputField(field: CardInput, ui: CardInputUi, actions: CardActions, 
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     if (!ui.open) {
+        val inputInteraction = remember { MutableInteractionSource() }
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 42.dp).clip(shape).background(c.ink.copy(alpha = 0.05f))
+            Modifier.fillMaxWidth()
+                .heightIn(min = 42.dp)
+                .clip(shape)
+                .background(c.glassSubtle, shape)
+                .border(0.75.dp, specularBorderBrush(c), shape)
                 .padding(end = if (stop != null || ui.screen != null) 4.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.testTag("capsule-input").weight(1f).heightIn(min = 42.dp)
-                    .clickable(role = Role.Button, onClickLabel = field.hint, onClick = actions::openInput).padding(horizontal = 12.dp),
+                Modifier.testTag("capsule-input")
+                    .weight(1f)
+                    .heightIn(min = 42.dp)
+                    .mikaPress(inputInteraction, pressedScale = 0.988f, shape = shape)
+                    .clickable(interactionSource = inputInteraction, indication = null, role = Role.Button, onClickLabel = field.hint, onClick = actions::openInput)
+                    .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(ui.draft.ifEmpty { field.hint }, style = Body, color = if (ui.draft.isEmpty()) c.ink3 else c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -440,8 +482,12 @@ private fun InputField(field: CardInput, ui: CardInputUi, actions: CardActions, 
     var fieldValue by remember { mutableStateOf(TextFieldValue(ui.draft, TextRange(ui.draft.length))) }
     val shownValue = if (fieldValue.text == ui.draft) fieldValue else TextFieldValue(ui.draft, TextRange(ui.draft.length))
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 42.dp).clip(shape).background(c.ink.copy(alpha = 0.05f))
-            .border(1.dp, c.accent.copy(alpha = 0.5f), shape).padding(start = 12.dp, end = 4.dp),
+        Modifier.fillMaxWidth()
+            .heightIn(min = 42.dp)
+            .clip(shape)
+            .background(c.glassSubtle, shape)
+            .border(1.dp, c.accent.copy(alpha = 0.65f), shape)
+            .padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.weight(1f).padding(vertical = 10.dp)) {
@@ -473,10 +519,22 @@ private fun CapsuleFollowUpMode(mode: FollowUpMode, onMode: (FollowUpMode) -> Un
 private fun CapsuleModePill(value: FollowUpMode, selected: FollowUpMode, onMode: (FollowUpMode) -> Unit, label: String, tag: String) {
     val c = MikaTheme.colors
     val on = value == selected
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier.testTag(tag).heightIn(min = 26.dp).clip(MikaShapes.Pill)
-            .background(if (on) c.accent else c.fill)
-            .clickable(role = Role.Tab, onClickLabel = label) { onMode(value) }
+        Modifier.testTag(tag)
+            .mikaPress(interaction, pressedScale = 0.95f, shape = MikaShapes.Pill)
+            .heightIn(min = 26.dp)
+            .clip(MikaShapes.Pill)
+            .then(
+                if (on) {
+                    Modifier.background(Brush.verticalGradient(listOf(c.accentHighlight, c.accent)), MikaShapes.Pill)
+                        .border(0.5.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.40f), Color.White.copy(alpha = 0.08f))), MikaShapes.Pill)
+                } else {
+                    Modifier.background(c.glassSubtle, MikaShapes.Pill)
+                        .border(0.5.dp, specularBorderBrush(c), MikaShapes.Pill)
+                },
+            )
+            .clickable(interactionSource = interaction, indication = null, role = Role.Tab, onClickLabel = label) { onMode(value) }
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -489,10 +547,17 @@ private fun CapsuleModePill(value: FollowUpMode, selected: FollowUpMode, onMode:
 private fun QueuedLine(count: Int, onClick: (() -> Unit)?) {
     if (count <= 0) return
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.fillMaxWidth().padding(top = 6.dp).clip(MikaShapes.Pill).background(c.fill)
-            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
-            .padding(horizontal = 10.dp, vertical = 5.dp).testTag("capsule-queued"),
+        Modifier.fillMaxWidth()
+            .padding(top = 6.dp)
+            .mikaPress(interaction, enabled = onClick != null, pressedScale = 0.985f, shape = MikaShapes.Pill)
+            .clip(MikaShapes.Pill)
+            .background(c.glassSubtle, MikaShapes.Pill)
+            .border(0.5.dp, specularBorderBrush(c), MikaShapes.Pill)
+            .then(if (onClick != null) Modifier.clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick) else Modifier)
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .testTag("capsule-queued"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -508,9 +573,15 @@ private fun QueuedLine(count: Int, onClick: (() -> Unit)?) {
 @Composable
 internal fun StopKey(onStop: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier.testTag("capsule-stop").size(KeySize).clip(MikaShapes.Pill).background(c.ink)
-            .clickable(role = Role.Button, onClickLabel = CardCopy.STOP, onClick = onStop)
+        Modifier.testTag("capsule-stop")
+            .mikaPress(interaction, pressedScale = 0.92f, shape = MikaShapes.Pill)
+            .size(KeySize)
+            .clip(MikaShapes.Pill)
+            .background(c.ink, MikaShapes.Pill)
+            .border(0.75.dp, specularBorderBrush(c), MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = CardCopy.STOP, onClick = onStop)
             .semantics { contentDescription = CardCopy.STOP },
         contentAlignment = Alignment.Center,
     ) {
@@ -575,8 +646,12 @@ private fun IdleHeader(card: CardView.Chat, actions: CardActions, handle: Modifi
 
 @Composable
 private fun IconButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier.size(32.dp).clip(MikaShapes.Pill).clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
+        Modifier.mikaPress(interaction, pressedScale = 0.92f, shape = MikaShapes.Pill)
+            .size(32.dp)
+            .clip(MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = label, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
@@ -593,6 +668,8 @@ private fun IconButton(icon: ImageVector, label: String, onClick: () -> Unit) {
 internal fun QuitCard(actions: CardActions, height: Dp = Dp.Unspecified) {
     val c = MikaTheme.colors
     val quitLabel = tr(R.string.quit_title)
+    val cancelInteraction = remember { MutableInteractionSource() }
+    val quitInteraction = remember { MutableInteractionSource() }
     CardFrame(height, fixed = false) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             MikaLogo(28.dp, corner = 14.dp)
@@ -602,14 +679,26 @@ internal fun QuitCard(actions: CardActions, height: Dp = Dp.Unspecified) {
         Text(tr(R.string.quit_confirm_body), Modifier.padding(top = 10.dp), style = Body, color = c.ink2)
         Row(Modifier.padding(top = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(
-                Modifier.weight(1f).height(40.dp).testTag("capsule-quit-cancel").clip(MikaShapes.Pill).background(c.fill)
-                    .clickable(role = Role.Button, onClickLabel = tr(R.string.cancel)) { actions.cancelQuit() },
+                Modifier.weight(1f)
+                    .mikaPress(cancelInteraction, pressedScale = 0.965f, shape = MikaShapes.Pill)
+                    .height(40.dp)
+                    .testTag("capsule-quit-cancel")
+                    .clip(MikaShapes.Pill)
+                    .background(c.glassTonal, MikaShapes.Pill)
+                    .border(0.75.dp, specularBorderBrush(c), MikaShapes.Pill)
+                    .clickable(interactionSource = cancelInteraction, indication = null, role = Role.Button, onClickLabel = tr(R.string.cancel)) { actions.cancelQuit() },
                 contentAlignment = Alignment.Center,
             ) { Text(tr(R.string.cancel), style = Strong, color = c.ink) }
             // 和「关闭网页」一样:淡红底、红字,和别的操作分开
             Box(
-                Modifier.weight(1f).height(40.dp).testTag("capsule-quit").clip(MikaShapes.Pill).background(c.badSoft)
-                    .clickable(role = Role.Button, onClickLabel = quitLabel) { actions.quit() },
+                Modifier.weight(1f)
+                    .mikaPress(quitInteraction, pressedScale = 0.965f, shape = MikaShapes.Pill)
+                    .height(40.dp)
+                    .testTag("capsule-quit")
+                    .clip(MikaShapes.Pill)
+                    .background(c.badSoft, MikaShapes.Pill)
+                    .border(0.75.dp, c.bad.copy(alpha = 0.26f), MikaShapes.Pill)
+                    .clickable(interactionSource = quitInteraction, indication = null, role = Role.Button, onClickLabel = quitLabel) { actions.quit() },
                 contentAlignment = Alignment.Center,
             ) { Text(tr(R.string.quit_confirm_action), style = Strong, color = c.bad) }
         }
@@ -692,7 +781,7 @@ private fun KeptCard(card: CardView.Kept, preview: Bitmap?, actions: CardActions
                 val image = remember(preview) { preview.asImageBitmap() }
                 Box(
                     Modifier.testTag("kept-live").fillMaxWidth().aspectRatio(ratio(preview)).clip(ScreenShape)
-                        .border(1.dp, c.glassEdge, ScreenShape).background(Color.Black)
+                        .border(1.dp, specularBorderBrush(c), ScreenShape).background(Color.Black)
                         .clickable(role = Role.Image, onClickLabel = CardCopy.SCREEN) { actions.zoom(true) }
                         .semantics { contentDescription = tr(R.string.kept_card_live) },
                 ) {
@@ -709,9 +798,16 @@ private fun KeptCard(card: CardView.Kept, preview: Bitmap?, actions: CardActions
         Row(Modifier.padding(top = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.weight(1f).testTag("kept-open")) { Action(tr(R.string.kept_open_chat), ButtonKind.Tonal) { actions.openMika(p.conversationId) } }
             // 关闭是红字的淡红按钮,和别的按钮分开
+            val closeInteraction = remember { MutableInteractionSource() }
             Box(
-                Modifier.weight(1f).height(40.dp).testTag("kept-close").clip(MikaShapes.Pill).background(c.badSoft)
-                    .clickable(role = Role.Button, onClick = actions::closeKeptPage),
+                Modifier.weight(1f)
+                    .mikaPress(closeInteraction, pressedScale = 0.965f, shape = MikaShapes.Pill)
+                    .height(40.dp)
+                    .testTag("kept-close")
+                    .clip(MikaShapes.Pill)
+                    .background(c.badSoft, MikaShapes.Pill)
+                    .border(0.75.dp, c.bad.copy(alpha = 0.26f), MikaShapes.Pill)
+                    .clickable(interactionSource = closeInteraction, indication = null, role = Role.Button, onClick = actions::closeKeptPage),
                 contentAlignment = Alignment.Center,
             ) { Text(tr(R.string.kept_close), style = Strong, color = c.bad) }
         }
@@ -789,16 +885,29 @@ private fun ChatCard(
  */
 @Composable
 private fun TeachShelf(onTeach: () -> Unit) {
+    val c = MikaTheme.colors
     var open by remember { mutableStateOf(false) }
     val name = tr(R.string.teach_menu)
     val expandLabel = tr(R.string.teach_shelf_expand)
     val collapseLabel = tr(R.string.teach_shelf_collapse)
     val action = if (open) collapseLabel else expandLabel
+    val interaction = remember { MutableInteractionSource() }
+    val chevronDeg by animateFloatAsState(
+        targetValue = if (open) 90f else -90f,
+        animationSpec = MikaMotion.pressSpring(MikaTheme.reduceMotion),
+        label = "teach-shelf-chevron",
+    )
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         if (open) TextLink(name, onClick = onTeach)
         Box(
-            Modifier.testTag("capsule-teach-shelf").widthIn(min = 48.dp).height(28.dp).clip(MikaShapes.Pill)
-                .clickable(role = Role.Button, onClickLabel = action) { open = !open }
+            Modifier.testTag("capsule-teach-shelf")
+                .mikaPress(interaction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+                .widthIn(min = 48.dp)
+                .height(28.dp)
+                .clip(MikaShapes.Pill)
+                .background(c.glassSubtle, MikaShapes.Pill)
+                .border(0.5.dp, specularBorderBrush(c), MikaShapes.Pill)
+                .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = action) { open = !open }
                 .semantics {
                     contentDescription = name
                     stateDescription = action
@@ -808,8 +917,8 @@ private fun TeachShelf(onTeach: () -> Unit) {
         ) {
             Icon(
                 MikaIcons.Chevron, null,
-                Modifier.size(16.dp).graphicsLayer { rotationZ = if (open) 90f else -90f },
-                tint = MikaTheme.colors.ink3,
+                Modifier.size(16.dp).graphicsLayer { rotationZ = chevronDeg },
+                tint = c.ink3,
             )
         }
     }
@@ -881,7 +990,10 @@ internal fun ThreadList(thread: ChatThread, conversationId: String?, actions: Ca
                         UserMessage(conversationId, item.text, ThreadThumbWidth) { text ->
                             Text(
                                 text,
-                                Modifier.widthIn(max = maxWidth * 0.8f).background(c.accent, BubbleShape).padding(horizontal = 11.dp, vertical = 7.dp),
+                                Modifier.widthIn(max = maxWidth * 0.8f)
+                                    .background(Brush.verticalGradient(listOf(c.accentHighlight, c.accent)), BubbleShape)
+                                    .border(0.75.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.40f), Color.White.copy(alpha = 0.08f))), BubbleShape)
+                                    .padding(horizontal = 11.dp, vertical = 7.dp),
                                 style = Body, color = c.onAccent,
                             )
                         }
@@ -957,7 +1069,11 @@ internal fun Steps(steps: List<String>, max: Dp, tags: List<String?> = emptyList
                 Row(verticalAlignment = Alignment.Top) {
                     tags.getOrNull(i)?.let { t ->
                         Text(
-                            t, Modifier.padding(top = 3.dp, end = 5.dp).background(c.accentSoft, RoundedCornerShape(6.dp)).padding(horizontal = 5.dp),
+                            t,
+                            Modifier.padding(top = 3.dp, end = 5.dp)
+                                .background(c.accentSoft, RoundedCornerShape(6.dp))
+                                .border(0.5.dp, c.accent.copy(alpha = 0.22f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 5.dp),
                             style = TextStyle(fontSize = 10.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium), color = c.accent, maxLines = 1,
                         )
                     }
@@ -980,8 +1096,14 @@ private fun Action(text: String, kind: ButtonKind, onClick: () -> Unit) {
 
 @Composable
 private fun TextLink(text: String, color: Color = MikaTheme.colors.accent, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
     Text(
-        text, Modifier.clip(MikaShapes.Pill).clickable(role = Role.Button, onClick = onClick).padding(horizontal = 6.dp, vertical = 8.dp),
+        text,
+        Modifier
+            .mikaPress(interaction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+            .clip(MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 8.dp),
         style = Sub.copy(fontSize = 13.sp), color = color,
     )
 }
@@ -993,7 +1115,7 @@ private fun MiniScreen(frame: Bitmap, onZoom: () -> Unit) {
     val image = remember(frame) { frame.asImageBitmap() }
     Box(
         Modifier.testTag("capsule-screen").width(ScreenWidth).aspectRatio(ratio(frame)).clip(ScreenShape)
-            .border(1.dp, c.glassEdge, ScreenShape).background(c.surface)
+            .border(1.dp, specularBorderBrush(c), ScreenShape).background(c.surface)
             .clickable(role = Role.Image, onClickLabel = CardCopy.SCREEN, onClick = onZoom)
             .semantics { contentDescription = CardCopy.SCREEN },
     ) {

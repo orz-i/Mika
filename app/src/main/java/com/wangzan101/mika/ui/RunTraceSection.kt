@@ -2,15 +2,22 @@ package com.wangzan101.mika.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.testTag
@@ -22,13 +29,18 @@ import com.wangzan101.mika.MikaApp
 import com.wangzan101.mika.R
 import com.wangzan101.mika.core.trace.TraceArchive
 import com.wangzan101.mika.core.trace.TraceRow
+import com.wangzan101.mika.ui.components.ButtonKind
+import com.wangzan101.mika.ui.components.ButtonSize
 import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.ListRow
+import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.MikaSwitch
 import com.wangzan101.mika.ui.components.MikaDialog
 import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.RowValue
+import com.wangzan101.mika.ui.components.specularBorderBrush
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -109,12 +121,26 @@ private fun TraceEntryRow(archive: TraceArchive, row: TraceRow, worst: Boolean) 
             value = withContext(Dispatchers.IO) { runCatching { archive.bodyPage(row.id, page * 3000) }.getOrNull() }
         }
         body?.let { result ->
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SelectionContainer { Text(result.text.ifEmpty { unknown }, style = MikaType.Hint) }
-                if (page > 0 || result.hasMore) Row {
-                    TextButton(onClick = { page-- }, enabled = page > 0) { Text("‹") }
-                    Text((page + 1).toString())
-                    TextButton(onClick = { page++ }, enabled = result.hasMore) { Text("›") }
+            val c = MikaTheme.colors
+            val boxShape = RoundedCornerShape(12.dp)
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clip(boxShape)
+                    .background(c.glassSubtle, boxShape)
+                    .border(0.75.dp, specularBorderBrush(c), boxShape)
+                    .padding(12.dp),
+            ) {
+                SelectionContainer { Text(result.text.ifEmpty { unknown }, style = MikaType.Hint, color = c.ink2) }
+                if (page > 0 || result.hasMore) Row(
+                    Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    MikaButton("‹", { page-- }, kind = ButtonKind.Tonal, size = ButtonSize.Small, enabled = page > 0)
+                    Text((page + 1).toString(), style = MikaType.Caption, color = c.ink2)
+                    MikaButton("›", { page++ }, kind = ButtonKind.Tonal, size = ButtonSize.Small, enabled = result.hasMore)
                 }
             }
         }
@@ -142,7 +168,12 @@ private fun TraceExportControls(archive: TraceArchive) {
     ListRow(MikaIcons.Doc, stringResource(R.string.trace_save), onClick = {
         if (includeBody) zip.launch("mika-trace-${archive.runId}.zip") else proto.launch("mika-trace-${archive.runId}.pb")
     }) { RowChevron() }
-    if (result != 0) Text(stringResource(result), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MikaType.Hint)
+    if (result != 0) Text(
+        stringResource(result),
+        Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        style = MikaType.Hint,
+        color = if (result == R.string.trace_saved) MikaTheme.colors.ok else MikaTheme.colors.bad,
+    )
 }
 
 private suspend fun saveTrace(archive: TraceArchive, includeBody: Boolean, open: () -> java.io.OutputStream?): Int =

@@ -1,16 +1,24 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -21,6 +29,8 @@ import com.wangzan101.mika.cap.phone.a11y.launchableApps
 import com.wangzan101.mika.core.access.*
 import com.wangzan101.mika.core.model.ModelRole
 import com.wangzan101.mika.ui.components.*
+import com.wangzan101.mika.ui.theme.MikaTheme
+import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -54,6 +64,7 @@ private fun classifierLanguage(locale: java.util.Locale): String = when {
     else -> locale.getDisplayLanguage(java.util.Locale.ENGLISH)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AppAccessScreen(onBack: () -> Unit, classifyApps: Boolean = true) {
     val app = LocalContext.current.applicationContext as MikaApp
@@ -122,36 +133,69 @@ fun AppAccessScreen(onBack: () -> Unit, classifyApps: Boolean = true) {
         }
     }
 
+    val c = MikaTheme.colors
     PageScaffold(stringResource(R.string.appaccess_title), onBack) {
-        Text(stringResource(R.string.appaccess_intro))
-        Text(stringResource(R.string.appaccess_privacy))
+        MikaCard(Modifier.padding(bottom = 12.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(R.string.appaccess_intro), style = MikaType.Body, color = c.ink)
+                Text(stringResource(R.string.appaccess_privacy), style = MikaType.Caption, color = c.ink3)
+            }
+        }
         failure?.let { f ->
             val detail = f.detail?.takeIf { it.isNotBlank() }
-            Text(
+            FooterNote(
                 if (detail == null) stringResource(f.message) else "${stringResource(f.message)} — $detail",
-                color = MaterialTheme.colorScheme.error,
+                color = c.bad,
             )
         }
         if (!state.available) {
-            Text(stringResource(R.string.appaccess_unavailable))
-            TextButton({ save { store.reset() } }) { Text(stringResource(R.string.appaccess_reset)) }
+            MikaCard(Modifier.padding(bottom = 12.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(stringResource(R.string.appaccess_unavailable), style = MikaType.Body, color = c.ink2)
+                    MikaButton(
+                        stringResource(R.string.appaccess_reset),
+                        { save { store.reset() } },
+                        kind = ButtonKind.Secondary,
+                        size = ButtonSize.Small,
+                    )
+                }
+            }
         } else {
-            OutlinedTextField(
-                search, { search = it },
-                label = { Text(stringResource(R.string.appaccess_search)) }, singleLine = true,
+            SearchField(
+                value = search,
+                onValueChange = { search = it },
+                placeholder = stringResource(R.string.appaccess_search),
             )
-            TextButton({
-                if (busy) return@TextButton
-                val pending = apps.filter { state.classifications[it.first] == null }
-                if (classifyApps && pending.isNotEmpty()) confirmingClassify = true else scope.launch { refresh(false) }
-            }, enabled = !busy) { Text(stringResource(if (busy) R.string.appaccess_refreshing else R.string.appaccess_refresh)) }
-            TextButton({ recommending = true }) {
-                Text(
-                    if (recommended.isEmpty()) stringResource(R.string.appaccess_recommend)
+            FlowRow(
+                Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MikaButton(
+                    text = stringResource(if (busy) R.string.appaccess_refreshing else R.string.appaccess_refresh),
+                    onClick = {
+                        if (busy) return@MikaButton
+                        val pending = apps.filter { state.classifications[it.first] == null }
+                        if (classifyApps && pending.isNotEmpty()) confirmingClassify = true else scope.launch { refresh(false) }
+                    },
+                    kind = ButtonKind.Secondary,
+                    size = ButtonSize.Small,
+                    enabled = !busy,
+                )
+                MikaButton(
+                    text = if (recommended.isEmpty()) stringResource(R.string.appaccess_recommend)
                     else stringResource(R.string.appaccess_recommend_count, recommended.size),
+                    onClick = { recommending = true },
+                    kind = ButtonKind.Tonal,
+                    size = ButtonSize.Small,
+                )
+                MikaButton(
+                    text = stringResource(R.string.appaccess_allow_all),
+                    onClick = { save { store.allowAll() } },
+                    kind = ButtonKind.Tonal,
+                    size = ButtonSize.Small,
                 )
             }
-            TextButton({ save { store.allowAll() } }) { Text(stringResource(R.string.appaccess_allow_all)) }
             AppCategory.entries.forEach { category ->
                 val rows = apps.filter { (pkg, label) ->
                     (state.classifications[pkg]?.category ?: AppCategory.Unknown) == category &&
@@ -159,7 +203,9 @@ fun AppAccessScreen(onBack: () -> Unit, classifyApps: Boolean = true) {
                 }
                 if (rows.isNotEmpty()) {
                     GroupLabel("${category.title()} · ${rows.size}")
-                    if (category == AppCategory.Game || category == AppCategory.Social) Text(stringResource(R.string.appaccess_risk_note))
+                    if (category == AppCategory.Game || category == AppCategory.Social) {
+                        FooterNote(stringResource(R.string.appaccess_risk_note), color = c.warn)
+                    }
                     GroupCard {
                         rows.forEachIndexed { index, (pkg, label) ->
                             val classification = state.classifications[pkg]
@@ -168,13 +214,27 @@ fun AppAccessScreen(onBack: () -> Unit, classifyApps: Boolean = true) {
                                 classification.manual -> stringResource(R.string.appaccess_category_manual)
                                 else -> classification.reason.ifBlank { null }
                             }
+                            val blocked = pkg in state.blocked
                             ListRow(null, label, pkg, first = index == 0, detail = detail, onClick = { editing = pkg }) {
-                                Text(stringResource(if (pkg in state.blocked) R.string.appaccess_blocked else R.string.appaccess_allowed))
-                                Switch(pkg !in state.blocked, { allowed -> save { store.setBlocked(pkg, !allowed) } })
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                ) {
+                                    StatusPill(
+                                        stringResource(if (blocked) R.string.appaccess_blocked else R.string.appaccess_allowed),
+                                        if (blocked) PillTone.Warn else PillTone.Ok,
+                                    )
+                                    MikaSwitch(!blocked, { allowed -> save { store.setBlocked(pkg, !allowed) } })
+                                }
                             }
                             if (pkg in state.shareAllowed) {
-                                TextButton({ save { store.setShareAllowed(pkg, false) } }) {
-                                    Text(stringResource(R.string.appaccess_revoke_share, label))
+                                RowActions {
+                                    MikaButton(
+                                        stringResource(R.string.appaccess_revoke_share, label),
+                                        { save { store.setShareAllowed(pkg, false) } },
+                                        kind = ButtonKind.Tonal,
+                                        size = ButtonSize.Small,
+                                    )
                                 }
                             }
                         }
@@ -196,6 +256,7 @@ fun AppAccessScreen(onBack: () -> Unit, classifyApps: Boolean = true) {
         )
     }
     if (recommending) {
+        val recRowShape = RoundedCornerShape(12.dp)
         MikaDialog(
             onDismissRequest = { recommending = false },
             title = { Text(stringResource(R.string.appaccess_recommend_title)) },
@@ -203,15 +264,29 @@ fun AppAccessScreen(onBack: () -> Unit, classifyApps: Boolean = true) {
                 Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
                     Text(stringResource(R.string.appaccess_recommend_body))
                     if (recommended.isEmpty()) {
-                        Text(stringResource(R.string.appaccess_recommend_empty), Modifier.padding(top = 12.dp))
+                        Text(stringResource(R.string.appaccess_recommend_empty), Modifier.padding(top = 12.dp), style = MikaType.Caption, color = c.ink3)
                     }
                     recommended.forEach { (pkg, label) ->
                         Row(
-                            Modifier.fillMaxWidth().padding(top = 8.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp)
+                                .clip(recRowShape)
+                                .background(c.glassSubtle, recRowShape)
+                                .border(0.5.dp, specularBorderBrush(c), recRowShape)
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Column(Modifier.weight(1f)) { Text(label) }
-                            TextButton({ save { store.blockPackages(setOf(pkg)) } }) { Text(stringResource(R.string.appaccess_block)) }
+                            Column(Modifier.weight(1f)) {
+                                Text(label, style = MikaType.Body, color = c.ink)
+                            }
+                            MikaButton(
+                                stringResource(R.string.appaccess_block),
+                                { save { store.blockPackages(setOf(pkg)) } },
+                                kind = ButtonKind.Tonal,
+                                size = ButtonSize.Small,
+                            )
                         }
                     }
                 }
@@ -220,19 +295,32 @@ fun AppAccessScreen(onBack: () -> Unit, classifyApps: Boolean = true) {
                 TextButton(
                     { save { store.blockPackages(recommended.map { it.first }.toSet()) }; recommending = false },
                     enabled = recommended.isNotEmpty(),
-                ) { Text(stringResource(R.string.appaccess_block_all)) }
+                ) { Text(stringResource(R.string.appaccess_block_all), color = if (recommended.isNotEmpty()) c.bad else c.ink3) }
             },
             dismissButton = { TextButton({ recommending = false }) { Text(stringResource(R.string.appaccess_cancel)) } },
         )
     }
     editing?.let { pkg ->
-        MikaDialog(onDismissRequest = { editing = null }, title = { Text(stringResource(R.string.appaccess_edit_category)) }, text = {
-            Column { AppCategory.entries.forEach { category ->
-                TextButton({
-                    save { store.classify(mapOf(pkg to AppClassification(category, "", manual = true))) }
-                    editing = null
-                }) { Text(category.title()) }
-            } }
-        }, confirmButton = { TextButton({ editing = null }) { Text(stringResource(R.string.appaccess_cancel)) } })
+        val currentCategory = state.classifications[pkg]?.category ?: AppCategory.Unknown
+        MikaDialog(
+            onDismissRequest = { editing = null },
+            title = { Text(stringResource(R.string.appaccess_edit_category)) },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    AppCategory.entries.forEachIndexed { idx, category ->
+                        RadioRow(
+                            title = category.title(),
+                            selected = category == currentCategory,
+                            first = idx == 0,
+                            onClick = {
+                                save { store.classify(mapOf(pkg to AppClassification(category, "", manual = true))) }
+                                editing = null
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton({ editing = null }) { Text(stringResource(R.string.appaccess_cancel)) } },
+        )
     }
 }
