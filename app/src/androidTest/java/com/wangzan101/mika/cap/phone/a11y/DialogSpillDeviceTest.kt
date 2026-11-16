@@ -1,11 +1,9 @@
 package com.wangzan101.mika.cap.phone.a11y
 
 import android.graphics.Rect
-import android.os.SystemClock
 import android.view.Display
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.wangzan101.mika.cap.phone.shell.MainScreenWatch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -76,17 +74,19 @@ class DialogSpillDeviceTest {
         assertNotNull("spill page did not come up", s)
         val mainBefore = shell.topTaskId(Display.DEFAULT_DISPLAY)
         val vdBefore = shell.topTaskId(vd)
-        val since = SystemClock.uptimeMillis()
         val button = s!!.elements.first { it.name == "open dialog" }
         val r = screen.tapRef(button.ref, s.snapshotId)
         println("tap result: $r")
 
-        // 从助手的记录里认这次冒到主屏上的弹窗任务(挪走后任务号不变)
-        val b = shell.mainArrivals(since)
-        val packages = b?.getStringArray(MainScreenWatch.KEY_PACKAGE)
-        val tasks = b?.getIntArray(MainScreenWatch.KEY_TASK)
-        val dialogTask = packages?.indices?.firstOrNull { packages[it] == DeviceSupport.TEST_PACKAGE }?.let { tasks?.get(it) }
-        assertNotNull("no arrival on the main screen was reported for the popup", dialogTask)
+        // 等后台进程在主屏拉起对话框任务（挪回场景中任务号保持一致）
+        val dialogTask = DeviceSupport.pollUntil(5_000) {
+            val topTask = shell.topTaskId(Display.DEFAULT_DISPLAY)
+            val topPkg = if (topTask >= 0) shell.packageOfTask(topTask) else null
+            val hasWindow = DeviceSupport.service().windowsOn(Display.DEFAULT_DISPLAY)
+                .any { it.root?.packageName?.toString() == DeviceSupport.TEST_PACKAGE }
+            if (topPkg == DeviceSupport.TEST_PACKAGE && hasWindow) topTask else null
+        }
+        assertNotNull("no popup window appeared on the main screen", dialogTask)
         dumpMainWindows("after action")
 
         // 让 Mika 有机会处理这次冒到主屏上的任务(动作里没赶上的,读屏时会补)

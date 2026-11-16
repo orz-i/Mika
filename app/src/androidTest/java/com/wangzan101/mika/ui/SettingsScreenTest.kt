@@ -16,10 +16,14 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.wangzan101.mika.capsule.CapsuleMode
 import com.wangzan101.mika.core.agent.SpeedFlags
 import com.wangzan101.mika.core.cap.sandbox.SandboxStatus
+import com.wangzan101.mika.core.custody.JumpConfirmProfile
+import com.wangzan101.mika.core.custody.JumpConfirmProfileState
+import com.wangzan101.mika.core.custody.JumpProfileSource
 import com.wangzan101.mika.core.shell.BuiltinShellStatus
 import com.wangzan101.mika.settings.AccessibilityState
 import com.wangzan101.mika.settings.Problem
@@ -475,6 +479,80 @@ class SettingsScreenTest {
         compose.onNodeWithText(SandboxCopy.CLEAR_ALL_BODY).assertIsDisplayed()
         compose.onNodeWithText(SandboxCopy.CLEAR).performClick()
         assertEquals(1, all)
+    }
+
+    @Test
+    fun phoneOpsJumpConfirmHostingTogglesAndShowsAutoBlockedNotice() {
+        var toggledTo: Boolean? = null
+        var cleared = 0
+        var openedProfiles = 0
+        compose.setContent {
+            PhoneOpsScreen(
+                ready, "14", onProblem = {}, onRepair = {}, onUnpair = {}, onBack = {},
+                jumpConfirmHosting = false,
+                onJumpConfirmHosting = { toggledTo = it },
+                jumpConfirmAutoBlocked = true,
+                onClearJumpConfirmAutoBlocked = { cleared++ },
+                jumpConfirmActiveProfileCount = 2,
+                onOpenJumpConfirmProfiles = { openedProfiles++ },
+            )
+        }
+        compose.onNodeWithTag("phone-jump-confirm-hosting").performScrollTo().performClick()
+        assertEquals(true, toggledTo)
+        compose.onNodeWithText("小程序与别名映射").performScrollTo().performClick()
+        assertEquals(1, openedProfiles)
+        compose.onNodeWithText("清除提示").performScrollTo().performClick()
+        assertEquals(1, cleared)
+    }
+
+    @Test
+    fun jumpConfirmProfilesScreenDisplaysTogglesAddsAndClearsRules() {
+        val sample = JumpConfirmProfile(
+            id = "com.tencent.weread|微信读书小程序",
+            initiatorPackage = "com.tencent.weread",
+            targetLabel = "微信读书小程序",
+            targetPackage = "com.tencent.mm",
+            enabled = true,
+            source = JumpProfileSource.LEARNED,
+        )
+        var autoLearnToggled: Boolean? = null
+        var ruleToggled: Pair<String, Boolean>? = null
+        var saved: Triple<String, String, String>? = null
+        var clearedLearned = 0
+
+        compose.setContent {
+            JumpConfirmProfilesContent(
+                state = JumpConfirmProfileState(profiles = listOf(sample), autoLearnEnabled = true),
+                installedApps = listOf(
+                    "com.tencent.weread" to "微信读书",
+                    "com.tencent.mm" to "微信",
+                ),
+                onBack = {},
+                onToggleAutoLearn = { autoLearnToggled = it },
+                onToggleProfile = { id, on -> ruleToggled = id to on },
+                onSaveManual = { _, initPkg, label, targetPkg, _ ->
+                    saved = Triple(initPkg, label, targetPkg)
+                },
+                onClearLearned = { clearedLearned++ },
+            )
+        }
+
+        compose.onNodeWithTag("jump-profiles-autolearn").performScrollTo().performClick()
+        assertEquals(false, autoLearnToggled)
+
+        compose.onNodeWithTag("jump-profile-toggle-${sample.id}").performScrollTo().performClick()
+        assertEquals(sample.id to false, ruleToggled)
+
+        compose.onNodeWithText("清空自动记住的规则").performScrollTo().performClick()
+        compose.clickInDialog("清空自动记住的规则")
+        assertEquals(1, clearedLearned)
+
+        compose.onNodeWithText("新增映射规则").performScrollTo().performClick()
+        compose.onNodeWithTag("jump-profile-input-initiator").performTextInput("com.tencent.weread")
+        compose.onNodeWithTag("jump-profile-input-label").performTextInput("微信读书小程序")
+        compose.onNodeWithTag("jump-profile-input-target").performTextInput("com.tencent.mm")
+        compose.clickInDialog("保存")
+        assertEquals(Triple("com.tencent.weread", "微信读书小程序", "com.tencent.mm"), saved)
     }
 }
 

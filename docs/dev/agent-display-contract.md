@@ -49,7 +49,7 @@
 | `26: injectCtrlKey(int displayId, int keyCode)` | **保留** | `26: injectCtrlKey(int displayId, int keyCode)` | Ctrl+A, Ctrl+V 等快捷键投递。 |
 | `27-29: listUsers / listPackages / isSystemPackage` | **保留** | `38-40: listUsers / listPackages / isSystemPackage` | 多用户与包元数据查询。 |
 | `30: startShare(int displayId, String packageName, String text)` | **保留** | `10: startShare(int displayId, String packageName, String text)` | ACTION_SEND 纯文本分享启动。 |
-| `31-32: watchMainScreen / mainArrivals` | **保留** | `21-22: watchMainScreen / mainArrivals` | **关键机制保留**：客户端 MainScreenConflictManager 必需的监控原语。 |
+| `31-32: watchMainScreen / mainArrivals` | **剔除** | **已作废**，由 `51-53: startCustody / stopCustody / launchOrigin` 与 `IAgentCustodyListener` 取代（事务码 21-22 保留作废不复用） | 由 6 秒短窗轮询升级为虚拟屏生命周期内常驻任务栈监听，主屏到达事件通过 oneway `IAgentCustodyListener` 实时推回并携带 `LaunchOrigin`。 |
 | `33: userOfTask(int taskId)` | **保留** | `18: userOfTask(int taskId)` | 查询任务所属用户。 |
 | `34: injectStroke(int displayId, int[] xs, int[] ys, long[] times)` | **保留** | `24: injectStroke(int displayId, in int[] xs, in int[] ys, in long[] times)` | 高精度单指平滑多点轨迹输入。 |
 | `35: startSystemAction(int displayId, Intent intent, PendingIntent asMika)` | **重构** | `8: startIntent(int displayId, in Intent intent)` | 剥离 Mika 专属的 PendingIntent 与闹钟白名单，替换为通用的标准 Intent 启动器。 |
@@ -61,6 +61,9 @@
 | `48: finishDisplay(int displayId, String[] keep, String[] close)` | **保留** | `11: finishDisplay(int displayId, in String[] keep, in String[] close)` | 任务优雅收尾与沉底迁移。 |
 | `49, 51: revealDeviceCredential / revealDeviceCredentialTap` | **保留** | `44, 45` | 锁屏滑动与回退点击。 |
 | `50: injectAsciiText(int displayId, int taskId, String packageName, String text)` | **保留** | `27: injectAsciiText(int displayId, int taskId, String packageName, String text)` | 针对特定任务的前台键盘输入。 |
+| — | **新增** | `51: startCustody(int displayId, IAgentCustodyListener listener)` | 为虚拟屏注册常驻任务托管；存在托管屏时保持底层任务栈监听并在断连时通过 `linkToDeath` 自动清理。 |
+| — | **新增** | `52: stopCustody(int displayId)` | 注销指定虚拟屏的任务托管；全部托管屏注销后停止底层监听。 |
+| — | **新增** | `53: launchOrigin(int taskId)` | 查询任务启动来源（`LaunchOrigin`：uid、packageName、confidence 与 `managedDisplay`）。 |
 | `16777114: destroy()` | **保留** | `4: destroy()` | 守护进程自毁。 |
 
 ---
@@ -150,7 +153,7 @@ enum class LaunchResult(val code: Int, val description: String) {
 作为全局单例或会话管理器：
 - `createVirtualDisplay(config)`：便捷生产虚拟屏实例；
 - `isVisibleOnMainScreen(pkg, user)`：主屏防打扰前置探测；
-- `watchMainScreen(windowMs)` / `getMainArrivals(sinceUptimeMs)`：配合客户端执行溢出任务拉回回捞；
+- `startCustody(displayId, listener)` / `stopCustody(displayId)` / `launchOrigin(taskId)`：为虚拟屏开启常驻托管，通过 `IAgentCustodyListener` 接收 `CustodyArrival` 主屏到达事件与 `onTaskVanished` 消失事件，并按启动来源决策回捞或托管拦截；
 - `linkToDeath`：自动注册服务端崩溃监听，及时清理本地资源。
 
 ---
@@ -158,16 +161,16 @@ enum class LaunchResult(val code: Int, val description: String) {
 ## 五、对各模块协作的落盘汇报指南
 
 1. **对 @server 的对齐要求**：
-   - 实现 `com.agent.display.common.IAgentShell.Stub`；
+   - 实现 `com.agent.use.common.IAgentShell.Stub`；
    - 在 `createDisplay` 中直接读取 `DisplayConfig.aidl`，调用 `DisplayConfig.resolveRecommendedFlags(sdk, trusted)` 完成 Flags 适配与降级；
-   - 保留 `watchMainScreen`, `mainArrivals`, `moveTask`, `visibleOnMainScreen` 机制支撑；
+   - 彻底移除作废事务号 21-22（`watchMainScreen` / `mainArrivals`），实现 `startCustody`、`stopCustody`、`launchOrigin` 与 `IAgentCustodyListener`、`moveTask`、`visibleOnMainScreen` 支撑常驻托管与启动来源解析；
    - 执行音频恢复时严格遵循 `AudioMode.calculateRestoreMode` 规则。
 2. **对 @client 的对齐要求**：
-   - 在 SDK 中引入 `agent-display-common` 依赖；
+   - 在 SDK 中引入 `aau-common` 依赖；
    - `AgentDisplay` 图像管线直接对齐 `DisplayGeometry` 与 `DisplayFrameProcessor` 算法；
-   - 在 `MainScreenConflictManager` 中使用 `IAgentShell` 提供的监控原语完成自动回捞闭环；
+   - 在宿主的常驻托管器（如 `DisplayCustodian`）中使用 `IAgentShell` 提供的 `startCustody` / `stopCustody` / `launchOrigin` 与 `CustodyArrival` / `LaunchOrigin` 完成主屏溢出实时识别、回捞闭环与中间页处置；
    - 统一使用 `LaunchResult` 与 `FinishDisplayResult` 处理调用结果。
 3. **对 @verifier 的验证要点**：
-   - 校验 AIDL 方法编号 1~49 的稳定性与二进制兼容性；
+   - 校验 AIDL 方法编号 1~53（含 `IMikaShell.aidl` 中 `52~54`）的稳定性、作废事务号不复用及二进制兼容性；
    - 审查 Android 12~15 下 `FLAG_STEAL_TOP_FOCUS_DISABLED`、`FLAG_OWN_DISPLAY_GROUP` 的生效情况；
-   - 审查 Binder 通道在 Shizuku 与 app_process 下加载 Parcelable 的 ClassLoader 表现。
+   - 审查 Binder 通道（含 `IAgentCustodyListener` oneway 回调、`linkToDeath` 自动回收及 `CustodyArrival` / `LaunchOrigin` Bundle 传递）在 Shizuku 与 app_process 下的表现。

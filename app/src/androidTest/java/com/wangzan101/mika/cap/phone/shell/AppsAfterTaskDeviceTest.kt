@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.Display
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.agent.use.common.shell.AppsAfterTask.Why
 import com.wangzan101.mika.cap.phone.a11y.AppCopyReader
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.TEST_PACKAGE
@@ -66,7 +67,7 @@ class AppsAfterTaskDeviceTest {
         val note = result!!.getString(AppsAfterTask.KEY_NOTE)
         if (note?.contains(AppsAfterTask.NOTE_MOVE_UNSUPPORTED) == true) {
             // 这台系统挪不了:照旧随屏关掉
-            assertEquals(listOf("$TEST_PACKAGE:${AppsAfterTask.Why.MoveUnsupported.wire}"), result.closed())
+            assertEquals(listOf("$TEST_PACKAGE:${Why.MoveUnsupported.wire}"), result.closed())
             assertNotNull(pollUntil(5_000) { true.takeIf { shell.displayOfTask(task) == -1 } })
             return
         }
@@ -95,7 +96,7 @@ class AppsAfterTaskDeviceTest {
         // 播放器报到音频服务要一会儿
         Thread.sleep(PLAYER_SETTLE_MS)
         val result = shell.finishDisplay(s.id, emptyArray(), emptyArray())!!
-        assertEquals("kept=${result.kept()}", listOf("$TEST_PACKAGE:${AppsAfterTask.Why.Playing.wire}"), result.closed())
+        assertEquals("kept=${result.kept()}", listOf("$TEST_PACKAGE:${Why.Playing.wire}"), result.closed())
         assertNotNull("playing task outlived the display", pollUntil(5_000) { true.takeIf { shell.displayOfTask(task) == -1 } })
     }
 
@@ -114,7 +115,7 @@ class AppsAfterTaskDeviceTest {
         val s = newScreen()
         val task = probeOn(s.id, ShellProbe.COMPONENT)
         val result = shell.finishDisplay(s.id, emptyArray(), arrayOf(TEST_PACKAGE))!!
-        assertEquals(listOf("$TEST_PACKAGE:${AppsAfterTask.Why.Marked.wire}"), result.closed())
+        assertEquals(listOf("$TEST_PACKAGE:${Why.Marked.wire}"), result.closed())
         assertNotNull(pollUntil(5_000) { true.takeIf { shell.displayOfTask(task) == -1 } })
     }
 

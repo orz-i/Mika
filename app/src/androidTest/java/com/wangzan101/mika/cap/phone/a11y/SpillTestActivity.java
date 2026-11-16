@@ -18,6 +18,8 @@ public class SpillTestActivity extends Activity {
     public static final String EXTRA_DIALOG = "dialog";
     /** 给了时另加一个按钮:经后台服务打开这个整屏的账号登录页(测试包是账号认证器)。 */
     public static final String EXTRA_AUTH = "auth";
+    /** 给了时另加一个按钮:经后台服务展示 SYSTEM_ALERT_WINDOW 悬浮型跳转确认窗。 */
+    public static final String EXTRA_OVERLAY = "overlay";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,12 +28,14 @@ public class SpillTestActivity extends Activity {
         String target = extra != null ? extra : "com.android.settings";
         String dialog = getIntent().getStringExtra(EXTRA_DIALOG);
         String auth = getIntent().getStringExtra(EXTRA_AUTH);
+        boolean overlay = getIntent().getBooleanExtra(EXTRA_OVERLAY, false);
+        boolean ignoreClick = getIntent().getBooleanExtra(JumpConfirmDialogTestActivity.EXTRA_IGNORE_CLICK, false);
         Button button = new Button(this);
         button.setText("open elsewhere");
         button.setTextSize(32f);
         button.setOnClickListener(v ->
             startService(new Intent(this, SpillLaunchService.class).putExtra(EXTRA_TARGET, target)));
-        if (dialog == null && auth == null) {
+        if (dialog == null && auth == null && !overlay) {
             setContentView(button);
             return;
         }
@@ -43,7 +47,10 @@ public class SpillTestActivity extends Activity {
             dialogButton.setText("open dialog");
             dialogButton.setTextSize(32f);
             dialogButton.setOnClickListener(v ->
-                startService(new Intent(this, SpillLaunchService.class).putExtra(EXTRA_DIALOG, dialog)));
+                startService(new Intent(this, SpillLaunchService.class)
+                    .putExtra(EXTRA_DIALOG, dialog)
+                    .putExtra(EXTRA_TARGET, target)
+                    .putExtra(JumpConfirmDialogTestActivity.EXTRA_IGNORE_CLICK, ignoreClick)));
             root.addView(dialogButton);
         }
         if (auth != null) {
@@ -53,6 +60,16 @@ public class SpillTestActivity extends Activity {
             authButton.setOnClickListener(v ->
                 startService(new Intent(this, SpillLaunchService.class).putExtra(EXTRA_AUTH, auth)));
             root.addView(authButton);
+        }
+        if (overlay) {
+            Button overlayButton = new Button(this);
+            overlayButton.setText("open overlay");
+            overlayButton.setTextSize(32f);
+            overlayButton.setOnClickListener(v ->
+                startService(new Intent(this, SpillLaunchService.class)
+                    .putExtra(EXTRA_OVERLAY, true)
+                    .putExtra(EXTRA_TARGET, target)));
+            root.addView(overlayButton);
         }
         setContentView(root);
     }

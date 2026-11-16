@@ -42,4 +42,24 @@ class FeatureFlagsDeviceTest {
             prefs.edit().clear().commit()
         }
     }
+
+    @Test fun jumpConfirmHostingDefaultsFalseAndAutoBlockResetsOnVersionChange() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val prefs = context.getSharedPreferences("feature_flags_jump_confirm_test", Context.MODE_PRIVATE)
+        try {
+            prefs.edit().clear().commit()
+            val flags = FeatureFlags(prefs)
+            assertFalse(flags.jumpConfirmHosting())
+            flags.setJumpConfirmHosting(true)
+            assertTrue(flags.jumpConfirmHosting())
+            flags.markJumpConfirmAutoBlocked(versionCode = 10)
+            assertFalse(flags.jumpConfirmHosting())
+            assertTrue(flags.jumpConfirmAutoBlocked(versionCode = 10))
+            assertFalse(flags.jumpConfirmAutoBlocked(versionCode = 11))
+            flags.clearJumpConfirmAutoBlocked()
+            assertFalse(flags.jumpConfirmAutoBlocked(versionCode = 10))
+        } finally {
+            prefs.edit().clear().commit()
+        }
+    }
 }

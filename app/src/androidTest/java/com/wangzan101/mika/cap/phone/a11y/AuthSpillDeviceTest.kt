@@ -4,7 +4,6 @@ import android.accounts.AccountManager
 import android.view.Display
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.wangzan101.mika.cap.phone.shell.MainScreenWatch
 import com.wangzan101.mika.core.uistate.ActionResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -83,18 +82,15 @@ class AuthSpillDeviceTest {
         }
         assertNotNull("spill page did not come up", s)
         val vdBefore = shell.topTaskId(vd)
-        val since = android.os.SystemClock.uptimeMillis()
         val button = s!!.elements.first { it.name == "open auth" }
         val r = screen.tapRef(button.ref, s.snapshotId)
         println("tap result: $r")
 
-        // 服务的进程可能是冷的,弹窗会晚一两秒才出来;等它进了助手的记录
-        val b = DeviceSupport.pollUntil(5_000) {
-            val arr = shell.mainArrivals(since)
-            val pkgs = arr?.getStringArray(MainScreenWatch.KEY_PACKAGE)
-            if (pkgs?.contains(DeviceSupport.TEST_PACKAGE) == true) arr else null
+        // 服务的进程可能是冷的,弹窗会晚一两秒才出来;等它出现在主屏前台
+        val authTop = DeviceSupport.pollUntil(5_000) {
+            shell.topActivity(Display.DEFAULT_DISPLAY)?.takeIf { it.contains("FullScreenAuthTestActivity") }
         }
-        assertNotNull("no arrival on the main screen was reported for the auth page", b)
+        assertNotNull("auth page did not appear on the main screen", authTop)
         delay(500)
         val now = screen.snapshot()
         delay(500)

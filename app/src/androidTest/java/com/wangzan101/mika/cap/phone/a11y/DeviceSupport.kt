@@ -51,7 +51,10 @@ object DeviceSupport {
     }
 
     class Agent(val display: AgentDisplay, val screen: AndroidScreen) {
-        fun release() = display.release()
+        fun release() {
+            screen.close()
+            display.release()
+        }
     }
 
     fun newAgent(): Agent {

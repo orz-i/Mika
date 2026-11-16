@@ -1,7 +1,6 @@
 package com.wangzan101.mika.cap.phone.a11y
 
 import android.content.Intent
-import android.os.SystemClock
 import android.view.Display
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -9,8 +8,8 @@ import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.SETTINGS
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.TEST_PACKAGE
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.pollUntil
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.sh
-import com.wangzan101.mika.cap.phone.shell.MainScreenWatch
 import com.wangzan101.mika.core.uistate.ActionResult
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -49,7 +48,7 @@ class MainScreenSpillDeviceTest {
         // 没挪回来时,把留在主屏上的那个挪到 Mika 的屏,随屏一起销毁
         val main = shell.topTaskId(Display.DEFAULT_DISPLAY)
         // 中途失败、问题还留在主屏上:按返回关掉它
-        screen.userPick.value?.let { p -> if (main >= 0 && shell.packageOfTask(main) == p.packageName) sh("input keyevent 4") }
+        screen.custodyState.value?.let { p -> if (main >= 0 && shell.packageOfTask(main) == p.packageName) sh("input keyevent 4") }
         if (main >= 0 && shell.packageOfTask(main) == target) shell.moveTask(main, agent.display.displayId)
         agent.release()
     }
@@ -108,7 +107,7 @@ class MainScreenSpillDeviceTest {
         assertTrue("question was moved: $opened", !opened.pulledBack && opened.onUserScreen)
         val chooserTask = shell.topTaskId(Display.DEFAULT_DISPLAY)
         assertEquals("question is not on the main screen", opened.packageName, shell.packageOfTask(chooserTask))
-        assertNotNull("run is not waiting for the user", screen.userPick.value)
+        assertNotNull("run is not waiting for the user", screen.custodyState.value)
         assertEquals("Mika's screen changed", SpillTestActivity::class.java.name, shell.topActivity(vd))
         // 仪器参数 pickOption=<第几个,从 0 起> 或 back:这时测试当用户,在主屏上点那个选项(或按返回关掉问题)
         val pick = InstrumentationRegistry.getArguments().getString("pickOption") ?: return@runBlocking
@@ -123,9 +122,9 @@ class MainScreenSpillDeviceTest {
             assertNotNull("no option $pick: ${nodes.map { it.name }}", option)
             sh("input tap ${option!!.centerX} ${option.centerY}")
         }
-        val settled = screen.awaitUserPick()
+        val settled = screen.awaitInterstitial()
         // 选出来的要用户亲手处理:这时测试当用户点了继续
-        if (settled is AndroidScreen.PickResult.NeedsUser) screen.afterUserStep(settled)
+        if (settled is DisplayCustodian.WaitResult.NeedsUser) screen.afterUserStep(settled)
         val after = screen.snapshot()
         val top = shell.topTaskId(vd)
         println("after the user ($pick): $settled; opened=${after.opened}; Mika's screen top ${shell.packageOfTask(top)} user ${shell.userOfTask(top)}; " +
@@ -138,7 +137,7 @@ class MainScreenSpillDeviceTest {
         assertEquals("main screen top did not come back", mainBefore, pollUntil(3_000) { shell.topTaskId(Display.DEFAULT_DISPLAY).takeIf { it == mainBefore } })
     }
 
-    /** 真实任务栈里先回桌面、再打开 App：即使没有语义点击，这条用户导航也不能判成 Agent 外溢。 */
+    /** 真实任务栈里先回桌面、再在主屏打开 App：常驻托管器不得把用户的桌面导航打开的 App 误捞到虚拟屏。 */
     @Test
     fun returningHomeBeforeOpeningAnAppIsUserNavigation() = runBlocking<Unit> {
         noTaskYet()
@@ -146,14 +145,13 @@ class MainScreenSpillDeviceTest {
         val homeApps = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
             .map { it.activityInfo.packageName }.toSet()
         assertTrue("no home handler", homeApps.isNotEmpty())
+        spillPage()
+        val vd = agent.display.displayId
         val ownPackage = InstrumentationRegistry.getInstrumentation().targetContext.packageName
         sh("am start --display 0 -n $ownPackage/com.wangzan101.mika.ui.MainActivity")
         assertNotNull("Mika did not come to the main screen", pollUntil(3_000) {
             shell.topTaskId(Display.DEFAULT_DISPLAY).takeIf { shell.packageOfTask(it) == ownPackage }
         })
-        val topBefore = shell.topTaskId(Display.DEFAULT_DISPLAY)
-        val since = SystemClock.uptimeMillis()
-        shell.watchMainScreen(6_000)
         sh("am start --display 0 -a ${Intent.ACTION_MAIN} -c ${Intent.CATEGORY_HOME}")
         assertNotNull("home did not come to the front", pollUntil(3_000) {
             shell.topTaskId(Display.DEFAULT_DISPLAY).takeIf { shell.packageOfTask(it) in homeApps }
@@ -164,27 +162,17 @@ class MainScreenSpillDeviceTest {
         assertNotNull("target did not come to the front", pollUntil(3_000) {
             shell.topTaskId(Display.DEFAULT_DISPLAY).takeIf { shell.packageOfTask(it) == target }
         })
-
-        val arrivals = arrivalsSince(since)
-        assertTrue("home navigation was not recorded", arrivals.any { it.packageName in homeApps })
-        val verdicts = MainScreenSpill.decide(arrivals, since, 6_000, topBefore,
-            homeApps + InstrumentationRegistry.getInstrumentation().targetContext.packageName, emptyList(), homeApps)
-        assertTrue("user-opened app was judged an agent spill: $verdicts", verdicts.none { it.arrival.packageName == target })
-    }
-
-    private fun arrivalsSince(since: Long): List<MainScreenSpill.Arrival> {
-        val b = shell.mainArrivals(since)
-        assertNotNull("no main-screen arrivals", b)
-        val tasks = b!!.getIntArray(MainScreenWatch.KEY_TASK)!!
-        val packages = b.getStringArray(MainScreenWatch.KEY_PACKAGE)!!
-        val users = b.getIntArray(MainScreenWatch.KEY_USER)!!
-        val at = b.getLongArray(MainScreenWatch.KEY_AT)!!
-        val from = b.getIntArray(MainScreenWatch.KEY_FROM)!!
-        val same = b.getBooleanArray(MainScreenWatch.KEY_SAME_TASK)!!
-        val standard = b.getBooleanArray(MainScreenWatch.KEY_STANDARD)!!
-        val now = b.getIntArray(MainScreenWatch.KEY_NOW)!!
-        return tasks.indices.map { i ->
-            MainScreenSpill.Arrival(tasks[i], packages[i], users[i], at[i], from[i], same[i], standard[i], now[i])
-        }
+        delay(800)
+        screen.snapshot()
+        assertEquals(
+            "user-opened app was moved off the main screen",
+            target,
+            shell.packageOfTask(shell.topTaskId(Display.DEFAULT_DISPLAY)),
+        )
+        assertEquals(
+            "Mika virtual display should remain unchanged",
+            TEST_PACKAGE,
+            shell.packageOfTask(shell.topTaskId(vd)),
+        )
     }
 }

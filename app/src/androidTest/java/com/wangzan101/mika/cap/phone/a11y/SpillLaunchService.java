@@ -19,6 +19,15 @@ public class SpillLaunchService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        boolean overlay = intent != null && intent.getBooleanExtra(SpillTestActivity.EXTRA_OVERLAY, false);
+        String target = intent != null ? intent.getStringExtra(SpillTestActivity.EXTRA_TARGET) : null;
+        if (overlay) {
+            Intent show = new Intent(this, JumpConfirmOverlayService.class);
+            if (target != null) show.putExtra(JumpConfirmOverlayService.EXTRA_TARGET, target);
+            startService(show);
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
         String auth = intent != null ? intent.getStringExtra(SpillTestActivity.EXTRA_AUTH) : null;
         String dialog = intent != null ? intent.getStringExtra(SpillTestActivity.EXTRA_DIALOG) : null;
         String component = auth != null ? auth : dialog;
@@ -27,11 +36,17 @@ public class SpillLaunchService extends Service {
             // 不指定屏时系统也会把它放到那边;后台进程在主屏上没有页面时,系统按默认放到主屏,这里照那样指定主屏。
             Intent launch = new Intent().setComponent(new ComponentName(getPackageName(), component))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (target != null) launch.putExtra(JumpConfirmDialogTestActivity.EXTRA_TARGET, target);
+            if (intent.hasExtra(JumpConfirmDialogTestActivity.EXTRA_IGNORE_CLICK)) {
+                launch.putExtra(
+                    JumpConfirmDialogTestActivity.EXTRA_IGNORE_CLICK,
+                    intent.getBooleanExtra(JumpConfirmDialogTestActivity.EXTRA_IGNORE_CLICK, false)
+                );
+            }
             startActivity(launch, ActivityOptions.makeBasic().setLaunchDisplayId(Display.DEFAULT_DISPLAY).toBundle());
             stopSelf(startId);
             return START_NOT_STICKY;
         }
-        String target = intent != null ? intent.getStringExtra(SpillTestActivity.EXTRA_TARGET) : null;
         Intent launch = target != null ? getPackageManager().getLaunchIntentForPackage(target) : null;
         if (launch != null) startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         stopSelf(startId);

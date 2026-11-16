@@ -21,5 +21,8 @@ class SystemPickersTest {
         assertTrue("$documents not in $pickers", documents == null || documents in pickers)
         assertTrue(pickers.none { it == "com.android.settings" || it.startsWith("com.wangzan101") })
         assertTrue(SystemPickers.settingsPackage(pm) == DeviceSupport.SETTINGS)
+        val launchers = SystemPickers.launcherPackages(pm)
+        assertTrue("launchers must not be empty", launchers.isNotEmpty())
+        assertTrue("FallbackHome settings must not be in launchers: $launchers", DeviceSupport.SETTINGS !in launchers)
     }
 }
