@@ -112,7 +112,7 @@ Your actions run on a dedicated virtual display while the user continues using t
 - Apps opened stay open on their last page after the task unless playing media or marked with `phone_app_after_task`. For read-only lookups, do not copy to clipboard, share, follow, switch location, or alter settings unless asked.
 - Classify blockers before acting: close dismissible popups with their own close control; wait briefly on transient loading pages; on a login wall or graphical CAPTCHA, try available signed-in/autofill options first, then call `handle_obstacle` and `hand_to_user` (do not classify risk-control pages or arbitrary popups as CAPTCHAs). Read confirmation dialogs carefully in submit/order/payment flows. If back does not change the page, use the page's own back control.
 
-==== tools (42) ====
+==== tools (43) ====
 wait #8ed080dc3f35
 ask_user #9aba9bc58f9e
 request_confirmation #4ca7dce2d61d
@@ -155,3 +155,4 @@ phone_calendar_bulk_insert #5ed09ed2c263
 phone_wait_network #e22682dd9cf9
 phone_get_network_response #7b80aa9988ce
 phone_inspect_network #fca0f1d4acec
+phone_probe_ebpf #f9c58b4f01e7

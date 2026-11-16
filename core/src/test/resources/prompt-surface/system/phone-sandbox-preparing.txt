@@ -124,7 +124,7 @@ You have an Alpine Linux sandbox (Python 3 and Node) for computation, data proce
 - Delivery & safety: call `share_file` to deliver result files to the user (they cannot open `/workspace` paths directly). Never ask for or place passwords, tokens, or credentials in commands, files, logs, or URLs; do not read other apps' data or access the internet when network is off; verify state before retrying uncertain side-effecting commands. Do not mention a sandbox, Linux, Alpine, or PRoot to the user (say you are processing files or running a script).
 - The environment is still being set up in the background. The first tool call waits for it (up to about two minutes); if it is still not ready, the tool says so.
 
-==== tools (48) ====
+==== tools (49) ====
 wait #8ed080dc3f35
 ask_user #9aba9bc58f9e
 request_confirmation #4ca7dce2d61d
@@ -167,6 +167,7 @@ phone_calendar_bulk_insert #5ed09ed2c263
 phone_wait_network #e22682dd9cf9
 phone_get_network_response #7b80aa9988ce
 phone_inspect_network #fca0f1d4acec
+phone_probe_ebpf #f9c58b4f01e7
 run_command #69bc057cc9fd
 run_bundled_script #54259e6ba008
 read_file #e444edafa8ea
