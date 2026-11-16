@@ -378,4 +378,92 @@ class PhoneNetworkDiagnosticsTest {
         assertEquals("EBPF", manager.captureStatus().activeMode)
         manager.close()
     }
+
+    @Test
+    fun testGetResponseBodyExposesContentEncodingAndDecodesZstdOrBinaryDiagnostics() = runTest {
+        var listenerRef: INetworkEventListener? = null
+        val bodies = HashMap<String, ByteArray>()
+        val ebpfMock = object : INetworkCapture.Stub() {
+            var active = false
+            override fun startCapture(config: NetworkCaptureConfig, listener: INetworkEventListener): Boolean {
+                listenerRef = listener
+                active = true
+                return true
+            }
+            override fun stopCapture() { active = false }
+            override fun getResponseBody(requestId: String?): ByteArray? = requestId?.let { bodies[it] }
+            override fun getActiveMode(): Int = if (active) CaptureMode.ACTIVE_MODE_EBPF else CaptureMode.ACTIVE_MODE_NONE
+        }
+
+        val manager = PhoneNetworkManager(
+            context = dummyContext(),
+            shellProvider = { null },
+            agentManagerFactory = { ctx, _ ->
+                AgentNetworkManager(
+                    context = ctx,
+                    shell = null,
+                    serverCaptureProvider = { ebpfMock },
+                    rootChecker = { true },
+                    kernelChecker = { true }
+                )
+            },
+            coroutineContext = coroutineContext
+        )
+
+        assertTrue(manager.attachToPackage("com.ss.android.ugc.aweme", CaptureMode.EBPF))
+
+        val plainJson = """{"status_code":0,"extra":"douyin_zstd_ok"}"""
+        val zstdPayload = com.github.luben.zstd.Zstd.compress(plainJson.toByteArray(Charsets.UTF_8))
+        listenerRef!!.onDataChunkReceived("dy_zstd_1", zstdPayload)
+        listenerRef!!.onResponseReceived(
+            com.agent.use.common.network.HttpResponseEvent(
+                requestId = "dy_zstd_1",
+                timestamp = System.currentTimeMillis(),
+                url = "https://aweme.snssdk.com/aweme/v1/feed/",
+                statusCode = 200,
+                statusText = "OK",
+                headers = listOf(
+                    com.agent.use.common.network.HttpHeader("content-type", "application/json"),
+                    com.agent.use.common.network.HttpHeader("content-encoding", "zstd")
+                ),
+                mimeType = "application/json",
+                contentLength = zstdPayload.size.toLong()
+            )
+        )
+
+        val dictFrame = byteArrayOf(0x28, 0xB5.toByte(), 0x2F, 0xFD.toByte(), 0x23, 0x2A, 0x00, 0x00, 0x00, 0xCC.toByte())
+        listenerRef!!.onDataChunkReceived("dy_dict_2", dictFrame)
+        listenerRef!!.onResponseReceived(
+            com.agent.use.common.network.HttpResponseEvent(
+                requestId = "dy_dict_2",
+                timestamp = System.currentTimeMillis(),
+                url = "https://aweme.snssdk.com/aweme/v2/comment/",
+                statusCode = 200,
+                statusText = "OK",
+                headers = listOf(
+                    com.agent.use.common.network.HttpHeader("content-type", "application/json"),
+                    com.agent.use.common.network.HttpHeader("content-encoding", "zstd")
+                ),
+                mimeType = "application/json",
+                contentLength = dictFrame.size.toLong()
+            )
+        )
+        delay(50)
+
+        val decodedZstd = manager.getResponseBody(requestId = "dy_zstd_1", urlPattern = null, asString = true)
+        assertNotNull(decodedZstd)
+        assertEquals("zstd", decodedZstd?.contentEncoding)
+        assertEquals(plainJson, decodedZstd?.body)
+
+        val dictDiag = manager.getResponseBody(requestId = "dy_dict_2", urlPattern = null, asString = true)
+        assertEquals("zstd", dictDiag?.contentEncoding)
+        assertTrue(dictDiag?.body?.contains("zstd_dictionary_frame(dictId=0x2a)") == true)
+
+        val dictRawB64 = manager.getResponseBody(requestId = "dy_dict_2", urlPattern = null, asString = false)
+        assertEquals(
+            java.util.Base64.getEncoder().encodeToString(dictFrame),
+            dictRawB64?.body
+        )
+        manager.close()
+    }
 }

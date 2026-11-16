@@ -111,6 +111,7 @@ internal object PhoneGetNetworkResponse : PhoneTool {
                 put("url", respBody.url)
                 put("statusCode", respBody.statusCode)
                 respBody.contentType?.let { put("contentType", it) }
+                respBody.contentEncoding?.let { put("contentEncoding", it) }
                 if (respBody.body != null) {
                     put("body", Untrusted.wrapWithin(respBody.body, 50_000))
                 }

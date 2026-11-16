@@ -31,6 +31,7 @@ data class NetworkResponseBody(
     val body: String?,
     val isTruncated: Boolean = false,
     val error: String? = null,
+    val contentEncoding: String? = null,
 )
 
 /**

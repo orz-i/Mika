@@ -89,6 +89,7 @@ class PhoneNetworkManager(
         val grpcEncoding: String? = null,
         val grpcStatus: String? = null,
         val grpcMessage: String? = null,
+        val contentEncoding: String? = null,
         val hasResponseBody: Boolean = false
     )
 
@@ -238,6 +239,7 @@ class PhoneNetworkManager(
             grpcEncoding = response.headers.lastOrNull { it.name.equals("grpc-encoding", ignoreCase = true) }?.value?.trim(),
             grpcStatus = response.headers.lastOrNull { it.name.equals("grpc-status", ignoreCase = true) }?.value?.trim(),
             grpcMessage = response.headers.lastOrNull { it.name.equals("grpc-message", ignoreCase = true) }?.value?.trim(),
+            contentEncoding = response.headers.lastOrNull { it.name.equals("content-encoding", ignoreCase = true) }?.value?.trim(),
             hasResponseBody = bodyBytes != null && bodyBytes.isNotEmpty()
         )
         recordEntry(updated)
@@ -378,10 +380,11 @@ class PhoneNetworkManager(
                 contentType = entry?.mimeType,
                 grpcEncoding = entry?.grpcEncoding,
                 grpcStatus = entry?.grpcStatus,
-                grpcMessage = entry?.grpcMessage
+                grpcMessage = entry?.grpcMessage,
+                contentEncoding = entry?.contentEncoding
             )
         } else {
-            bodyBytes?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+            bodyBytes?.let { java.util.Base64.getEncoder().encodeToString(it) }
         }
         val error = when {
             bodyBytes != null && bodyBytes.isEmpty() && bodyStr == null ->
@@ -406,7 +409,8 @@ class PhoneNetworkManager(
             contentType = entry?.mimeType,
             body = bodyStr,
             isTruncated = (bodyBytes?.size ?: 0) >= MAX_PERSISTED_BODY_BYTES,
-            error = error
+            error = error,
+            contentEncoding = entry?.contentEncoding
         )
     }
 
