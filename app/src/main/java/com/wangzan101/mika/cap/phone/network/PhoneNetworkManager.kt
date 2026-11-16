@@ -118,6 +118,8 @@ class PhoneNetworkManager(
     fun getOrCreateAgentManager(): AgentNetworkManager {
         internalAgentManager?.let { return it }
 
+        runCatching { CapturePluginProfileStore.forContext(context).loadIntoRegistry() }
+
         val shell = shellProvider?.invoke()
         val manager = agentManagerFactory?.invoke(context, shell) ?: AgentNetworkManager(context = context, shell = shell)
         internalAgentManager = manager
