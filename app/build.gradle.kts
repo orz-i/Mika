@@ -58,6 +58,9 @@ android {
 
     // 评测任务集(仓库根目录 eval/tasks)打进测试包的 assets,真机评测跑器从那里读题
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("eval/tasks"))
+    // IMikaShell.aidl 引用了 aau-common 的 IAgentCustodyListener；仅暂存该接口 .aidl（避开与
+    // aidl_parcelable 中 DisplayConfig.aidl 等冲突），并在 AidlCompile 后移除重复生成的 Java 源码。
+    sourceSets.getByName("main").aidl.srcDir(layout.buildDirectory.dir("generated/aidl_imports/custody"))
 
     signingConfigs {
         create("release") {
@@ -129,6 +132,20 @@ android {
         compose = true
         aidl = true
         buildConfig = true
+    }
+}
+
+val stageCustodyAidl by tasks.registering(Sync::class) {
+    from(rootProject.file("aau/aau-common/src/main/aidl")) {
+        include("com/agent/use/common/IAgentCustodyListener.aidl")
+    }
+    into(layout.buildDirectory.dir("generated/aidl_imports/custody"))
+}
+
+tasks.withType<com.android.build.gradle.tasks.AidlCompile>().configureEach {
+    dependsOn(stageCustodyAidl)
+    doLast {
+        sourceOutputDir.get().asFile.resolve("com/agent").deleteRecursively()
     }
 }
 
