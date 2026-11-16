@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -33,11 +33,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,8 +50,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -81,10 +82,16 @@ import com.wangzan101.mika.browser.SiteFace
 import com.wangzan101.mika.core.cap.web.WebUrlPolicy
 import com.wangzan101.mika.ui.components.BarIconButton
 import com.wangzan101.mika.ui.components.ButtonSize
+import com.wangzan101.mika.ui.components.GlassMaterials
 import com.wangzan101.mika.ui.components.Hairline
 import com.wangzan101.mika.ui.components.ListRow
+import com.wangzan101.mika.ui.components.MikaBottomSheet
 import com.wangzan101.mika.ui.components.MikaButton
+import com.wangzan101.mika.ui.components.MikaCard
 import com.wangzan101.mika.ui.components.MikaDialog
+import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.components.liquidGlass
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaSize
@@ -108,11 +115,18 @@ fun SiteTile(face: SiteFace, size: Dp, shape: Shape, initialStyle: TextStyle) {
     val c = MikaTheme.colors
     val icon = rememberSiteIcon(face)
     if (icon != null) {
-        Box(Modifier.size(size).background(Color.White, shape).border(0.5.dp, c.edge, shape).clip(shape), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(size).background(Color.White, shape).border(0.5.dp, c.edge, shape).clip(shape),
+            contentAlignment = Alignment.Center,
+        ) {
             Image(icon, null, Modifier.size(size * 0.62f))
         }
     } else {
-        Box(Modifier.size(size).background(Color(face.color), shape), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(size).background(Color(face.color), shape)
+                .border(0.75.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.08f))), shape),
+            contentAlignment = Alignment.Center,
+        ) {
             Text(face.initial, style = initialStyle, color = Color.White, maxLines = 1)
         }
     }
@@ -137,6 +151,7 @@ private fun rememberSiteIcon(face: SiteFace): ImageBitmap? {
 /**
  * 网页的顶栏:关闭(回起始页)、地址栏、刷新(加载时是停止),下面一条 2dp 的进度条。
  * 地址栏平时只显示锁和网站名(搜索结果页是搜的词),电脑版时带一个「电脑版」小标签;点了展开成完整网址可改,右边「取消」收回。
+ * 位于 WebView 上方，统一使用自包含液态玻璃 (backdrop = null)。
  */
 @Composable
 fun BrowserPageBar(
@@ -151,7 +166,11 @@ fun BrowserPageBar(
     val c = MikaTheme.colors
     val focus = LocalFocusManager.current
     var editing by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.statusBars)) {
+    Column(
+        Modifier.fillMaxWidth()
+            .liquidGlass(GlassMaterials.TopBar, backdrop = null, shape = RectangleShape)
+            .windowInsetsPadding(WindowInsets.statusBars),
+    ) {
         Row(
             Modifier.fillMaxWidth().height(MikaSize.TopBar).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -163,22 +182,26 @@ fun BrowserPageBar(
                     focus.clearFocus()
                     onSubmit(input)
                 }
+                val cancelInteraction = remember { MutableInteractionSource() }
                 Text(
-                    tr(R.string.cancel), Modifier.clip(MikaShapes.Pill).clickable(role = Role.Button) { editing = false; focus.clearFocus() }
+                    tr(R.string.cancel),
+                    Modifier.mikaPress(cancelInteraction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+                        .clip(MikaShapes.Pill)
+                        .clickable(interactionSource = cancelInteraction, indication = null, role = Role.Button) { editing = false; focus.clearFocus() }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     style = MikaType.Body, color = c.accent,
                 )
             } else {
-                BarIconButton(MikaIcons.Close, tr(R.string.browser_close_page), onClose)
+                BarIconButton(MikaIcons.Close, tr(R.string.browser_close_page), onClose, backdrop = null)
                 AddressPill(page, face, engines, Modifier.weight(1f)) { editing = true }
-                if (page.loading) BarIconButton(MikaIcons.Stop, tr(R.string.chat_stop), onStop)
-                else BarIconButton(MikaIcons.Refresh, tr(R.string.refresh), onReload)
+                if (page.loading) BarIconButton(MikaIcons.Stop, tr(R.string.chat_stop), onStop, backdrop = null)
+                else BarIconButton(MikaIcons.Refresh, tr(R.string.refresh), onReload, backdrop = null)
             }
         }
         val progress = page.takeIf { it.loading }?.progress
         Box(Modifier.fillMaxWidth().height(2.dp)) {
             if (progress != null) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(5, 100) / 100f).background(c.accent).testTag("browser-progress"))
+                Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(5, 100) / 100f).background(c.accent, MikaShapes.Pill).testTag("browser-progress"))
             }
         }
     }
@@ -189,9 +212,14 @@ private fun AddressPill(page: BrowserPage, face: SiteFace?, engines: List<Search
     val c = MikaTheme.colors
     val query = AddressInput.searchQuery(page.url, engines)
     val shown = query ?: face?.name ?: page.url
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        modifier.height(40.dp).clip(MikaShapes.Pill).background(c.fill)
-            .clickable(onClickLabel = tr(R.string.browser_edit_url), role = Role.Button, onClick = onClick)
+        modifier
+            .height(40.dp)
+            .mikaPress(interaction, pressedScale = 0.97f, shape = MikaShapes.Pill)
+            .cardSurface(c, MikaShapes.Pill, elevated = true)
+            .clip(MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, onClickLabel = tr(R.string.browser_edit_url), role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp).testTag("browser-address-pill"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
@@ -203,7 +231,10 @@ private fun AddressPill(page: BrowserPage, face: SiteFace?, engines: List<Search
         Text(shown, Modifier.weight(1f, fill = false), style = MikaType.Body, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (page.desktop) {
             Text(
-                BROWSER_DESKTOP_TAG, Modifier.background(c.warnSoft, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
+                BROWSER_DESKTOP_TAG,
+                Modifier.background(c.warnSoft, RoundedCornerShape(6.dp))
+                    .border(0.5.dp, c.warnSolid.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
                 style = TagText, color = c.warn, maxLines = 1,
             )
         }
@@ -220,7 +251,10 @@ private fun AddressEditor(url: String, modifier: Modifier, onGo: (String) -> Uni
     var text by remember { mutableStateOf(TextFieldValue(url, TextRange(0, url.length))) }
     LaunchedEffect(Unit) { focus.requestFocus() }
     Row(
-        modifier.height(40.dp).background(c.surface, MikaShapes.Pill).border(1.5.dp, c.accent, MikaShapes.Pill).padding(horizontal = 14.dp),
+        modifier.height(40.dp)
+            .cardSurface(c, MikaShapes.Pill, elevated = true)
+            .border(1.5.dp, c.accent, MikaShapes.Pill)
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -237,7 +271,7 @@ private fun AddressEditor(url: String, modifier: Modifier, onGo: (String) -> Uni
     }
 }
 
-/** 网页下面的工具栏:后退、前进、起始页、分享、更多。 */
+/** 网页下面的工具栏:后退、前进、起始页、分享、更多。自包含玻璃 (backdrop = null)。 */
 @Composable
 fun BrowserToolbar(
     page: BrowserPage,
@@ -248,18 +282,25 @@ fun BrowserToolbar(
     onMore: () -> Unit,
 ) {
     val c = MikaTheme.colors
-    Column(Modifier.fillMaxWidth().background(c.bg).windowInsetsPadding(WindowInsets.navigationBars)) {
-        Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.hair))
+    Column(
+        Modifier.fillMaxWidth()
+            .liquidGlass(GlassMaterials.TopBar.copy(bottomBorderOnly = false, borderWidth = 0.dp), backdrop = null, shape = RectangleShape)
+            .windowInsetsPadding(WindowInsets.navigationBars),
+    ) {
+        Box(
+            Modifier.fillMaxWidth().height(0.5.dp)
+                .background(if (c.isDark) c.specularHighlight.copy(alpha = 0.22f) else c.glassEdge),
+        )
         Row(
             Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 8.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            BarIconButton(MikaIcons.Back, tr(R.string.back), onBackPage, enabled = page.canBack)
-            BarIconButton(MikaIcons.Forward, tr(R.string.browser_forward), onForward, enabled = page.canForward)
-            BarIconButton(MikaIcons.Home, tr(R.string.browser_home), onHome)
-            BarIconButton(MikaIcons.Share, tr(R.string.share), onShare)
-            BarIconButton(MikaIcons.More, tr(R.string.more), onMore)
+            BarIconButton(MikaIcons.Back, tr(R.string.back), onBackPage, enabled = page.canBack, backdrop = null)
+            BarIconButton(MikaIcons.Forward, tr(R.string.browser_forward), onForward, enabled = page.canForward, backdrop = null)
+            BarIconButton(MikaIcons.Home, tr(R.string.browser_home), onHome, backdrop = null)
+            BarIconButton(MikaIcons.Share, tr(R.string.share), onShare, backdrop = null)
+            BarIconButton(MikaIcons.More, tr(R.string.more), onMore, backdrop = null)
         }
     }
 }
@@ -272,9 +313,16 @@ fun LoginBanner(desktop: Boolean, onDone: () -> Unit) {
         withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(tr(R.string.browser_login_for_mika)) }
         append(tr(R.string.browser_login_for_mika_sub, if (desktop) tr(R.string.browser_desktop) else tr(R.string.browser_mobile)))
     }
+    val shape = RoundedCornerShape(14.dp)
+    val borderBrush = remember(c) {
+        Brush.linearGradient(listOf(c.accent.copy(alpha = 0.36f), c.specularMid, c.accent.copy(alpha = 0.16f)))
+    }
     Row(
         Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
-            .background(c.accentSoft, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 10.dp)
+            .background(c.glassCardElevated, shape)
+            .background(c.accentSoft, shape)
+            .border(0.75.dp, borderBrush, shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
             .testTag("browser-login-banner"),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -311,11 +359,14 @@ fun BrowserMoreSheet(
     onClearData: () -> Unit = {},
 ) {
     val c = MikaTheme.colors
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface, shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp).testTag("browser-more")) {
+    MikaBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).testTag("browser-more")) {
             if (face != null && host != null) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 10.dp),
+                    Modifier.fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 10.dp)
+                        .cardSurface(c, MikaShapes.Card)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -327,32 +378,34 @@ fun BrowserMoreSheet(
                 }
             }
             fun act(f: () -> Unit): () -> Unit = { onDismiss(); f() }
-            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
-                ListRow(MikaIcons.Refresh, tr(R.string.refresh), first = true, onClick = act(onReload))
-                ListRow(MikaIcons.Search, tr(R.string.browser_find), onClick = act(onFind))
-                ListRow(MikaIcons.Copy, tr(R.string.browser_copy_link), onClick = act(onCopy))
-                ListRow(MikaIcons.External, tr(R.string.browser_open_outside), onClick = act(onOpenOutside))
-                ListRow(
-                    MikaIcons.Bookmark,
-                    if (bookmarked) tr(R.string.browser_bookmark_remove) else tr(R.string.browser_bookmark_add),
-                    onClick = act(onToggleBookmark),
-                )
-                ListRow(MikaIcons.Download, tr(R.string.browser_downloads), onClick = act(onDownloads))
-                ListRow(
-                    MikaIcons.Apps, tr(R.string.browser_tabs), detail = tabsCount.takeIf { it > 0 }?.toString(),
-                    onClick = act(onTabs),
-                )
-                ListRow(MikaIcons.Clock, tr(R.string.browser_history), onClick = act(onHistory))
-                if (host != null) {
-                    ListRow(MikaIcons.Star, if (favorite) tr(R.string.browser_unfavorite) else tr(R.string.browser_favorite), onClick = act(onToggleFavorite))
+            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp)) {
+                MikaCard {
+                    ListRow(MikaIcons.Refresh, tr(R.string.refresh), first = true, onClick = act(onReload))
+                    ListRow(MikaIcons.Search, tr(R.string.browser_find), onClick = act(onFind))
+                    ListRow(MikaIcons.Copy, tr(R.string.browser_copy_link), onClick = act(onCopy))
+                    ListRow(MikaIcons.External, tr(R.string.browser_open_outside), onClick = act(onOpenOutside))
                     ListRow(
-                        if (desktop) MikaIcons.Phone else MikaIcons.Desktop,
-                        if (desktop) tr(R.string.browser_to_mobile) else tr(R.string.browser_to_desktop),
-                        subtitle = if (desktop) tr(R.string.browser_keep_mobile) else tr(R.string.browser_keep_desktop),
-                        onClick = act(onToggleDesktop),
+                        MikaIcons.Bookmark,
+                        if (bookmarked) tr(R.string.browser_bookmark_remove) else tr(R.string.browser_bookmark_add),
+                        onClick = act(onToggleBookmark),
                     )
+                    ListRow(MikaIcons.Download, tr(R.string.browser_downloads), onClick = act(onDownloads))
+                    ListRow(
+                        MikaIcons.Apps, tr(R.string.browser_tabs), detail = tabsCount.takeIf { it > 0 }?.toString(),
+                        onClick = act(onTabs),
+                    )
+                    ListRow(MikaIcons.Clock, tr(R.string.browser_history), onClick = act(onHistory))
+                    if (host != null) {
+                        ListRow(MikaIcons.Star, if (favorite) tr(R.string.browser_unfavorite) else tr(R.string.browser_favorite), onClick = act(onToggleFavorite))
+                        ListRow(
+                            if (desktop) MikaIcons.Phone else MikaIcons.Desktop,
+                            if (desktop) tr(R.string.browser_to_mobile) else tr(R.string.browser_to_desktop),
+                            subtitle = if (desktop) tr(R.string.browser_keep_mobile) else tr(R.string.browser_keep_desktop),
+                            onClick = act(onToggleDesktop),
+                        )
+                    }
+                    ListRow(MikaIcons.Trash, tr(R.string.browser_clear_data), onClick = act(onClearData))
                 }
-                ListRow(MikaIcons.Trash, tr(R.string.browser_clear_data), onClick = act(onClearData))
             }
             Spacer(Modifier.height(4.dp))
         }
@@ -375,22 +428,21 @@ fun BookmarksSheet(
     val c = MikaTheme.colors
     var editing by rememberSaveable { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<PageBookmark?>(null) }
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surface,
-        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
-    ) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp).testTag("browser-bookmarks")) {
+    MikaBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).testTag("browser-bookmarks")) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 4.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(tr(R.string.browser_bookmarks), Modifier.weight(1f), style = MikaType.Title, color = c.ink)
                 if (bookmarks.isNotEmpty()) {
+                    val editInteraction = remember { MutableInteractionSource() }
                     Text(
                         if (editing) tr(R.string.done) else tr(R.string.browser_edit),
-                        Modifier.clip(MikaShapes.Pill).clickable(role = Role.Button) { editing = !editing }.padding(horizontal = 10.dp, vertical = 8.dp),
+                        Modifier.mikaPress(editInteraction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+                            .clip(MikaShapes.Pill)
+                            .clickable(interactionSource = editInteraction, indication = null, role = Role.Button) { editing = !editing }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
                         style = MikaType.BodyStrong, color = c.accent,
                     )
                 }
@@ -400,31 +452,44 @@ fun BookmarksSheet(
                     tr(R.string.browser_bookmark_empty), Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
                     style = MikaType.Body, color = c.ink3,
                 )
-            }
-            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
-                bookmarks.forEachIndexed { i, b ->
-                    if (i > 0) Hairline(start = 56.dp)
-                    val host = WebUrlPolicy.host(b.url)
-                    val site = host?.let { face(it).name } ?: b.url
-                    SmallRow(
-                        b.title.ifBlank { site }, host ?: b.url,
-                        onClick = { if (editing) renaming = b else onOpen(b) },
-                        lead = {
-                            if (host != null) SiteTile(face(host), 28.dp, MiniShape, InitialSmall)
-                            else Box(Modifier.size(28.dp).background(c.neutralSoft, MiniShape), contentAlignment = Alignment.Center) {
-                                Icon(MikaIcons.Bookmark, null, Modifier.size(15.dp), tint = c.ink3)
-                            }
-                        },
-                        trailing = {
-                            if (editing) {
-                                val remove = tr(R.string.browser_remove_site, b.title.ifBlank { site })
-                                Box(
-                                    Modifier.size(36.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = remove) { onRemove(b) },
-                                    contentAlignment = Alignment.Center,
-                                ) { Icon(MikaIcons.Close, remove, Modifier.size(16.dp), tint = c.ink3) }
-                            }
-                        },
-                    )
+            } else {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    MikaCard {
+                        bookmarks.forEachIndexed { i, b ->
+                            if (i > 0) Hairline(start = 56.dp)
+                            val host = WebUrlPolicy.host(b.url)
+                            val site = host?.let { face(it).name } ?: b.url
+                            SmallRow(
+                                b.title.ifBlank { site }, host ?: b.url,
+                                onClick = { if (editing) renaming = b else onOpen(b) },
+                                lead = {
+                                    if (host != null) SiteTile(face(host), 28.dp, MiniShape, InitialSmall)
+                                    else Box(
+                                        Modifier.size(28.dp).background(c.neutralSoft, MiniShape)
+                                            .border(0.5.dp, c.specularHighlight.copy(alpha = if (c.isDark) 0.16f else 0.55f), MiniShape),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(MikaIcons.Bookmark, null, Modifier.size(15.dp), tint = c.ink3)
+                                    }
+                                },
+                                trailing = {
+                                    if (editing) {
+                                        val remove = tr(R.string.browser_remove_site, b.title.ifBlank { site })
+                                        val removeInteraction = remember { MutableInteractionSource() }
+                                        Box(
+                                            Modifier.mikaPress(removeInteraction, pressedScale = 0.90f, shape = CircleShape)
+                                                .size(34.dp)
+                                                .background(c.glassSubtle, CircleShape)
+                                                .border(0.5.dp, c.glassEdge, CircleShape)
+                                                .clip(CircleShape)
+                                                .clickable(interactionSource = removeInteraction, indication = null, role = Role.Button, onClickLabel = remove) { onRemove(b) },
+                                            contentAlignment = Alignment.Center,
+                                        ) { Icon(MikaIcons.Close, remove, Modifier.size(15.dp), tint = c.ink3) }
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -441,12 +506,28 @@ fun BookmarksSheet(
 /** 改书签标题:预填现在的标题,空标题不保存。 */
 @Composable
 private fun RenameBookmarkDialog(bookmark: PageBookmark, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    val c = MikaTheme.colors
     var title by rememberSaveable(bookmark.url) { mutableStateOf(bookmark.title) }
     MikaDialog(
         onDismissRequest = onDismiss,
         title = { Text(tr(R.string.browser_bookmark_rename)) },
         text = {
-            TextField(title, { title = it }, singleLine = true, placeholder = { Text(tr(R.string.browser_bookmark_name)) })
+            OutlinedTextField(
+                title, { title = it }, Modifier.fillMaxWidth(), singleLine = true,
+                placeholder = { Text(tr(R.string.browser_bookmark_name)) },
+                shape = MikaShapes.Button,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = c.glassSubtle,
+                    unfocusedContainerColor = c.glassSubtle,
+                    focusedBorderColor = c.accent,
+                    unfocusedBorderColor = c.glassEdge,
+                    focusedTextColor = c.ink,
+                    unfocusedTextColor = c.ink,
+                    focusedPlaceholderColor = c.ink3,
+                    unfocusedPlaceholderColor = c.ink3,
+                    cursorColor = c.accent,
+                ),
+            )
         },
         confirmButton = {
             TextButton(onClick = { title.trim().takeIf { it.isNotEmpty() }?.let(onSave) }) { Text(tr(R.string.save)) }

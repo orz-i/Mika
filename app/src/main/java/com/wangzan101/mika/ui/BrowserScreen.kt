@@ -30,9 +30,10 @@ import com.wangzan101.mika.browser.PageAskMode
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import com.wangzan101.mika.ui.components.MikaDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -69,6 +70,8 @@ import com.wangzan101.mika.browser.UserBrowser
 import com.wangzan101.mika.core.cap.web.WebUrlPolicy
 import com.wangzan101.mika.core.uistate.PageDialog
 import com.wangzan101.mika.ui.components.PageBackground
+import com.wangzan101.mika.ui.theme.MikaShapes
+import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 
 /**
@@ -173,36 +176,37 @@ fun BrowserScreen(browser: UserBrowser, onBack: () -> Unit) {
         }
     }
 
-    PageBackground {
-        val p = page
-        if (p == null) {
-            LaunchedEffect(Unit) { moreOpen = false }
-            BrowserStart(
-                sites = favorites, recent = recent, face = face,
-                onBack = onBack,
-                onSubmit = { input -> browser.submit(input)?.let(toast) },
-                onOpenUrl = { url -> browser.open(url)?.let(toast) },
-                onOpenSite = { site -> browser.openFavorite(site)?.let(toast) },
-                onRemoveSite = { site ->
-                    browser.favorites.remove(site.host)
-                    toast(tr(R.string.browser_removed, face(site.host).name))
-                },
-                onAddHint = { toast(BROWSER_ADD_HINT) },
-                onClearRecent = browser.recent::clear,
-                bookmarks = bookmarks,
-                onOpenBookmark = { b -> browser.open(b.url)?.let(toast) },
-                onShowBookmarks = { bookmarksOpen = true },
-                onDownloads = { downloadsOpen = true },
-                tabsCount = tabs.size,
-                onMenu = { menuOpen = true },
-                onHistory = { historyOpen = true },
-                engine = searchEngines.selected,
-                custom = searchEngines.custom,
-                onPickEngine = browser.searchEngine::set,
-                onAddEngine = browser.searchEngine::addCustom,
-                onRemoveEngine = { browser.searchEngine.removeCustom(it.id) },
-            )
-        } else {
+    val p = page
+    if (p == null) {
+        LaunchedEffect(Unit) { moreOpen = false }
+        BrowserStart(
+            sites = favorites, recent = recent, face = face,
+            onBack = onBack,
+            onSubmit = { input -> browser.submit(input)?.let(toast) },
+            onOpenUrl = { url -> browser.open(url)?.let(toast) },
+            onOpenSite = { site -> browser.openFavorite(site)?.let(toast) },
+            onRemoveSite = { site ->
+                browser.favorites.remove(site.host)
+                toast(tr(R.string.browser_removed, face(site.host).name))
+            },
+            onAddHint = { toast(BROWSER_ADD_HINT) },
+            onClearRecent = browser.recent::clear,
+            bookmarks = bookmarks,
+            onOpenBookmark = { b -> browser.open(b.url)?.let(toast) },
+            onShowBookmarks = { bookmarksOpen = true },
+            onDownloads = { downloadsOpen = true },
+            tabsCount = tabs.size,
+            onMenu = { menuOpen = true },
+            onHistory = { historyOpen = true },
+            engine = searchEngines.selected,
+            custom = searchEngines.custom,
+            onPickEngine = browser.searchEngine::set,
+            onAddEngine = browser.searchEngine::addCustom,
+            onRemoveEngine = { browser.searchEngine.removeCustom(it.id) },
+        )
+    } else {
+        // 含硬件 WebView 的页面严禁接入 GlassBackdropHost / glassSource，所有悬浮条栏均使用自包含玻璃。
+        PageBackground(ambientGlow = false) {
             val host = WebUrlPolicy.host(p.url)
             val loginBanner = p.loginFor != null && !BrowserFavorites.loggedIn(registry, p.loginFor)
             Column(Modifier.fillMaxSize()) {
@@ -460,6 +464,7 @@ private fun openOutside(context: Context, url: String): String? = try {
 /** 页面弹框:提示只有「好」;确认和离开页面有「取消」;输入框弹框带一个输入框。 */
 @Composable
 private fun PageDialogBox(d: PageDialog, answer: (Boolean, String?) -> Unit) {
+    val c = MikaTheme.colors
     var input by remember(d) { mutableStateOf(d.defaultText.orEmpty()) }
     val leave = d.kind == PageDialog.BEFORE_UNLOAD
     MikaDialog(
@@ -469,7 +474,21 @@ private fun PageDialogBox(d: PageDialog, answer: (Boolean, String?) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (d.message.isNotBlank()) Text(d.message)
                 if (leave && d.message.isBlank()) Text(tr(R.string.browser_leave_body))
-                if (d.kind == PageDialog.PROMPT) TextField(input, { input = it }, singleLine = true)
+                if (d.kind == PageDialog.PROMPT) {
+                    OutlinedTextField(
+                        input, { input = it }, Modifier.fillMaxWidth(), singleLine = true,
+                        shape = MikaShapes.Button,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = c.glassSubtle,
+                            unfocusedContainerColor = c.glassSubtle,
+                            focusedBorderColor = c.accent,
+                            unfocusedBorderColor = c.glassEdge,
+                            focusedTextColor = c.ink,
+                            unfocusedTextColor = c.ink,
+                            cursorColor = c.accent,
+                        ),
+                    )
+                }
             }
         },
         confirmButton = {

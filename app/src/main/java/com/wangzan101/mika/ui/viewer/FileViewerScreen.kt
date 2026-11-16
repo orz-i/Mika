@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -50,8 +51,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -63,6 +67,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -72,9 +77,12 @@ import com.wangzan101.mika.ui.MarkdownText
 import com.wangzan101.mika.ui.components.BarIconButton
 import com.wangzan101.mika.ui.components.ButtonKind
 import com.wangzan101.mika.ui.components.ButtonSize
+import com.wangzan101.mika.ui.components.GlassMaterials
 import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.PageBackground
 import com.wangzan101.mika.ui.components.TopBar
+import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.components.liquidGlass
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
@@ -114,11 +122,11 @@ private sealed interface Loaded {
 fun FileViewerScreen(uri: Uri, name: String, kind: ViewerKind?, onBack: () -> Unit) {
     val context = LocalContext.current
     val openElsewhere = { FileViewer.openElsewhere(context, uri, name) }
-    PageBackground {
+    PageBackground(ambientGlow = kind != ViewerKind.Html) {
         Column(Modifier.fillMaxSize()) {
-            TopBar(name, MikaIcons.Back, onBack, stringResource(R.string.back), right = {
-                BarIconButton(MikaIcons.Share, stringResource(R.string.share), { FileViewer.share(context, uri, name) })
-                BarIconButton(MikaIcons.External, stringResource(R.string.viewer_open_elsewhere), openElsewhere)
+            TopBar(name, MikaIcons.Back, onBack, stringResource(R.string.back), backdrop = null, right = {
+                BarIconButton(MikaIcons.Share, stringResource(R.string.share), { FileViewer.share(context, uri, name) }, backdrop = null)
+                BarIconButton(MikaIcons.External, stringResource(R.string.viewer_open_elsewhere), openElsewhere, backdrop = null)
             })
             Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                 when (kind) {
@@ -317,9 +325,13 @@ private fun PdfPages(doc: PdfDoc) {
         if (doc.sizes.isNotEmpty()) {
             Text(
                 "${current + 1} / ${doc.sizes.size}",
-                Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 12.dp)
-                    .background(c.ink.copy(alpha = 0.72f), MikaShapes.Pill).padding(horizontal = 12.dp, vertical = 4.dp),
-                style = MikaType.Label, color = c.bg,
+                Modifier.align(Alignment.BottomCenter)
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(bottom = 14.dp)
+                    .liquidGlass(GlassMaterials.FloatingPill, backdrop = null, shape = MikaShapes.Pill)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                style = MikaType.Label.copy(fontWeight = FontWeight.SemiBold),
+                color = c.ink,
             )
         }
     }
@@ -335,9 +347,33 @@ private fun currentPage(list: LazyListState): Int {
 @Composable
 private fun PdfPage(doc: PdfDoc, index: Int, size: IntSize) {
     val c = MikaTheme.colors
+    val pageShape = RoundedCornerShape(8.dp)
+    val shadowMod = if (c.cardShadow.alpha > 0f) {
+        Modifier.shadow(
+            elevation = 8.dp,
+            shape = pageShape,
+            clip = false,
+            ambientColor = c.cardShadow.copy(alpha = 0.20f),
+            spotColor = c.cardShadow.copy(alpha = 0.16f),
+        )
+    } else {
+        Modifier
+    }
+    val borderBrush = remember(c) {
+        if (c.isDark) null else Brush.linearGradient(listOf(c.edge, c.specularBottom))
+    }
+    val borderMod = if (borderBrush != null) {
+        Modifier.border(0.75.dp, borderBrush, pageShape)
+    } else {
+        Modifier.border(0.75.dp, c.glassEdge, pageShape)
+    }
     BoxWithConstraints(
-        Modifier.fillMaxWidth().aspectRatio(size.width.toFloat() / size.height.coerceAtLeast(1))
-            .background(Color.White).border(0.5.dp, c.edge),
+        Modifier.fillMaxWidth()
+            .aspectRatio(size.width.toFloat() / size.height.coerceAtLeast(1))
+            .then(shadowMod)
+            .clip(pageShape)
+            .background(Color.White, pageShape)
+            .then(borderMod),
     ) {
         val widthPx = constraints.maxWidth
         val bitmap by produceState<Bitmap?>(null, doc, index, widthPx) {
@@ -422,5 +458,11 @@ private fun Failure(message: String, openElsewhere: () -> Unit, modifier: Modifi
 
 @Composable
 private fun TruncatedNote(modifier: Modifier = Modifier) {
-    Text(stringResource(R.string.viewer_truncated), modifier, style = MikaType.Caption, color = MikaTheme.colors.ink3)
+    val c = MikaTheme.colors
+    Text(
+        stringResource(R.string.viewer_truncated),
+        modifier.fillMaxWidth().cardSurface(c, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+        style = MikaType.Caption,
+        color = c.ink2,
+    )
 }

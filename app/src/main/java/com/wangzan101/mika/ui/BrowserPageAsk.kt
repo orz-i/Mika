@@ -11,9 +11,16 @@ import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -29,6 +36,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -50,7 +58,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
@@ -94,8 +103,12 @@ import com.wangzan101.mika.task.TaskService
 import com.wangzan101.mika.task.TaskService.Companion.isActive
 import com.wangzan101.mika.ui.components.ButtonKind
 import com.wangzan101.mika.ui.components.ButtonSize
+import com.wangzan101.mika.ui.components.GlassMaterials
 import com.wangzan101.mika.ui.components.MikaButton
+import com.wangzan101.mika.ui.components.cardSurface
 import com.wangzan101.mika.ui.components.floatShadow
+import com.wangzan101.mika.ui.components.liquidGlass
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
@@ -456,36 +469,63 @@ fun BoxScope.PageAskOverlay(chat: PageChat, site: String, pageTitle: String) {
 /** 对话面板占网页区域的高度比例:上面露出来的网页就是 Mika 在操作的那一页。 */
 private const val PANEL_SHARE = 0.58f
 
-/** 页面四周的一圈淡紫光边:Mika 正在这一页上干活。不挡触摸。 */
+/** 页面四周的克制边缘光晕:Mika 正在这一页上干活。不挡触摸，遵守 reduceMotion。 */
 @Composable
 fun PageGlow(modifier: Modifier = Modifier) {
+    val c = MikaTheme.colors
+    val reduce = MikaTheme.reduceMotion
+    val pulse = if (reduce) {
+        0.88f
+    } else {
+        rememberInfiniteTransition(label = "page-glow").animateFloat(
+            initialValue = 0.68f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+            label = "page-glow-pulse",
+        ).value
+    }
+    val glowBrush = remember(c) { Brush.linearGradient(listOf(c.accentHighlight, c.accent)) }
     Box(
         modifier.fillMaxSize().testTag("page-glow").drawBehind {
-            val w = 2.dp.toPx()
-            for (i in 0 until GLOW_LAYERS) {
-                val inset = w / 2 + i * w * 2
+            val baseWidth = 2.dp.toPx()
+            val corner = CornerRadius(6.dp.toPx())
+            val alphas = floatArrayOf(0.46f, 0.22f, 0.09f)
+            for (i in alphas.indices) {
+                val stroke = baseWidth * (1f + i * 0.45f)
+                val inset = stroke * 0.5f + i * baseWidth * 1.4f
+                val w = (size.width - inset * 2).coerceAtLeast(1f)
+                val h = (size.height - inset * 2).coerceAtLeast(1f)
                 drawRoundRect(
-                    GlowColor.copy(alpha = 0.7f / (i + 1)), topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
-                    size = androidx.compose.ui.geometry.Size(size.width - inset * 2, size.height - inset * 2),
-                    cornerRadius = CornerRadius(6.dp.toPx()), style = Stroke(w),
+                    brush = glowBrush,
+                    topLeft = androidx.compose.ui.geometry.Offset(inset, inset),
+                    size = androidx.compose.ui.geometry.Size(w, h),
+                    cornerRadius = corner,
+                    alpha = alphas[i] * pulse,
+                    style = Stroke(stroke),
                 )
             }
         },
     )
 }
 
-private const val GLOW_LAYERS = 4
-/** Mika 在页面上干活时光边的颜色(淡紫,和页面本身的颜色分得开)。 */
-private val GlowColor = Color(0xFF7B5CFF)
-
 /**
  * 平时浏览器页底部那一条:「✦ 问问 Mika…」输入框;这一页有接着的对话时上面一行「接着「…」 · 新对话」;
- * 选中文字问的时候上面一条「选中的文字」和 ×。
+ * 选中文字问的时候上面一条「选中的文字」和 ×。自包含玻璃 (backdrop = null)。
  */
 @Composable
 fun PageAskBar(chat: PageChat, modifier: Modifier = Modifier) {
     val c = MikaTheme.colors
-    Column(modifier.fillMaxWidth().background(c.bg).padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp).testTag("page-ask-bar")) {
+    Column(
+        modifier.fillMaxWidth()
+            .liquidGlass(GlassMaterials.TopBar.copy(bottomBorderOnly = false, borderWidth = 0.dp), backdrop = null, shape = RectangleShape)
+            .drawBehind {
+                val stroke = 0.5.dp.toPx()
+                val edge = if (c.isDark) c.specularHighlight.copy(alpha = 0.20f) else c.glassEdge
+                drawLine(edge, androidx.compose.ui.geometry.Offset(0f, stroke * 0.5f), androidx.compose.ui.geometry.Offset(size.width, stroke * 0.5f), strokeWidth = stroke)
+            }
+            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 6.dp)
+            .testTag("page-ask-bar"),
+    ) {
         val continuing = chat.conversationId
         if (continuing != null && !chat.started) {
             Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -494,9 +534,13 @@ fun PageAskBar(chat: PageChat, modifier: Modifier = Modifier) {
                     Modifier.weight(1f, fill = false), style = MikaType.Hint, color = c.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Text(" · ", style = MikaType.Hint, color = c.ink3)
+                val freshInteraction = remember { MutableInteractionSource() }
                 Text(
                     if (chat.fresh) CardCopyText.CONTINUE_LAST else CardCopyText.NEW_CHAT,
-                    Modifier.clip(MikaShapes.Pill).clickable(role = Role.Button) { chat.fresh = !chat.fresh }.padding(horizontal = 4.dp, vertical = 2.dp)
+                    Modifier.mikaPress(freshInteraction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+                        .clip(MikaShapes.Pill)
+                        .clickable(interactionSource = freshInteraction, indication = null, role = Role.Button) { chat.fresh = !chat.fresh }
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
                         .testTag("page-ask-fresh"),
                     style = MikaType.Hint, color = c.accent,
                 )
@@ -515,13 +559,20 @@ private object CardCopyText {
     val CONTINUE_LAST: String get() = tr(R.string.card_continue_last)
 }
 
-/** 输入框上面带着的选中文字:淡色一条,右边 × 不带它。 */
+/** 输入框上面带着的选中文字:淡色磨砂一条,右边 × 不带它。 */
 @Composable
 private fun SelectionChip(text: String, onRemove: () -> Unit) {
     val c = MikaTheme.colors
+    val chipShape = RoundedCornerShape(12.dp)
+    val borderBrush = remember(c) { Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom)) }
+    val removeInteraction = remember { MutableInteractionSource() }
     Row(
-        Modifier.padding(bottom = 6.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.ink.copy(alpha = 0.05f))
-            .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = 4.dp).testTag("page-ask-selection"),
+        Modifier.padding(bottom = 6.dp).fillMaxWidth()
+            .background(c.glassSubtle, chipShape)
+            .border(0.75.dp, borderBrush, chipShape)
+            .clip(chipShape)
+            .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = 4.dp)
+            .testTag("page-ask-selection"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -529,7 +580,9 @@ private fun SelectionChip(text: String, onRemove: () -> Unit) {
             Text(text, style = MikaType.Caption, color = c.ink2, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Box(
-            Modifier.size(28.dp).clip(MikaShapes.Pill).clickable(role = Role.Button, onClick = onRemove)
+            Modifier.mikaPress(removeInteraction, pressedScale = 0.90f, shape = MikaShapes.Pill)
+                .size(28.dp).clip(MikaShapes.Pill)
+                .clickable(interactionSource = removeInteraction, indication = null, role = Role.Button, onClick = onRemove)
                 .semantics { contentDescription = PageAskCopy.DROP_SELECTION },
             contentAlignment = Alignment.Center,
         ) { Icon(MikaIcons.Close, null, Modifier.size(15.dp), tint = c.ink3) }
@@ -540,15 +593,19 @@ private fun SelectionChip(text: String, onRemove: () -> Unit) {
 @Composable
 private fun AskField(chat: PageChat, hint: String, stop: (() -> Unit)?) {
     val c = MikaTheme.colors
-    val shape = RoundedCornerShape(16.dp)
+    val shape = RoundedCornerShape(20.dp)
     val focus = remember { FocusRequester() }
     LaunchedEffect(chat.focusAsk) { if (chat.focusAsk > 0) runCatching { focus.requestFocus() } }
     val canSend = chat.draft.isNotBlank() || chat.selection != null
+    val sendInteraction = remember { MutableInteractionSource() }
+    val sendBrush = remember(c) { Brush.verticalGradient(listOf(c.accentHighlight, c.accent)) }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(shape).background(c.fill).padding(start = 12.dp, end = 5.dp),
+        Modifier.fillMaxWidth().heightIn(min = 44.dp)
+            .cardSurface(c, shape, elevated = true)
+            .padding(start = 12.dp, end = 5.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(MikaIcons.Spark, null, Modifier.size(17.dp), tint = GlowColor)
+        Icon(MikaIcons.Spark, null, Modifier.size(17.dp), tint = c.accent)
         Box(Modifier.weight(1f).padding(vertical = 11.dp)) {
             if (chat.draft.isEmpty()) Text(hint, style = MikaType.Body.copy(fontSize = 14.5.sp), color = c.ink3, maxLines = 1, overflow = TextOverflow.Ellipsis)
             BasicTextField(
@@ -562,23 +619,30 @@ private fun AskField(chat: PageChat, hint: String, stop: (() -> Unit)?) {
         stop?.let { StopKey(it) }
         if (stop == null || canSend) {
             Box(
-                Modifier.testTag("page-ask-send").size(32.dp).clip(MikaShapes.Pill).background(if (canSend) c.ink else c.ink3.copy(alpha = 0.3f))
-                    .clickable(enabled = canSend, role = Role.Button, onClick = chat::send)
+                Modifier.testTag("page-ask-send")
+                    .mikaPress(sendInteraction, enabled = canSend, pressedScale = 0.90f, shape = MikaShapes.Pill)
+                    .size(32.dp)
+                    .clip(MikaShapes.Pill)
+                    .then(
+                        if (canSend) Modifier.background(sendBrush, MikaShapes.Pill)
+                        else Modifier.background(c.glassTonal, MikaShapes.Pill),
+                    )
+                    .clickable(interactionSource = sendInteraction, indication = null, enabled = canSend, role = Role.Button, onClick = chat::send)
                     .semantics { contentDescription = tr(R.string.chat_send) },
                 contentAlignment = Alignment.Center,
-            ) { Icon(MikaIcons.Up, null, Modifier.size(16.dp), tint = c.bg) }
+            ) { Icon(MikaIcons.Up, null, Modifier.size(16.dp), tint = if (canSend) c.onAccent else c.ink3) }
         }
     }
 }
 
-private val PanelShape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)
+private val PanelShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
 private val CardShape = RoundedCornerShape(16.dp)
 
 /**
  * 半屏对话面板:盖在网页下半截,上面露出来的网页就是 Mika 正在操作的那一页。顶上是网站名、「从这一页开始 · 页面标题」、
  * 「在聊天中打开」和收起;中间是这个对话的来回(和悬浮胶囊的对话卡片同一套排法);干活中下面是步骤,标出那一步在网页还是 App 上;
  * 要你点的按钮(回答的选项、同意、接手、继续)固定在下面;最下面是输入框:在跑时说的话是插话(右边停止键),Mika 问你时是回答,
- * 结束后是在这一页上接着问。页面在你手上(接手中)时是「处理好了」。
+ * 结束后是在这一页上接着问。页面在你手上(接手中)时是「处理好了」。使用自包含玻璃 (backdrop = null)。
  */
 @Composable
 fun PagePanel(chat: PageChat, site: String, pageTitle: String, modifier: Modifier = Modifier) {
@@ -586,14 +650,27 @@ fun PagePanel(chat: PageChat, site: String, pageTitle: String, modifier: Modifie
     val card = chat.card
     val content = card?.let(CapsuleCards::content)
     val live = card?.run?.state?.isActive() == true
+    val handleInteraction = remember { MutableInteractionSource() }
+    val collapseInteraction = remember { MutableInteractionSource() }
     Column(
-        modifier.fillMaxWidth().clip(PanelShape).background(c.bg).border(0.5.dp, c.hair, PanelShape)
-            .padding(horizontal = 14.dp).testTag("page-panel"),
+        modifier.fillMaxWidth()
+            .floatShadow(c, PanelShape)
+            .liquidGlass(GlassMaterials.Sheet, backdrop = null, shape = PanelShape)
+            .padding(horizontal = 14.dp)
+            .testTag("page-panel"),
     ) {
         Box(
-            Modifier.fillMaxWidth().clickable(role = Role.Button, onClickLabel = tr(R.string.collapse)) { chat.open = false }.padding(vertical = 8.dp),
+            Modifier.fillMaxWidth()
+                .mikaPress(handleInteraction, pressedScale = 0.96f)
+                .clickable(interactionSource = handleInteraction, indication = null, role = Role.Button, onClickLabel = tr(R.string.collapse)) { chat.open = false }
+                .padding(vertical = 8.dp),
             contentAlignment = Alignment.Center,
-        ) { Box(Modifier.width(36.dp).height(4.dp).clip(MikaShapes.Pill).background(c.hair)) }
+        ) {
+            Box(
+                Modifier.width(36.dp).height(4.dp).clip(MikaShapes.Pill)
+                    .background(if (c.isDark) c.specularHighlight.copy(alpha = 0.36f) else c.hair),
+            )
+        }
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
                 Text(site, style = MikaType.Label.copy(fontWeight = FontWeight.SemiBold), color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -603,8 +680,12 @@ fun PagePanel(chat: PageChat, site: String, pageTitle: String, modifier: Modifie
                 )
             }
             chat.conversationId?.let { id ->
+                val openInteraction = remember { MutableInteractionSource() }
                 Row(
-                    Modifier.clip(MikaShapes.Pill).clickable(role = Role.Button) { chat.actions.openMika(id) }.padding(horizontal = 6.dp, vertical = 6.dp)
+                    Modifier.mikaPress(openInteraction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+                        .clip(MikaShapes.Pill)
+                        .clickable(interactionSource = openInteraction, indication = null, role = Role.Button) { chat.actions.openMika(id) }
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
                         .testTag("page-panel-open-chat"),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
@@ -613,12 +694,17 @@ fun PagePanel(chat: PageChat, site: String, pageTitle: String, modifier: Modifie
                 }
             }
             Box(
-                Modifier.size(30.dp).clip(MikaShapes.Pill).clickable(role = Role.Button, onClick = chat.actions::collapse)
+                Modifier.mikaPress(collapseInteraction, pressedScale = 0.90f, shape = CircleShape)
+                    .size(30.dp)
+                    .background(c.glassSubtle, CircleShape)
+                    .border(0.5.dp, c.glassEdge, CircleShape)
+                    .clip(CircleShape)
+                    .clickable(interactionSource = collapseInteraction, indication = null, role = Role.Button, onClick = chat.actions::collapse)
                     .semantics { contentDescription = tr(R.string.collapse) }.testTag("page-panel-collapse"),
                 contentAlignment = Alignment.Center,
-            ) { Icon(MikaIcons.Close, null, Modifier.size(17.dp), tint = c.ink3) }
+            ) { Icon(MikaIcons.Close, null, Modifier.size(16.dp), tint = c.ink3) }
         }
-        Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.hair))
+        Box(Modifier.fillMaxWidth().height(0.5.dp).background(if (c.isDark) c.specularHighlight.copy(alpha = 0.14f) else c.hair))
         // 步骤紧接在对话来回的最后一条(「网站 · 在干活」那一行)下面,和对话页一样跟着往下长,不压到面板底部
         val steps: (@Composable () -> Unit)? = if (content is CardContent.Working && content.steps.isNotEmpty()) {
             { Box(Modifier.padding(bottom = 6.dp)) { Steps(content.steps, StepsMax, chat.stepTags) } }
@@ -652,6 +738,7 @@ private val StepsMax = 132.dp
 
 /**
  * 面板收起时底部的小卡片:那件事此刻在做什么,点一下展开。你在页面上动手而暂停时写「已暂停」和「继续」。
+ * 使用自包含玻璃 (backdrop = null)。
  */
 @Composable
 fun PageCard(chat: PageChat, modifier: Modifier = Modifier) {
@@ -659,13 +746,17 @@ fun PageCard(chat: PageChat, modifier: Modifier = Modifier) {
     val card = chat.card ?: return
     val paused = PageAskModel.pausedForUser(card.run.state)
     val warn = paused || card.kind.needsYou
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        modifier.fillMaxWidth().floatShadow(c, CardShape).clip(CardShape).background(c.bg).border(0.5.dp, c.hair, CardShape)
-            .clickable(role = Role.Button, onClickLabel = PageAskCopy.EXPAND) { chat.open = true }
-            .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp).testTag("page-card"),
+        modifier.fillMaxWidth()
+            .mikaPress(interaction, pressedScale = 0.98f, shape = CardShape)
+            .liquidGlass(GlassMaterials.FloatingPill.copy(cornerRadius = 16.dp), backdrop = null, shape = CardShape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = PageAskCopy.EXPAND) { chat.open = true }
+            .padding(start = 12.dp, end = 8.dp, top = 10.dp, bottom = 10.dp)
+            .testTag("page-card"),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Box(Modifier.size(8.dp).clip(MikaShapes.Pill).background(if (warn) c.warnSolid else GlowColor))
+        Box(Modifier.size(8.dp).clip(MikaShapes.Pill).background(if (warn) c.warnSolid else c.accent))
         Column(Modifier.weight(1f)) {
             Text(
                 if (paused) PageAskCopy.PAUSED_CARD else card.line.ifBlank { CapsuleCards.status(card.kind) },
@@ -678,21 +769,25 @@ fun PageCard(chat: PageChat, modifier: Modifier = Modifier) {
     }
 }
 
-/** 你在页面上动手、Mika 停下时顶上那一条:「你在操作，Mika 已暂停 · 继续」。 */
+/** 你在页面上动手、Mika 停下时顶上那一条:「你在操作，Mika 已暂停 · 继续」。自包含半透明玻璃胶囊 (backdrop = null)。 */
 @Composable
 fun PausedBanner(onResume: () -> Unit, modifier: Modifier = Modifier) {
+    val c = MikaTheme.colors
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF1D1F24))
-            .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp).testTag("page-paused-banner"),
+        modifier.fillMaxWidth()
+            .liquidGlass(GlassMaterials.FloatingPill, backdrop = null, shape = MikaShapes.Pill)
+            .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
+            .testTag("page-paused-banner"),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(MikaIcons.Hand, null, Modifier.size(16.dp), tint = Color.White)
-        Text(PageAskCopy.PAUSED, Modifier.weight(1f), style = MikaType.Caption, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(
+        Icon(MikaIcons.Hand, null, Modifier.size(16.dp), tint = c.warn)
+        Text(PageAskCopy.PAUSED, Modifier.weight(1f), style = MikaType.Caption, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        MikaButton(
             tr(R.string.chat_continue),
-            Modifier.clip(RoundedCornerShape(8.dp)).background(Color.White).clickable(role = Role.Button, onClick = onResume)
-                .padding(horizontal = 12.dp, vertical = 5.dp).testTag("page-paused-resume"),
-            style = MikaType.Label.copy(fontWeight = FontWeight.SemiBold), color = Color(0xFF111111),
+            onResume,
+            Modifier.testTag("page-paused-resume"),
+            kind = ButtonKind.Primary,
+            size = ButtonSize.Small,
         )
     }
 }
@@ -701,9 +796,13 @@ fun PausedBanner(onResume: () -> Unit, modifier: Modifier = Modifier) {
 @Composable
 internal fun SentPage(page: AttachedPage.Page, maxWidth: androidx.compose.ui.unit.Dp) {
     val c = MikaTheme.colors
+    val shape = RoundedCornerShape(12.dp)
+    val borderBrush = remember(c) { Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom)) }
     val host = com.wangzan101.mika.core.cap.web.WebUrlPolicy.host(page.url) ?: page.url
     Column(
-        Modifier.padding(bottom = 4.dp).widthIn(max = maxWidth).background(c.ink.copy(alpha = 0.05f), RoundedCornerShape(12.dp))
+        Modifier.padding(bottom = 4.dp).widthIn(max = maxWidth)
+            .background(c.glassSubtle, shape)
+            .border(0.5.dp, borderBrush, shape)
             .padding(horizontal = 10.dp, vertical = 6.dp).testTag("sent-page"),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {

@@ -3,7 +3,9 @@ package com.wangzan101.mika.ui.terminal
 import android.view.ViewGroup
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,9 +32,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.wangzan101.mika.MikaApp
@@ -41,10 +47,19 @@ import com.wangzan101.mika.core.workspace.SandboxError
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.terminal.TerminalSession
 import com.wangzan101.mika.ui.components.BarIconButton
+import com.wangzan101.mika.ui.components.ButtonKind
+import com.wangzan101.mika.ui.components.ButtonSize
+import com.wangzan101.mika.ui.components.GlassMaterials
+import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.MikaDialog
 import com.wangzan101.mika.ui.components.PageBackground
+import com.wangzan101.mika.ui.components.PillTone
+import com.wangzan101.mika.ui.components.StatusPill
 import com.wangzan101.mika.ui.components.TopBar
+import com.wangzan101.mika.ui.components.liquidGlass
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -140,7 +155,7 @@ private fun TerminalScreen(
         handle?.focus()
     }
 
-    PageBackground {
+    PageBackground(ambientGlow = false) {
         Column(Modifier.fillMaxSize().imePadding()) {
             TopBar(
                 title = tr(R.string.terminal_title),
@@ -148,11 +163,11 @@ private fun TerminalScreen(
                 onLeft = { if (finished) onBack() else confirmClose = true },
                 leftLabel = stringResource(R.string.back),
                 subtitle = conversationTitle,
+                backdrop = null,
                 right = {
-                    Text(
+                    StatusPill(
                         if (network) tr(R.string.terminal_network_on) else tr(R.string.terminal_network_off),
-                        style = MikaType.Hint,
-                        color = if (network) c.ok else c.warn,
+                        tone = if (network) PillTone.Ok else PillTone.Warn,
                         modifier = Modifier.padding(end = 2.dp),
                     )
                     BarIconButton(
@@ -160,22 +175,27 @@ private fun TerminalScreen(
                         tr(R.string.terminal_copy_all),
                         onClick = { handle?.copyAll() },
                         enabled = handle != null,
+                        backdrop = null,
                     )
                     BarIconButton(
                         MikaIcons.Close,
                         tr(R.string.terminal_close),
                         onClick = { if (finished) onBack() else confirmClose = true },
+                        backdrop = null,
                     )
                 },
             )
 
             if (taskRunning) {
-                Text(
-                    tr(R.string.terminal_task_running),
-                    Modifier.fillMaxWidth().background(c.warn.copy(alpha = 0.12f)).padding(horizontal = 16.dp, vertical = 8.dp),
-                    style = MikaType.Hint,
-                    color = c.warn,
-                )
+                Column(Modifier.fillMaxWidth().background(c.glassTopBar).background(c.warnSoft)) {
+                    Text(
+                        tr(R.string.terminal_task_running),
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MikaType.Hint,
+                        color = c.warn,
+                    )
+                    Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.warnSolid.copy(alpha = 0.25f)))
+                }
             }
 
             Box(Modifier.weight(1f).fillMaxWidth().background(ConsoleBg)) {
@@ -242,7 +262,7 @@ private fun ErrorBox(error: SandboxError, onRetry: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(24.dp)) {
         Text(errorText(error), style = MikaType.Body, color = ConsoleFg)
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onRetry) { Text(tr(R.string.terminal_retry), color = MikaTheme.colors.accent) }
+        MikaButton(tr(R.string.terminal_retry), onRetry, kind = ButtonKind.Primary, size = ButtonSize.Medium)
     }
 }
 
@@ -250,11 +270,16 @@ private fun ErrorBox(error: SandboxError, onRetry: () -> Unit) {
 private fun ResultBanner(phase: TerminalSession.Phase, exitCode: Int?, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val c = MikaTheme.colors
     Row(
-        modifier.fillMaxWidth().background(c.surface.copy(alpha = 0.96f)).padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .liquidGlass(GlassMaterials.FloatingPill.copy(cornerRadius = 16.dp), backdrop = null, shape = MikaShapes.Card)
+            .padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(resultText(phase, exitCode), Modifier.weight(1f), style = MikaType.Body, color = c.ink)
-        TextButton(onClick = onRetry) { Text(tr(R.string.terminal_retry), color = c.accent) }
+        MikaButton(tr(R.string.terminal_retry), onRetry, kind = ButtonKind.Primary, size = ButtonSize.Small)
     }
 }
 
@@ -271,36 +296,58 @@ private fun ExtraKeys(
     onStop: () -> Unit,
 ) {
     val c = MikaTheme.colors
-    Row(
-        Modifier.fillMaxWidth().background(c.surface).navigationBarsPadding().padding(horizontal = 6.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        Modifier.fillMaxWidth()
+            .liquidGlass(GlassMaterials.TopBar.copy(bottomBorderOnly = false, borderWidth = 0.dp), backdrop = null, shape = RectangleShape)
+            .navigationBarsPadding(),
     ) {
-        Key("Esc", onEsc)
-        Key("Tab", onTab)
-        Key("^C", onCtrlC)
-        Key("←", onLeft)
-        Key("↑", onUp)
-        Key("↓", onDown)
-        Key("→", onRight)
-        Key("⌨", onKeyboard)
-        Spacer(Modifier.weight(1f))
-        Key(tr(R.string.terminal_stop), onStop, bad = true)
+        Box(
+            Modifier.fillMaxWidth().height(0.5.dp)
+                .background(if (c.isDark) c.specularHighlight.copy(alpha = 0.22f) else c.glassEdge),
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Key("Esc", onEsc)
+            Key("Tab", onTab)
+            Key("^C", onCtrlC)
+            Key("←", onLeft)
+            Key("↑", onUp)
+            Key("↓", onDown)
+            Key("→", onRight)
+            Key("⌨", onKeyboard)
+            Spacer(Modifier.weight(1f))
+            Key(tr(R.string.terminal_stop), onStop, bad = true)
+        }
     }
 }
 
 @Composable
 private fun Key(text: String, onClick: () -> Unit, bad: Boolean = false) {
     val c = MikaTheme.colors
-    Text(
-        text,
+    val shape = RoundedCornerShape(8.dp)
+    val interaction = remember { MutableInteractionSource() }
+    val borderBrush = remember(c, bad) {
+        if (bad) {
+            Brush.linearGradient(listOf(c.bad.copy(alpha = 0.42f), c.specularMid, c.bad.copy(alpha = 0.20f)))
+        } else {
+            Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom))
+        }
+    }
+    Box(
         Modifier
-            .background(c.fill, RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
+            .mikaPress(interaction, pressedScale = 0.92f, shape = shape)
+            .background(if (bad) c.badSoft else c.glassCardElevated, shape)
+            .border(0.75.dp, borderBrush, shape)
+            .clip(shape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 6.dp),
-        style = MikaType.Caption,
-        color = if (bad) c.bad else c.ink,
-    )
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MikaType.Caption, color = if (bad) c.bad else c.ink)
+    }
 }
 
 private fun resultText(phase: TerminalSession.Phase, exitCode: Int?): String = when (phase) {

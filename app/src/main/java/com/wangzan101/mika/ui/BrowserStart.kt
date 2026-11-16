@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -36,11 +38,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -52,6 +56,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -72,15 +78,19 @@ import com.wangzan101.mika.browser.StartPageModel
 import com.wangzan101.mika.browser.Suggestion
 import com.wangzan101.mika.core.cap.web.WebUrlPolicy
 import com.wangzan101.mika.ui.components.BarIconButton
+import com.wangzan101.mika.ui.components.GlassBackdropHost
 import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.Hairline
 import com.wangzan101.mika.ui.components.MikaDialog
+import com.wangzan101.mika.ui.components.PageBackground
 import com.wangzan101.mika.ui.components.RadioRow
 import com.wangzan101.mika.ui.components.TopBar
 import com.wangzan101.mika.ui.components.cardSurface
 import com.wangzan101.mika.ui.components.keepsKeyboard
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaShapes
+import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaSpace
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
@@ -134,82 +144,105 @@ fun BrowserStart(
     BackHandler(enabled = editing || query.isNotEmpty()) {
         if (editing) editing = false else query = ""
     }
-    Column(Modifier.fillMaxSize()) {
-        if (editing) {
-            TopBar(tr(R.string.browser_edit_favorites), right = {
-                Text(
-                    tr(R.string.done), Modifier.clip(MikaShapes.Pill).clickable(role = Role.Button) { editing = false }.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MikaType.BodyStrong, color = c.accent,
-                )
-            })
-        } else {
-            TopBar(tr(R.string.drawer_browser), MikaIcons.Back, onBack, tr(R.string.back), right = {
-                BarIconButton(MikaIcons.Download, tr(R.string.browser_downloads), onDownloads)
-                BarIconButton(MikaIcons.More, tr(R.string.more), onMenu, badge = tabsCount > 0)
-            })
-        }
-        Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
-                .windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = MikaSpace.Page),
-        ) {
-            if (editing) {
-                SectionHeader(tr(R.string.browser_tap_x))
-                SiteGrid(sites, face, editing = true, onOpen = {}, onRemove = onRemoveSite, onEdit = {}, onAdd = null)
-                Legend(tr(R.string.browser_long_press), dot = false)
-            } else {
-                Spacer(Modifier.height(MikaSpace.S20))
-                BigSearchField(query, { query = it }, onGo = {
-                    if (query.isNotBlank()) {
-                        val q = query
-                        query = ""
-                        onSubmit(q)
+    val density = LocalDensity.current
+    val initialTopPx = WindowInsets.statusBars.getTop(density) + with(density) { MikaSize.TopBar.roundToPx() }
+    var topBarHeightPx by remember { mutableIntStateOf(initialTopPx) }
+    val topBarHeightDp = with(density) { topBarHeightPx.toDp() }
+    GlassBackdropHost(
+        modifier = Modifier.fillMaxSize(),
+        content = {
+            PageBackground(ambientGlow = true) {
+                Column(Modifier.fillMaxSize()) {
+                    Spacer(Modifier.height(topBarHeightDp))
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = MikaSpace.Page),
+                    ) {
+                        if (editing) {
+                            SectionHeader(tr(R.string.browser_tap_x))
+                            SiteGrid(sites, face, editing = true, onOpen = {}, onRemove = onRemoveSite, onEdit = {}, onAdd = null)
+                            Legend(tr(R.string.browser_long_press), dot = false)
+                        } else {
+                            Spacer(Modifier.height(MikaSpace.S20))
+                            BigSearchField(query, { query = it }, onGo = {
+                                if (query.isNotBlank()) {
+                                    val q = query
+                                    query = ""
+                                    onSubmit(q)
+                                }
+                            })
+                            if (query.isBlank()) {
+                                EngineNote(engine) { pickingEngine = true }
+                                SectionHeader(tr(R.string.browser_favorites), if (sites.isEmpty()) null else tr(R.string.browser_edit)) { editing = true }
+                                SiteGrid(sites, face, editing = false, onOpen = onOpenSite, onRemove = {}, onEdit = { editing = true }, onAdd = onAddHint)
+                                if (sites.any { it.loggedIn }) Legend(BROWSER_LOGIN_LEGEND, dot = true)
+                                SectionHeader(tr(R.string.browser_bookmarks), if (bookmarks.isEmpty()) null else tr(R.string.browser_all), onShowBookmarks)
+                                BookmarkCard(bookmarks, face, onOpenBookmark)
+                                SectionHeader(tr(R.string.browser_recent_source), if (recent.isEmpty()) null else tr(R.string.browser_all), onHistory)
+                                RecentCard(recent, face, now, onOpenUrl)
+                            } else {
+                                val suggestions = remember(query, recent, engine) { StartPageModel.suggestions(query, recent, engine) }
+                                SuggestionCard(suggestions, face) { s ->
+                                    query = ""
+                                    onOpenUrl(s.url)
+                                }
+                                Caption(tr(R.string.browser_typing_note, engine.displayName))
+                            }
+                        }
+                        Spacer(Modifier.height(MikaSpace.S24))
                     }
-                })
-                if (query.isBlank()) {
-                    EngineNote(engine) { pickingEngine = true }
-                    SectionHeader(tr(R.string.browser_favorites), if (sites.isEmpty()) null else tr(R.string.browser_edit)) { editing = true }
-                    SiteGrid(sites, face, editing = false, onOpen = onOpenSite, onRemove = {}, onEdit = { editing = true }, onAdd = onAddHint)
-                    if (sites.any { it.loggedIn }) Legend(BROWSER_LOGIN_LEGEND, dot = true)
-                    SectionHeader(tr(R.string.browser_bookmarks), if (bookmarks.isEmpty()) null else tr(R.string.browser_all), onShowBookmarks)
-                    BookmarkCard(bookmarks, face, onOpenBookmark)
-                    SectionHeader(tr(R.string.browser_recent_source), if (recent.isEmpty()) null else tr(R.string.browser_all), onHistory)
-                    RecentCard(recent, face, now, onOpenUrl)
-                } else {
-                    val suggestions = remember(query, recent, engine) { StartPageModel.suggestions(query, recent, engine) }
-                    SuggestionCard(suggestions, face) { s ->
-                        query = ""
-                        onOpenUrl(s.url)
-                    }
-                    Caption(tr(R.string.browser_typing_note, engine.displayName))
                 }
             }
-            Spacer(Modifier.height(MikaSpace.S24))
-        }
-        if (pickingEngine) {
-            EnginePicker(
-                engine, custom,
-                onPick = { pickingEngine = false; onPickEngine(it) },
-                onAdd = { pickingEngine = false; addingEngine = true },
-                onRemove = onRemoveEngine,
-                onDismiss = { pickingEngine = false },
-            )
-        }
-        if (addingEngine) {
-            CustomEngineDialog(
-                onSave = { addingEngine = false; onAddEngine(it) },
-                onDismiss = { addingEngine = false },
-            )
-        }
+        },
+        overlay = {
+            Box(Modifier.onSizeChanged { if (it.height > 0) topBarHeightPx = it.height }) {
+                if (editing) {
+                    val doneInteraction = remember { MutableInteractionSource() }
+                    TopBar(tr(R.string.browser_edit_favorites), right = {
+                        Text(
+                            tr(R.string.done),
+                            Modifier.mikaPress(doneInteraction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+                                .clip(MikaShapes.Pill)
+                                .clickable(interactionSource = doneInteraction, indication = null, role = Role.Button) { editing = false }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            style = MikaType.BodyStrong, color = c.accent,
+                        )
+                    })
+                } else {
+                    TopBar(tr(R.string.drawer_browser), MikaIcons.Back, onBack, tr(R.string.back), right = {
+                        BarIconButton(MikaIcons.Download, tr(R.string.browser_downloads), onDownloads)
+                        BarIconButton(MikaIcons.More, tr(R.string.more), onMenu, badge = tabsCount > 0)
+                    })
+                }
+            }
+        },
+    )
+    if (pickingEngine) {
+        EnginePicker(
+            engine, custom,
+            onPick = { pickingEngine = false; onPickEngine(it) },
+            onAdd = { pickingEngine = false; addingEngine = true },
+            onRemove = onRemoveEngine,
+            onDismiss = { pickingEngine = false },
+        )
+    }
+    if (addingEngine) {
+        CustomEngineDialog(
+            onSave = { addingEngine = false; onAddEngine(it) },
+            onDismiss = { addingEngine = false },
+        )
     }
 }
 
-/** 大搜索框:52 高的白色胶囊,聚焦时一圈强调色;键盘上是「前往」。 */
+/** 大搜索框:52 高的悬浮磨砂胶囊,聚焦时一圈强调色;键盘上是「前往」。 */
 @Composable
 private fun BigSearchField(value: String, onChange: (String) -> Unit, onGo: () -> Unit) {
     val c = MikaTheme.colors
     var focused by remember { mutableStateOf(false) }
     Row(
-        Modifier.fillMaxWidth().height(52.dp).keepsKeyboard().cardSurface(c, MikaShapes.Pill)
+        Modifier.fillMaxWidth().height(52.dp).keepsKeyboard().cardSurface(c, MikaShapes.Pill, elevated = true)
             .then(if (focused) Modifier.border(1.5.dp, c.accent, MikaShapes.Pill) else Modifier)
             .padding(start = 18.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -229,8 +262,11 @@ private fun BigSearchField(value: String, onChange: (String) -> Unit, onGo: () -
             )
         }
         if (value.isNotEmpty()) {
+            val clearInteraction = remember { MutableInteractionSource() }
             Box(
-                Modifier.size(36.dp).clip(CircleShape).clickable(onClickLabel = tr(R.string.browser_clear_input), role = Role.Button) { onChange("") },
+                Modifier.mikaPress(clearInteraction, pressedScale = 0.90f, shape = CircleShape)
+                    .size(36.dp).clip(CircleShape)
+                    .clickable(interactionSource = clearInteraction, indication = null, onClickLabel = tr(R.string.browser_clear_input), role = Role.Button) { onChange("") },
                 contentAlignment = Alignment.Center,
             ) { Icon(MikaIcons.Close, tr(R.string.browser_clear_input), Modifier.size(16.dp), tint = c.ink3) }
         }
@@ -250,10 +286,13 @@ private fun Caption(text: String) {
 @Composable
 private fun EngineNote(engine: SearchEngineSpec, onClick: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Text(
         tr(R.string.browser_engine_note, engine.displayName),
-        Modifier.fillMaxWidth().clip(MikaShapes.Pill)
-            .clickable(role = Role.Button, onClickLabel = tr(R.string.browser_engine_choose), onClick = onClick)
+        Modifier.fillMaxWidth()
+            .mikaPress(interaction, pressedScale = 0.97f, shape = MikaShapes.Pill)
+            .clip(MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = tr(R.string.browser_engine_choose), onClick = onClick)
             .padding(top = 8.dp, bottom = 2.dp).testTag("browser-engine"),
         style = MikaType.Hint, color = c.ink3, textAlign = TextAlign.Center,
     )
@@ -282,9 +321,11 @@ private fun EnginePicker(
                         trailing = {
                             if (e is CustomSearchEngine) {
                                 val remove = tr(R.string.browser_engine_custom_remove, e.displayName)
+                                val removeInteraction = remember { MutableInteractionSource() }
                                 Box(
-                                    Modifier.size(36.dp).clip(CircleShape)
-                                        .clickable(role = Role.Button, onClickLabel = remove) { onRemove(e) }
+                                    Modifier.mikaPress(removeInteraction, pressedScale = 0.90f, shape = CircleShape)
+                                        .size(36.dp).clip(CircleShape)
+                                        .clickable(interactionSource = removeInteraction, indication = null, role = Role.Button, onClickLabel = remove) { onRemove(e) }
                                         .testTag("browser-engine-remove"),
                                     contentAlignment = Alignment.Center,
                                 ) { Icon(MikaIcons.Close, remove, Modifier.size(16.dp), tint = c.ink3) }
@@ -308,19 +349,32 @@ private fun CustomEngineDialog(onSave: (CustomSearchEngine) -> Unit, onDismiss: 
     var name by rememberSaveable { mutableStateOf("") }
     var url by rememberSaveable { mutableStateOf("") }
     var invalid by rememberSaveable { mutableStateOf(false) }
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = c.glassSubtle,
+        unfocusedContainerColor = c.glassSubtle,
+        focusedBorderColor = c.accent,
+        unfocusedBorderColor = c.glassEdge,
+        focusedTextColor = c.ink,
+        unfocusedTextColor = c.ink,
+        focusedPlaceholderColor = c.ink3,
+        unfocusedPlaceholderColor = c.ink3,
+        cursorColor = c.accent,
+    )
     MikaDialog(
         onDismissRequest = onDismiss,
         title = { Text(tr(R.string.browser_engine_custom_add)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                TextField(
+                OutlinedTextField(
                     name, { name = it; invalid = false }, Modifier.fillMaxWidth().testTag("browser-engine-name"),
                     singleLine = true, placeholder = { Text(tr(R.string.browser_engine_custom_name)) },
+                    shape = MikaShapes.Button, colors = fieldColors,
                 )
-                TextField(
+                OutlinedTextField(
                     url, { url = it; invalid = false }, Modifier.fillMaxWidth().testTag("browser-engine-url"),
                     singleLine = true, placeholder = { Text(tr(R.string.browser_engine_custom_url)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
+                    shape = MikaShapes.Button, colors = fieldColors,
                 )
                 Text(tr(R.string.browser_engine_custom_hint), style = MikaType.Hint, color = c.ink3)
                 if (invalid) Text(tr(R.string.browser_engine_custom_invalid), style = MikaType.Hint, color = c.warn)
@@ -346,8 +400,13 @@ private fun SectionHeader(title: String, action: String? = null, onAction: () ->
     Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(title, Modifier.weight(1f), style = MikaType.Label, color = c.ink3)
         if (action != null) {
+            val interaction = remember { MutableInteractionSource() }
             Text(
-                action, Modifier.clip(MikaShapes.Pill).clickable(role = Role.Button, onClick = onAction).padding(horizontal = 6.dp, vertical = 2.dp),
+                action,
+                Modifier.mikaPress(interaction, pressedScale = 0.94f, shape = MikaShapes.Pill)
+                    .clip(MikaShapes.Pill)
+                    .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onAction)
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
                 style = MikaType.Label, color = c.accent,
             )
         }
@@ -408,10 +467,14 @@ private fun SiteCell(
             -WIGGLE_DEG, WIGGLE_DEG, infiniteRepeatable(tween(WIGGLE_MS), RepeatMode.Reverse), label = "wiggle-angle",
         ).value
     } else 0f
+    val interaction = remember { MutableInteractionSource() }
     Column(
         Modifier.graphicsLayer { rotationZ = if (even) angle else -angle }
+            .mikaPress(interaction, enabled = !editing, pressedScale = 0.94f, shape = RoundedCornerShape(12.dp))
             .clip(RoundedCornerShape(12.dp))
             .combinedClickable(
+                interactionSource = interaction,
+                indication = null,
                 onClickLabel = if (editing) null else tr(R.string.browser_open_site, face.name),
                 onLongClickLabel = if (editing) null else tr(R.string.browser_edit_favorites),
                 onClick = { if (!editing) onOpen() },
@@ -430,9 +493,13 @@ private fun SiteCell(
                 )
             }
             if (editing) {
+                val removeInteraction = remember { MutableInteractionSource() }
                 Box(
-                    Modifier.align(Alignment.TopStart).offset((-6).dp, (-6).dp).size(22.dp).clip(CircleShape)
-                        .background(c.ink2).clickable(onClickLabel = tr(R.string.browser_remove_site, face.name), role = Role.Button, onClick = onRemove)
+                    Modifier.align(Alignment.TopStart).offset((-6).dp, (-6).dp)
+                        .mikaPress(removeInteraction, pressedScale = 0.88f, shape = CircleShape)
+                        .size(22.dp).clip(CircleShape)
+                        .background(c.ink2).border(0.75.dp, c.bg, CircleShape)
+                        .clickable(interactionSource = removeInteraction, indication = null, onClickLabel = tr(R.string.browser_remove_site, face.name), role = Role.Button, onClick = onRemove)
                         .testTag("browser-site-remove"),
                     contentAlignment = Alignment.Center,
                 ) { Icon(MikaIcons.Close, tr(R.string.browser_remove_site, face.name), Modifier.size(11.dp), tint = c.bg) }
@@ -445,8 +512,11 @@ private fun SiteCell(
 @Composable
 private fun AddCell(onAdd: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Column(
-        Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = tr(R.string.browser_add_favorite), role = Role.Button, onClick = onAdd)
+        Modifier.mikaPress(interaction, pressedScale = 0.94f, shape = RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(interactionSource = interaction, indication = null, onClickLabel = tr(R.string.browser_add_favorite), role = Role.Button, onClick = onAdd)
             .padding(horizontal = 2.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(7.dp),
@@ -526,8 +596,12 @@ internal fun SmallRow(
     trailing: @Composable () -> Unit = {},
 ) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).heightIn(min = 56.dp).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth()
+            .mikaPress(interaction, pressedScale = 0.988f)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .heightIn(min = 56.dp).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -543,7 +617,12 @@ internal fun SmallRow(
 @Composable
 private fun SearchMini(icon: ImageVector = MikaIcons.Search) {
     val c = MikaTheme.colors
-    Box(Modifier.size(28.dp).background(c.neutralSoft, MiniShape), contentAlignment = Alignment.Center) {
+    Box(
+        Modifier.size(28.dp)
+            .background(c.neutralSoft, MiniShape)
+            .border(0.5.dp, c.specularHighlight.copy(alpha = if (c.isDark) 0.16f else 0.55f), MiniShape),
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(icon, null, Modifier.size(16.dp), tint = c.ink2)
     }
 }

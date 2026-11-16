@@ -6,7 +6,9 @@ import android.content.Intent
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,19 +18,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,8 +47,12 @@ import com.wangzan101.mika.browser.BrowserDownload
 import com.wangzan101.mika.browser.BrowserDownloads
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.ui.components.Hairline
+import com.wangzan101.mika.ui.components.MikaBottomSheet
+import com.wangzan101.mika.ui.components.MikaCard
 import com.wangzan101.mika.ui.components.MikaDialog
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.delay
@@ -77,13 +79,8 @@ fun DownloadsSheet(downloads: BrowserDownloads, onDismiss: () -> Unit) {
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surface,
-        shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
-    ) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp).testTag("browser-downloads")) {
+    MikaBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 12.dp).testTag("browser-downloads")) {
             Text(
                 tr(R.string.browser_downloads), Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 10.dp),
                 style = MikaType.Title, color = c.ink,
@@ -93,20 +90,23 @@ fun DownloadsSheet(downloads: BrowserDownloads, onDismiss: () -> Unit) {
                     tr(R.string.browser_download_empty), Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
                     style = MikaType.Body, color = c.ink3,
                 )
-            }
-            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
-                items.forEachIndexed { i, item ->
-                    if (i > 0) Hairline(start = 20.dp)
-                    DownloadRow(
-                        context, item,
-                        onOpen = { openDownload(context, downloads, item).let { if (it != null) toast(it) } },
-                        onShare = { shareDownload(context, downloads, item).let { if (it != null) toast(it) } },
-                        onCancel = {
-                            downloads.remove(item.id)
-                            items = items.filterNot { it.id == item.id }
-                        },
-                        onDelete = { deleting = item },
-                    )
+            } else if (items.isNotEmpty()) {
+                Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    MikaCard {
+                        items.forEachIndexed { i, item ->
+                            if (i > 0) Hairline(start = 16.dp)
+                            DownloadRow(
+                                context, item,
+                                onOpen = { openDownload(context, downloads, item).let { if (it != null) toast(it) } },
+                                onShare = { shareDownload(context, downloads, item).let { if (it != null) toast(it) } },
+                                onCancel = {
+                                    downloads.remove(item.id)
+                                    items = items.filterNot { it.id == item.id }
+                                },
+                                onDelete = { deleting = item },
+                            )
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -123,7 +123,7 @@ fun DownloadsSheet(downloads: BrowserDownloads, onDismiss: () -> Unit) {
                     downloads.remove(item.id)
                     items = items.filterNot { it.id == item.id }
                     deleting = null
-                }) { Text(tr(R.string.browser_download_delete)) }
+                }) { Text(tr(R.string.browser_download_delete), color = c.bad) }
             },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text(tr(R.string.cancel)) } },
         )
@@ -140,10 +140,18 @@ private fun DownloadRow(
     onDelete: () -> Unit,
 ) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Column(
         Modifier.fillMaxWidth()
-            .then(if (item.done) Modifier.clickable(role = Role.Button, onClick = onOpen) else Modifier)
-            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
+            .then(
+                if (item.done) {
+                    Modifier.mikaPress(interaction, pressedScale = 0.988f)
+                        .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onOpen)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.weight(1f)) {
@@ -164,8 +172,8 @@ private fun DownloadRow(
         }
         val percent = item.percent
         if (percent != null) {
-            Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(c.fill)) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(percent / 100f).background(c.accent))
+            Box(Modifier.fillMaxWidth().padding(top = 8.dp).height(4.dp).clip(MikaShapes.Pill).background(c.glassTonal)) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(percent / 100f).background(c.accent, MikaShapes.Pill))
             }
         }
     }
@@ -173,10 +181,17 @@ private fun DownloadRow(
 
 @Composable
 private fun SheetAction(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Box(
-        Modifier.size(36.dp).clip(CircleShape).clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+        Modifier.mikaPress(interaction, pressedScale = 0.90f, shape = CircleShape)
+            .size(34.dp)
+            .background(c.glassSubtle, CircleShape)
+            .border(0.5.dp, c.glassEdge, CircleShape)
+            .clip(CircleShape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Icon(icon, label, Modifier.size(17.dp), tint = MikaTheme.colors.ink3) }
+    ) { Icon(icon, label, Modifier.size(16.dp), tint = c.ink2) }
 }
 
 private fun statusText(context: Context, item: BrowserDownload): String = when {
