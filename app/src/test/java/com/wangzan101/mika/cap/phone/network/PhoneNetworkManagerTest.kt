@@ -216,4 +216,70 @@ class PhoneNetworkManagerTest {
 
         manager.close()
     }
+
+    @Test
+    fun testProbeEbpfMapsDiscoveryReportAndProfileJson() = runTest {
+        val mockEngine = MockEngine()
+        val manager = PhoneNetworkManager(
+            context = createDummyContext(),
+            agentManagerFactory = { _, _ -> createTestAgentManager(mockEngine) },
+            coroutineContext = coroutineContext,
+            discoveryRunner = { pkg, heur ->
+                assertEquals("com.xingin.xhs", pkg)
+                assertTrue(heur)
+                com.agent.use.client.network.ebpf.EbpfDiscoveryResult(
+                    ok = true,
+                    report = com.agent.use.common.network.plugin.EbpfDiscoveryReport(
+                        uid = 10456,
+                        arch = "arm64",
+                        scannedLibrariesCount = 3,
+                        rawHeadersOffset = 0x20,
+                        ioBufferDataOffset = 0x10,
+                        stringLayoutMode = 0,
+                        vtableSlots = Triple(3, 4, 5),
+                        libraries = listOf(
+                            com.agent.use.common.network.plugin.DiscoveredLibraryProbe(
+                                path = "/data/app/com.xingin.xhs/lib/arm64/libcronet.122.0.0.1.so",
+                                name = "libcronet.122.0.0.1.so",
+                                inAppDir = true,
+                                sslSource = "stripped_heuristic",
+                                sslWriteOffset = 0x501000L,
+                                sslReadOffset = 0x502000L,
+                                sslSniOffset = 0x503000L,
+                                cronetSource = "elf_heuristic",
+                                cronetCreateOffset = 0x230000L,
+                                cronetResponseStartedOffset = 0x210000L,
+                                cronetReadCompletedOffset = 0x211000L,
+                                cronetSucceededOffset = 0x212000L,
+                            ),
+                        ),
+                        unmatchedAppLibs = listOf("libxlog.so"),
+                    ),
+                    suggestedProfile = com.agent.use.common.network.plugin.EbpfProbeProfile(
+                        sslOffsetRules = listOf(
+                            com.agent.use.common.network.plugin.EbpfSslOffsetRule("libcronet.122.0.0.1.so", 0x501000L, 0x502000L, 0x503000L),
+                        ),
+                        cronetOffsetRules = listOf(
+                            com.agent.use.common.network.plugin.EbpfCronetOffsetRule("libcronet.122.0.0.1.so", 0x230000L, 0x210000L, 0x211000L, 0x212000L),
+                        ),
+                        replaceBuiltinOffsets = true,
+                    ),
+                )
+            },
+        )
+
+        val report = manager.probeEbpf("com.xingin.xhs", true)
+        assertTrue(report.ok)
+        assertEquals(10456, report.uid)
+        assertEquals("arm64", report.arch)
+        assertEquals(1, report.libraries.size)
+        assertEquals("libcronet.122.0.0.1.so", report.libraries[0].name)
+        assertEquals("0x501000", report.libraries[0].sslWriteOffset)
+        assertEquals("0x230000", report.libraries[0].cronetCreateOffset)
+        assertEquals(listOf("libxlog.so"), report.unmatchedAppLibs)
+        assertNotNull(report.suggestedProfileJson)
+        assertTrue(report.suggestedProfileJson!!.contains("\"replaceBuiltinOffsets\": true"))
+
+        manager.close()
+    }
 }

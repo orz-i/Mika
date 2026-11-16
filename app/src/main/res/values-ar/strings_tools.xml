@@ -65,4 +65,5 @@
     <string name="tool_wait_network">انتظار استجابة الشبكة</string>
     <string name="tool_get_network_response">جلب استجابة الشبكة</string>
     <string name="tool_inspect_network">فحص طلبات الشبكة</string>
+    <string name="tool_probe_ebpf">فحص إزاحات الالتقاط</string>
 </resources>

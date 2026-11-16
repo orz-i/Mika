@@ -22,7 +22,7 @@ object RootCommandClass {
         "ls", "cat", "head", "tail", "wc", "stat", "du", "df", "grep", "egrep", "fgrep", "id", "whoami", "uname", "getprop",
         "ps", "pwd", "echo", "printf", "file", "md5sum", "sha1sum", "sha256sum", "sha512sum", "readlink", "realpath",
         "basename", "dirname", "test", "[", "true", "false", "which", "uptime", "free", "cut", "tr", "strings",
-        "od", "hexdump", "cmp", "diff", "base64", "getenforce", "lsof", "netstat", "nproc", "printenv", "cd",
+        "od", "hexdump", "cmp", "diff", "base64", "getenforce", "lsof", "netstat", "pidof", "readelf", "nproc", "printenv", "cd",
         "sleep", "lsattr", "nl", "column", "comm", "expr", "seq", "rev", "fold", "tac",
     )
 

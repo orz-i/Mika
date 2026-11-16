@@ -62,7 +62,44 @@ data class NetworkCaptureStatus(
 )
 
 /**
- * 手机网络抓包端口：提供等待网络响应、提取响应体和检查近期请求列表的能力。
+ * 端侧 `--discover-only` 扫描到的单个共享库及其 BoringSSL/Cronet 偏移结果。
+ */
+@Serializable
+data class EbpfDiscoveredLib(
+    val path: String,
+    val name: String,
+    val inAppDir: Boolean,
+    val sslSource: String,
+    val sslWriteOffset: String? = null,
+    val sslReadOffset: String? = null,
+    val sslSniOffset: String? = null,
+    val cronetSource: String,
+    val cronetCreateOffset: String? = null,
+    val cronetResponseStartedOffset: String? = null,
+    val cronetReadCompletedOffset: String? = null,
+    val cronetSucceededOffset: String? = null,
+)
+
+/**
+ * 端侧对指定 App 执行 `libaau_ebpf.so --discover-only` 与 APK 布局检查的诊断结果。
+ */
+@Serializable
+data class EbpfProbeReport(
+    val ok: Boolean,
+    val targetPackage: String,
+    val uid: Int = -1,
+    val arch: String = "unknown",
+    val nativeLibraryDir: String? = null,
+    val apkPaths: List<String> = emptyList(),
+    val scannedLibrariesCount: Int = 0,
+    val libraries: List<EbpfDiscoveredLib> = emptyList(),
+    val unmatchedAppLibs: List<String> = emptyList(),
+    val suggestedProfileJson: String? = null,
+    val error: String? = null,
+)
+
+/**
+ * 手机网络抓包端口：提供等待网络响应、提取响应体、查看近期请求列表与 eBPF 偏移探测的能力。
  * 底层可由 Root eBPF 或免 Root VpnService 驱动。
  */
 interface PhoneNetworkPort {
@@ -87,6 +124,11 @@ interface PhoneNetworkPort {
      * 返回当前底层抓包健康与活跃状态；未实现的模拟端口可返回 null。
      */
     suspend fun captureStatus(): NetworkCaptureStatus? = null
+
+    /**
+     * 运行只读的 `--discover-only` 端侧探测，返回匹配到的 BoringSSL / Cronet 偏移及 APK 路径。
+     */
+    suspend fun probeEbpf(targetPackage: String? = null, useHeuristicsOnly: Boolean = true): EbpfProbeReport? = null
 }
 
 /** 注入到上下文中的网络端口 Key。 */

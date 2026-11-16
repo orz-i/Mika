@@ -183,6 +183,61 @@ internal object PhoneInspectNetwork : PhoneTool {
     }
 }
 
+/**
+ * 运行只读 eBPF SO 偏移探测，排查指定 App 实际可挂钩的网络库（BoringSSL / Cronet）并生成插件配置。
+ */
+internal object PhoneProbeEbpf : PhoneTool {
+    override val verb = Verb.PhoneProbeEbpf
+    override val risk = Risk.Read
+    override val label = "探测抓包偏移"
+    override val def = ToolDef(
+        "phone_probe_ebpf",
+        Prompts.tool("phone_probe_ebpf"),
+        mapOf(
+            "targetPackage" to str("Target Android package name (optional; defaults to current captured app)."),
+            "useHeuristicsOnly" to bool("Run ELF heuristics directly without echoing saved offset rules (default true)."),
+        ),
+    )
+
+    override suspend fun execute(a: Args, ctx: ToolContext): ToolExecution {
+        val targetPackage = a.str("targetPackage", max = 200)
+        val useHeuristicsOnly = a.bool("useHeuristicsOnly", true)
+        val net = ctx.network ?: return failure("network_capture_unavailable")
+
+        val report = net.probeEbpf(targetPackage, useHeuristicsOnly)
+            ?: return failure("ebpf_probe_unsupported")
+
+        return ToolExecution(buildJsonObject {
+            put("ok", report.ok)
+            put("targetPackage", report.targetPackage)
+            put("uid", report.uid)
+            put("arch", report.arch)
+            report.nativeLibraryDir?.let { put("nativeLibraryDir", it) }
+            put("apkPaths", JsonArray(report.apkPaths.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+            put("scannedLibrariesCount", report.scannedLibrariesCount)
+            put("libraries", JsonArray(report.libraries.map { lib ->
+                buildJsonObject {
+                    put("path", lib.path)
+                    put("name", lib.name)
+                    put("inAppDir", lib.inAppDir)
+                    put("sslSource", lib.sslSource)
+                    lib.sslWriteOffset?.let { put("sslWriteOffset", it) }
+                    lib.sslReadOffset?.let { put("sslReadOffset", it) }
+                    lib.sslSniOffset?.let { put("sslSniOffset", it) }
+                    put("cronetSource", lib.cronetSource)
+                    lib.cronetCreateOffset?.let { put("cronetCreateOffset", it) }
+                    lib.cronetResponseStartedOffset?.let { put("cronetResponseStartedOffset", it) }
+                    lib.cronetReadCompletedOffset?.let { put("cronetReadCompletedOffset", it) }
+                    lib.cronetSucceededOffset?.let { put("cronetSucceededOffset", it) }
+                }
+            }))
+            put("unmatchedAppLibs", JsonArray(report.unmatchedAppLibs.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+            report.suggestedProfileJson?.let { put("suggestedProfileJson", it) }
+            report.error?.let { put("error", it) }
+        })
+    }
+}
+
 private fun failure(error: String) = ToolExecution(buildJsonObject {
     put("ok", false)
     put("error", error)

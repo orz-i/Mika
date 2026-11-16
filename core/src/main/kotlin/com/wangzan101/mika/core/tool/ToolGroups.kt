@@ -72,7 +72,7 @@ internal object ToolGroups {
             "phone_set_alarm", "phone_set_timer", "phone_show_alarms",
             "phone_add_calendar_event", "phone_calendar_bulk_insert",
             -> "schedule"
-            "phone_inspect_network", "phone_wait_network", "phone_get_network_response" -> "network"
+            "phone_inspect_network", "phone_wait_network", "phone_get_network_response", "phone_probe_ebpf" -> "network"
             else -> "ui"
         }
         "web" -> when (name) {

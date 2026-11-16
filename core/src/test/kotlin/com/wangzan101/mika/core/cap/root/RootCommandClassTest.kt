@@ -17,6 +17,8 @@ class RootCommandClassTest {
         "find /sdcard/Download -name '*.apk' -size +10M",
         "ls /data/app | head -n 20; df -h",
         "id && getprop ro.build.version.release",
+        "pidof com.example.app && pm path com.example.app",
+        "/system/bin/readelf -sW /data/app/com.example.app/lib/arm64/libcronet.so",
         "grep -r 'token' /data/data/com.example.app/shared_prefs 2>&1 | wc -l",
         "/system/bin/ls -l /data/local/tmp",
         "toybox ls /data",

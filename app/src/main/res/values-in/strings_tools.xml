@@ -65,4 +65,5 @@
     <string name="tool_wait_network">Tunggu respons jaringan</string>
     <string name="tool_get_network_response">Ambil respons jaringan</string>
     <string name="tool_inspect_network">Periksa permintaan jaringan</string>
+    <string name="tool_probe_ebpf">Deteksi offset tangkapan</string>
 </resources>

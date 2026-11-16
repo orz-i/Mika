@@ -65,4 +65,5 @@
     <string name="tool_wait_network">Ожидать сетевой ответ</string>
     <string name="tool_get_network_response">Получить сетевой ответ</string>
     <string name="tool_inspect_network">Просмотреть сетевые запросы</string>
+    <string name="tool_probe_ebpf">Поиск смещений перехвата</string>
 </resources>

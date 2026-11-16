@@ -1,14 +1,23 @@
 package com.wangzan101.mika.cap.phone.network
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import com.agent.use.client.network.AgentNetworkManager
 import com.agent.use.client.network.DeviceEbpfDetector
+import com.agent.use.client.network.ebpf.EbpfDiscoveryResult
+import com.agent.use.client.network.ebpf.LocalRootEbpfCaptureEngine
 import com.agent.use.common.IAgentShell
 import com.agent.use.common.network.CaptureMode
 import com.agent.use.common.network.HttpRequestEvent
 import com.agent.use.common.network.HttpResponseEvent
+import com.agent.use.common.network.INetworkCapture
+import com.agent.use.common.network.NetworkCaptureConfig
 import com.agent.use.common.network.parser.GrpcDecoder
+import com.agent.use.common.network.plugin.EbpfProbeProfile
+import com.wangzan101.mika.core.cap.phone.EbpfDiscoveredLib
+import com.wangzan101.mika.core.cap.phone.EbpfProbeReport
 import com.wangzan101.mika.core.cap.phone.NetworkCaptureStatus
 import com.wangzan101.mika.core.cap.phone.NetworkResponseBody
 import com.wangzan101.mika.core.cap.phone.NetworkResponseInfo
@@ -21,6 +30,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
@@ -47,7 +57,8 @@ class PhoneNetworkManager(
     private val shellProvider: (() -> IAgentShell?)? = null,
     private val agentManagerFactory: ((Context, IAgentShell?) -> AgentNetworkManager)? = null,
     coroutineContext: kotlin.coroutines.CoroutineContext = Dispatchers.Default,
-    private val clockMs: () -> Long = { System.currentTimeMillis() }
+    private val clockMs: () -> Long = { System.currentTimeMillis() },
+    private val discoveryRunner: ((String, Boolean) -> EbpfDiscoveryResult)? = null
 ) : PhoneNetworkPort, Closeable, AutoCloseable {
 
     companion object {
@@ -633,6 +644,64 @@ class PhoneNetworkManager(
      * 当前实际生效的抓包模式。
      */
     fun getActiveMode(): CaptureMode = internalAgentManager?.getActiveMode() ?: CaptureMode.AUTO
+
+    override suspend fun probeEbpf(targetPackage: String?, useHeuristicsOnly: Boolean): EbpfProbeReport {
+        val pkg = targetPackage?.trim()?.takeIf { it.isNotEmpty() } ?: currentPackage ?: desiredTargetPackage
+            ?: return EbpfProbeReport(ok = false, targetPackage = "", error = "missing_target_package")
+
+        var nativeLibDir: String? = null
+        val apkPaths = ArrayList<String>()
+        runCatching {
+            val pm = context.packageManager
+            val appInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(PackageManager.MATCH_ALL.toLong()))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getApplicationInfo(pkg, 0)
+            }
+            nativeLibDir = appInfo.nativeLibraryDir
+            appInfo.publicSourceDir?.takeIf { it.isNotBlank() }?.let { apkPaths.add(it) }
+            appInfo.splitSourceDirs?.forEach { split ->
+                if (!split.isNullOrBlank() && split !in apkPaths) apkPaths.add(split)
+            }
+        }
+
+        val result = withContext(Dispatchers.IO) {
+            discoveryRunner?.invoke(pkg, useHeuristicsOnly)
+                ?: LocalRootEbpfCaptureEngine.discoverAppProfile(context, pkg, useHeuristicsOnly)
+        }
+        val report = result.report
+        val suggestedJson = result.suggestedProfile?.let { EbpfProbeProfile.toJson(mapOf(pkg to it)) }
+
+        return EbpfProbeReport(
+            ok = result.ok,
+            targetPackage = pkg,
+            uid = report?.uid ?: -1,
+            arch = report?.arch ?: "unknown",
+            nativeLibraryDir = nativeLibDir,
+            apkPaths = apkPaths,
+            scannedLibrariesCount = report?.scannedLibrariesCount ?: 0,
+            libraries = report?.libraries.orEmpty().map { lib ->
+                EbpfDiscoveredLib(
+                    path = lib.path,
+                    name = lib.name,
+                    inAppDir = lib.inAppDir,
+                    sslSource = lib.sslSource,
+                    sslWriteOffset = lib.sslWriteOffset?.let(EbpfProbeProfile::formatOffset),
+                    sslReadOffset = lib.sslReadOffset?.let(EbpfProbeProfile::formatOffset),
+                    sslSniOffset = lib.sslSniOffset?.let(EbpfProbeProfile::formatOffset),
+                    cronetSource = lib.cronetSource,
+                    cronetCreateOffset = lib.cronetCreateOffset?.let(EbpfProbeProfile::formatOffset),
+                    cronetResponseStartedOffset = lib.cronetResponseStartedOffset?.let(EbpfProbeProfile::formatOffset),
+                    cronetReadCompletedOffset = lib.cronetReadCompletedOffset?.let(EbpfProbeProfile::formatOffset),
+                    cronetSucceededOffset = lib.cronetSucceededOffset?.let(EbpfProbeProfile::formatOffset),
+                )
+            },
+            unmatchedAppLibs = report?.unmatchedAppLibs.orEmpty(),
+            suggestedProfileJson = suggestedJson,
+            error = result.error,
+        )
+    }
 
     /**
      * 获取原生请求流。

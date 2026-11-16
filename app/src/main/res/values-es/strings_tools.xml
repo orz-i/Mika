@@ -65,4 +65,5 @@
     <string name="tool_wait_network">Esperar respuesta de red</string>
     <string name="tool_get_network_response">Obtener respuesta de red</string>
     <string name="tool_inspect_network">Inspeccionar solicitudes de red</string>
+    <string name="tool_probe_ebpf">Detectar desplazamientos de captura</string>
 </resources>

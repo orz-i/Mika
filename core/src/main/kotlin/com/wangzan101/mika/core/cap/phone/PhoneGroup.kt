@@ -28,6 +28,6 @@ internal object PhoneGroup {
         PhoneQuery, PhoneFind, PhoneExtract, PhoneCollect, PhoneWait, PhoneEventTool,
         PhoneDialog, PhoneGesture, SetWheel, PhoneRun, PhoneCommand, ListApps, LaunchApp, AppAfterTask, ShareText, OpenLink,
         SetAlarm, SetTimer, ShowAlarms, AddCalendarEvent, BulkAddCalendarEvents,
-        PhoneWaitNetwork, PhoneGetNetworkResponse, PhoneInspectNetwork,
+        PhoneWaitNetwork, PhoneGetNetworkResponse, PhoneInspectNetwork, PhoneProbeEbpf,
     )
 }

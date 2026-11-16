@@ -65,4 +65,5 @@
     <string name="tool_wait_network">等待网络响应</string>
     <string name="tool_get_network_response">获取网络响应体</string>
     <string name="tool_inspect_network">查看近期网络请求</string>
+    <string name="tool_probe_ebpf">探测抓包偏移</string>
 </resources>
