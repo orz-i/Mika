@@ -67,7 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置里能进入的子页面;[Home] 是设置首页,[Advanced] 集中放置连接、维护和工程能力。 */
-private enum class SettingsPage { Home, Advanced, AppAccess, PhoneOps, Wechat, DuringWork, Capsule, Language, Notifications, Recommendations, Sandbox, Recovery, SelfCheck, ComputerAccess, McpServers, Root, NetworkCapture, Developer, RunStats }
+private enum class SettingsPage { Home, Advanced, AppAccess, PhoneOps, JumpConfirmProfiles, Wechat, DuringWork, Capsule, Language, Notifications, Recommendations, Sandbox, Recovery, SelfCheck, ComputerAccess, McpServers, Root, NetworkCapture, Developer, RunStats }
 
 /**
  * 设置页:总状态卡 + 常用 / 我的数据 / 其他。高级与其他只增加一层,各子页返回来时的页面。
@@ -107,6 +107,8 @@ fun SettingsScreen(
     // 并行任务的上限只在实验开关 parallelTasks 打开时出现;设备能力按此刻算,第二块屏建失败过就按失败算
     val context = LocalContext.current
     val recommendedTasks = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).recommendedTasks }
+    val jumpConfirmProfiles = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).jumpConfirmProfiles }
+    val jumpConfirmProfilesState by jumpConfirmProfiles.state.collectAsState()
     val root = remember { com.wangzan101.mika.cap.phone.PhoneServices.of(context).shellManager.root }
     val rootState by root.state.collectAsState()
     LaunchedEffect(Unit) { root.refresh() }
@@ -124,6 +126,8 @@ fun SettingsScreen(
     var capsuleIdleOpacity by remember { mutableStateOf(flags.capsuleIdleOpacity()) }
     var networkCaptureEnabled by remember { mutableStateOf(flags.networkCaptureEnabled()) }
     var networkCaptureMode by remember { mutableStateOf(flags.networkCaptureMode()) }
+    var jumpConfirmHosting by remember { mutableStateOf(flags.jumpConfirmHosting()) }
+    var jumpConfirmAutoBlocked by remember { mutableStateOf(flags.jumpConfirmAutoBlocked(BuildConfig.VERSION_CODE)) }
     // 换语言时界面会重建,这里每次进来读一次即可
     val language = remember { AppLanguage.current(context) }
     val runtimeLimit by (context.applicationContext as com.wangzan101.mika.MikaApp).taskState.parallelLimit.collectAsState()
@@ -160,6 +164,7 @@ fun SettingsScreen(
     val toAdvanced = { page = SettingsPage.Advanced }
     val back = {
         page = when (page) {
+            SettingsPage.JumpConfirmProfiles -> SettingsPage.PhoneOps
             SettingsPage.RunStats -> SettingsPage.Developer
             SettingsPage.SelfCheck -> SettingsPage.Recovery
             SettingsPage.Sandbox, SettingsPage.Recovery, SettingsPage.ComputerAccess,
@@ -212,7 +217,21 @@ fun SettingsScreen(
         SettingsPage.PhoneOps -> PhoneOpsScreen(
             status, androidRelease, onProblem,
             onRepair = { onFix(Fix.RepairPhoneHelper) }, onUnpair = { onFix(Fix.UnpairPhoneHelper) }, onBack = toHome,
+            jumpConfirmHosting = jumpConfirmHosting,
+            onJumpConfirmHosting = { on ->
+                flags.setJumpConfirmHosting(on)
+                jumpConfirmHosting = flags.jumpConfirmHosting()
+                jumpConfirmAutoBlocked = flags.jumpConfirmAutoBlocked(BuildConfig.VERSION_CODE)
+            },
+            jumpConfirmAutoBlocked = jumpConfirmAutoBlocked,
+            onClearJumpConfirmAutoBlocked = {
+                flags.clearJumpConfirmAutoBlocked()
+                jumpConfirmAutoBlocked = false
+            },
+            jumpConfirmActiveProfileCount = jumpConfirmProfilesState.profiles.count { it.enabled },
+            onOpenJumpConfirmProfiles = { page = SettingsPage.JumpConfirmProfiles },
         )
+        SettingsPage.JumpConfirmProfiles -> JumpConfirmProfilesScreen(onBack = { page = SettingsPage.PhoneOps })
         SettingsPage.Notifications -> NotificationsScreen(status, onFix = ::fix, onBack = back)
         SettingsPage.DuringWork -> DuringWorkScreen(
             keepScreenOn, onKeepScreenOn = { flags.setKeepScreenOn(it); keepScreenOn = it },

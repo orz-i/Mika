@@ -65,6 +65,12 @@ fun PhoneOpsScreen(
     onRepair: () -> Unit,
     onUnpair: () -> Unit,
     onBack: () -> Unit,
+    jumpConfirmHosting: Boolean = false,
+    onJumpConfirmHosting: (Boolean) -> Unit = {},
+    jumpConfirmAutoBlocked: Boolean = false,
+    onClearJumpConfirmAutoBlocked: () -> Unit = {},
+    jumpConfirmActiveProfileCount: Int = 0,
+    onOpenJumpConfirmProfiles: () -> Unit = {},
 ) {
     val check = Prerequisites.check(status, hasMainModel = true)
     var confirmUnpair by remember { mutableStateOf(false) }
@@ -121,6 +127,45 @@ fun PhoneOpsScreen(
                 )
             }
             FooterNote(PhoneSetupCopy.usageNote(status.helperRestart))
+
+            GroupLabel(stringResource(R.string.settings_jump_confirm_group))
+            GroupCard {
+                ListRow(
+                    MikaIcons.External,
+                    stringResource(R.string.settings_jump_confirm_hosting),
+                    stringResource(R.string.settings_jump_confirm_hosting_sub),
+                    first = true,
+                    onClick = { onJumpConfirmHosting(!jumpConfirmHosting) },
+                ) {
+                    MikaSwitch(jumpConfirmHosting, onJumpConfirmHosting, Modifier.testTag("phone-jump-confirm-hosting"))
+                }
+                ListRow(
+                    MikaIcons.Apps,
+                    stringResource(R.string.settings_jump_confirm_profiles_row),
+                    stringResource(R.string.settings_jump_confirm_profiles_row_sub),
+                    onClick = onOpenJumpConfirmProfiles,
+                ) {
+                    RowValue(
+                        if (jumpConfirmActiveProfileCount > 0) {
+                            stringResource(R.string.settings_jump_confirm_profiles_count, jumpConfirmActiveProfileCount)
+                        } else {
+                            stringResource(R.string.settings_jump_confirm_profiles_none)
+                        },
+                    )
+                    RowChevron()
+                }
+                if (jumpConfirmAutoBlocked) {
+                    ListRow(
+                        MikaIcons.Close,
+                        stringResource(R.string.settings_jump_confirm_auto_blocked),
+                        tone = TileTone.Warn,
+                        onClick = onClearJumpConfirmAutoBlocked,
+                    ) {
+                        RowValue(stringResource(R.string.settings_jump_confirm_clear_block), ValueTone.Link)
+                    }
+                }
+            }
+            FooterNote(stringResource(R.string.settings_jump_confirm_hosting_footer))
         }
     }
     if (confirmUnpair) {
