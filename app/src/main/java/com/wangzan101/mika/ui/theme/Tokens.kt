@@ -61,6 +61,10 @@ object MikaRadius {
     val BubbleTail = 6.dp
     val Button = 14.dp
     val Tile = 9.dp
+    val Sheet = 24.dp
+    val Dialog = 28.dp
+    val SegmentOuter = 11.dp
+    val SegmentInner = 8.5.dp
 }
 
 /** 常用形状;顶层常量,重组时不新建。 */
@@ -72,5 +76,7 @@ object MikaShapes {
     val AnswerBubble = RoundedCornerShape(MikaRadius.Bubble, MikaRadius.Bubble, MikaRadius.Bubble, MikaRadius.BubbleTail)
     val Button = RoundedCornerShape(MikaRadius.Button)
     val Tile = RoundedCornerShape(MikaRadius.Tile)
+    val Dialog = RoundedCornerShape(MikaRadius.Dialog)
+    val Sheet = RoundedCornerShape(topStart = MikaRadius.Sheet, topEnd = MikaRadius.Sheet)
     val Pill = CircleShape
 }

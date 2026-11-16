@@ -3,6 +3,7 @@ package com.wangzan101.mika.ui.components
 import com.wangzan101.mika.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,12 +12,15 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -26,19 +30,26 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaShapes
+import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 
 /**
- * 二级页的骨架:页面底 + 顶栏(左上角返回)+ 下面可滚动的内容(左右各 16)。
- * 内容很长、要懒加载的页面不用它,自己在 [TopBar] 下面放 LazyColumn。
+ * 二级页的骨架：页面底 + 悬浮玻璃顶栏（左上角返回）+ 下面可滚动的内容（左右各 16）。
+ * 内容很长、要懒加载的页面不用它，自己在 [TopBar] 下面放 LazyColumn。
  */
 @Composable
 fun SubPage(
@@ -46,18 +57,49 @@ fun SubPage(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     right: (@Composable RowScope.() -> Unit)? = null,
+    floatingTopBar: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    PageBackground {
-        Column(Modifier.fillMaxSize()) {
-            TopBar(title, MikaIcons.Back, onBack, stringResource(R.string.back), right = right)
-            Column(
-                modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-                content = content,
-            )
+    val backLabel = stringResource(R.string.back)
+    if (!floatingTopBar) {
+        PageBackground {
+            Column(Modifier.fillMaxSize()) {
+                TopBar(title, MikaIcons.Back, onBack, backLabel, right = right)
+                Column(
+                    modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding()
+                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                    content = content,
+                )
+            }
         }
+        return
     }
+    val density = LocalDensity.current
+    val initialTopPx = WindowInsets.statusBars.getTop(density) + with(density) { MikaSize.TopBar.roundToPx() }
+    var topBarHeightPx by remember { mutableIntStateOf(initialTopPx) }
+    val topBarHeightDp = with(density) { topBarHeightPx.toDp() }
+    GlassBackdropHost(
+        modifier = Modifier.fillMaxSize(),
+        content = {
+            PageBackground {
+                Column(Modifier.fillMaxSize()) {
+                    Spacer(Modifier.height(topBarHeightDp))
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth().then(modifier)
+                            .verticalScroll(rememberScrollState())
+                            .navigationBarsPadding()
+                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                        content = content,
+                    )
+                }
+            }
+        },
+        overlay = {
+            Box(Modifier.onSizeChanged { if (it.height > 0) topBarHeightPx = it.height }) {
+                TopBar(title, MikaIcons.Back, onBack, backLabel, right = right)
+            }
+        },
+    )
 }
 
 /** 行下面的一排操作按钮(小号胶囊),和行的文字对齐。 */
@@ -71,7 +113,7 @@ fun RowActions(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** 搜索框:浅填充底、圆角 14、高 40,左边放大镜。给了 [onSubmit] 时键盘上是「前往」,按下交给它。 */
+/** 搜索框:浅磨砂填充底+高光边、圆角 14、高 40,左边放大镜。给了 [onSubmit] 时键盘上是「前往」,按下交给它。 */
 @Composable
 fun SearchField(
     value: String,
@@ -82,7 +124,13 @@ fun SearchField(
 ) {
     val c = MikaTheme.colors
     Row(
-        Modifier.fillMaxWidth().height(40.dp).keepsKeyboard().background(c.fill, MikaShapes.Button).padding(horizontal = 12.dp),
+        Modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .keepsKeyboard()
+            .background(c.glassSubtle, MikaShapes.Button)
+            .border(0.75.dp, specularBorderBrush(c), MikaShapes.Button)
+            .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

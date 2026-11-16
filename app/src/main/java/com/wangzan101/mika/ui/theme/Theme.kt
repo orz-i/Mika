@@ -7,6 +7,7 @@ import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
@@ -39,6 +40,14 @@ object MikaMotion {
 
     fun <T> page(reduceMotion: Boolean): AnimationSpec<T> = if (reduceMotion) snap() else tween(PAGE_MS, easing = Decelerate)
     fun <T> switch(reduceMotion: Boolean): AnimationSpec<T> = if (reduceMotion) snap() else tween(SWITCH_MS, easing = Decelerate)
+    fun <T> pressSpring(reduceMotion: Boolean): AnimationSpec<T> =
+        if (reduceMotion) snap() else spring(dampingRatio = 0.72f, stiffness = 620f)
+    fun <T> switchSpring(reduceMotion: Boolean): AnimationSpec<T> =
+        if (reduceMotion) snap() else spring(dampingRatio = 0.76f, stiffness = 520f)
+    fun <T> pillSpring(reduceMotion: Boolean): AnimationSpec<T> =
+        if (reduceMotion) snap() else spring(dampingRatio = 0.82f, stiffness = 460f)
+    fun <T> glassReveal(reduceMotion: Boolean): AnimationSpec<T> =
+        if (reduceMotion) snap() else spring(dampingRatio = 0.88f, stiffness = 380f)
 }
 
 /** 系统「移除动画」(动画时长缩放为 0)时为真。 */

@@ -1,9 +1,13 @@
 package com.wangzan101.mika.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,41 +29,54 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.wangzan101.mika.ui.theme.MikaMotion
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaMotion
+import com.wangzan101.mika.ui.theme.MikaRadius
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
-import androidx.compose.runtime.getValue
+import kotlin.math.PI
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 // ---------- 开关 ----------
 
 /**
- * 开关:44×26,打开时强调蓝。动画 200ms 减速,系统关了动画时直接到位。
- * [onCheckedChange] 为空时只显示(整行可点时用)。
+ * 液态玻璃开关：44×26，打开时强调蓝渐变伴轻柔光晕，切换过程带弹簧物理与高光滑块形变。
+ * 严格遵守 [MikaTheme.reduceMotion]；[onCheckedChange] 为空时只显示(整行可点时用)。
  */
 @Composable
 fun MikaSwitch(
@@ -70,27 +87,69 @@ fun MikaSwitch(
 ) {
     val c = MikaTheme.colors
     val reduce = MikaTheme.reduceMotion
-    val position by animateFloatAsState(if (checked) 1f else 0f, MikaMotion.switch(reduce), label = "switch")
-    val track by animateColorAsState(if (checked) c.accent else c.greySoft, MikaMotion.switch(reduce), label = "switch-track")
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val position by animateFloatAsState(if (checked) 1f else 0f, MikaMotion.switchSpring(reduce), label = "switch")
+    val trackBottom by animateColorAsState(if (checked) c.accent else c.glassTonal, MikaMotion.switchSpring(reduce), label = "switch-track")
+    val trackTop by animateColorAsState(if (checked) c.accentHighlight else c.glassSubtle, MikaMotion.switchSpring(reduce), label = "switch-track-top")
+    val pressStretch by animateFloatAsState(if (pressed && enabled && !reduce) 1f else 0f, MikaMotion.pressSpring(reduce), label = "switch-press")
     val thumb = c.thumb
-    val ring = c.floatShadow.copy(alpha = 0.12f)
+    val shadowRing = c.floatShadow.copy(alpha = 0.16f)
     Box(
         modifier
             .then(
-                if (onCheckedChange != null) Modifier.minimumInteractiveComponentSize()
-                    .toggleable(checked, enabled = enabled, role = Role.Switch, interactionSource = null, indication = null, onValueChange = onCheckedChange)
-                else Modifier,
+                if (onCheckedChange != null) {
+                    Modifier.minimumInteractiveComponentSize()
+                        .toggleable(checked, enabled = enabled, role = Role.Switch, interactionSource = interaction, indication = null, onValueChange = onCheckedChange)
+                } else {
+                    Modifier
+                },
             )
             .size(44.dp, 26.dp)
             .alpha(if (enabled) 1f else 0.4f)
             .drawBehind {
-                drawRoundRect(track, cornerRadius = CornerRadius(size.height / 2))
+                val corner = CornerRadius(size.height / 2)
+                if (position > 0.02f && c.accentGlow.alpha > 0f) {
+                    val pad = 1.5.dp.toPx()
+                    drawRoundRect(
+                        c.accentGlow.copy(alpha = c.accentGlow.alpha * 0.45f * position),
+                        topLeft = Offset(-pad, -pad),
+                        size = Size(size.width + pad * 2, size.height + pad * 2),
+                        cornerRadius = CornerRadius(size.height / 2 + pad),
+                    )
+                }
+                drawRoundRect(Brush.verticalGradient(listOf(trackTop, trackBottom)), cornerRadius = corner)
+                drawRoundRect(
+                    if (checked) Color.White.copy(alpha = 0.28f) else c.glassEdge,
+                    cornerRadius = corner,
+                    style = Stroke(0.75.dp.toPx()),
+                )
                 val r = 11.dp.toPx()
                 val inset = 2.dp.toPx()
-                val cx = inset + r + (size.width - 2 * (inset + r)) * position
-                val center = Offset(cx, size.height / 2)
-                drawCircle(ring, r + 0.6.dp.toPx(), center.copy(y = center.y + 0.5.dp.toPx()))
-                drawCircle(thumb, r, center)
+                val travel = (size.width - 2 * (inset + r)).coerceAtLeast(0f)
+                val cx = inset + r + travel * position
+                val cy = size.height / 2
+                val glide = if (reduce) 0f else sin(position.coerceIn(0f, 1f) * PI).toFloat()
+                val rx = r * (1f + 0.14f * maxOf(glide, pressStretch * 0.8f))
+                val ry = r
+                val maxRx = (size.width - inset * 2) * 0.5f
+                val clampedRx = rx.coerceAtMost(maxRx)
+                val thumbTopLeft = Offset(cx - clampedRx, cy - ry)
+                val thumbSize = Size(clampedRx * 2, ry * 2)
+                drawRoundRect(
+                    shadowRing,
+                    topLeft = Offset(thumbTopLeft.x - 0.4.dp.toPx(), thumbTopLeft.y + 0.7.dp.toPx()),
+                    size = Size(thumbSize.width + 0.8.dp.toPx(), thumbSize.height + 0.5.dp.toPx()),
+                    cornerRadius = CornerRadius(ry),
+                )
+                drawRoundRect(thumb, topLeft = thumbTopLeft, size = thumbSize, cornerRadius = CornerRadius(ry))
+                drawRoundRect(
+                    Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.9f), Color.Transparent)),
+                    topLeft = thumbTopLeft,
+                    size = thumbSize,
+                    cornerRadius = CornerRadius(ry),
+                    style = Stroke(0.75.dp.toPx()),
+                )
             },
     )
 }
@@ -103,15 +162,18 @@ enum class PillTone { Ok, Warn, Neutral, Accent }
 @Composable
 fun StatusPill(text: String, tone: PillTone = PillTone.Neutral, modifier: Modifier = Modifier) {
     val c = MikaTheme.colors
-    val (bg, fg) = when (tone) {
-        PillTone.Ok -> c.okSoft to c.ok
-        PillTone.Warn -> c.warnSoft to c.warn
-        PillTone.Accent -> c.accentSoft to c.accent
-        PillTone.Neutral -> c.greySoft to c.ink2
+    val (bg, fg, rim) = when (tone) {
+        PillTone.Ok -> Triple(c.okSoft, c.ok, c.ok.copy(alpha = 0.24f))
+        PillTone.Warn -> Triple(c.warnSoft, c.warn, c.warnSolid.copy(alpha = 0.28f))
+        PillTone.Accent -> Triple(c.accentSoft, c.accent, c.accent.copy(alpha = 0.24f))
+        PillTone.Neutral -> Triple(c.glassSubtle, c.ink2, c.glassEdge)
     }
     Text(
-        text, modifier.background(bg, MikaShapes.Pill).padding(horizontal = 9.dp, vertical = 3.dp),
-        style = PillText, color = fg, maxLines = 1,
+        text,
+        modifier.background(bg, MikaShapes.Pill).border(0.5.dp, rim, MikaShapes.Pill).padding(horizontal = 9.dp, vertical = 3.dp),
+        style = PillText,
+        color = fg,
+        maxLines = 1,
     )
 }
 
@@ -119,8 +181,8 @@ private val PillText = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeigh
 
 // ---------- 按钮 ----------
 
-/** 主按钮(强调蓝实底)、浅色次按钮(白底蓝字)、浅填充按钮、文字按钮。 */
-enum class ButtonKind { Primary, Secondary, Tonal, Text }
+/** 主按钮(强调蓝渐变+光晕)、浅色次按钮(磨砂玻璃卡)、浅填充按钮、文字按钮、实时液态玻璃按钮。 */
+enum class ButtonKind { Primary, Secondary, Tonal, Text, Glass }
 
 /** 大:页面底部 52;中:卡片里并排 42;小:行内 32 的胶囊。 */
 enum class ButtonSize(val height: Dp, val shape: RoundedCornerShape, val text: TextStyle, val padding: Dp) {
@@ -141,17 +203,38 @@ fun MikaButton(
 ) {
     val c = MikaTheme.colors
     val shape = size.shape
-    val (bg, fg) = when (kind) {
-        ButtonKind.Primary -> c.accent to c.onAccent
-        ButtonKind.Secondary -> c.surface to c.accent
-        ButtonKind.Tonal -> c.fill to c.ink
-        ButtonKind.Text -> Color.Transparent to c.accent
+    val interaction = remember { MutableInteractionSource() }
+    val fg = when (kind) {
+        ButtonKind.Primary -> c.onAccent
+        ButtonKind.Secondary, ButtonKind.Text -> c.accent
+        ButtonKind.Tonal, ButtonKind.Glass -> c.ink
+    }
+    val surfaceMod = when (kind) {
+        ButtonKind.Primary -> Modifier
+            .then(
+                if (enabled && c.accentGlow.alpha > 0f) {
+                    Modifier.shadow(10.dp, shape, clip = false, ambientColor = c.accentGlow, spotColor = c.accentGlow)
+                } else {
+                    Modifier
+                },
+            )
+            .background(Brush.verticalGradient(listOf(c.accentHighlight, c.accent)), shape)
+            .border(
+                0.75.dp,
+                Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.08f))),
+                shape,
+            )
+        ButtonKind.Secondary -> Modifier.cardSurface(c, shape, elevated = true)
+        ButtonKind.Tonal -> Modifier.background(c.glassTonal, shape).border(0.75.dp, specularBorderBrush(c), shape)
+        ButtonKind.Glass -> Modifier.liquidGlass(GlassMaterials.FloatingPill, backdrop = LocalGlassBackdrop.current, shape = shape)
+        ButtonKind.Text -> Modifier
     }
     Box(
         modifier
-            .then(if (kind == ButtonKind.Secondary) Modifier.cardSurface(c, shape) else Modifier.background(bg, shape))
+            .mikaPress(interaction, enabled = enabled, pressedScale = if (kind == ButtonKind.Text) 0.98f else 0.965f, shape = shape)
+            .then(surfaceMod)
             .clip(shape)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
             .alpha(if (enabled) 1f else 0.45f)
             .height(size.height)
             .padding(horizontal = size.padding),
@@ -163,7 +246,7 @@ fun MikaButton(
 
 // ---------- 分段控件 ----------
 
-/** 分段控件:浅填充底,选中的一段是白色浮起。[tags] 是各段的测试标签。 */
+/** 分段控件：浅玻璃底槽 + 弹性滑动的悬浮玻璃胶囊指示器。[tags] 是各段的测试标签。 */
 @Composable
 fun SegmentedControl(
     options: List<String>,
@@ -173,29 +256,72 @@ fun SegmentedControl(
     tags: List<String>? = null,
 ) {
     val c = MikaTheme.colors
-    Row(modifier.fillMaxWidth().background(c.fill, SegmentOuter).padding(2.dp)) {
-        options.forEachIndexed { i, label ->
-            val on = i == selected
-            Box(
-                Modifier.weight(1f).height(32.dp)
-                    .then(
-                        if (on) Modifier.shadow(1.dp, SegmentInner, clip = false, ambientColor = c.cardShadow, spotColor = c.cardShadow)
-                            .background(c.surface, SegmentInner)
-                        else Modifier,
+    val reduce = MikaTheme.reduceMotion
+    val safeSelected = if (options.isEmpty()) 0 else selected.coerceIn(0, options.lastIndex)
+    val indicatorIndex by animateFloatAsState(safeSelected.toFloat(), MikaMotion.pillSpring(reduce), label = "segment-pill")
+    val borderBrush = remember(c) { specularBorderBrush(c) }
+    val sheenAlpha = if (c.isDark) 0.10f else 0.18f
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(c.glassSubtle, SegmentOuter)
+            .border(0.75.dp, borderBrush, SegmentOuter)
+            .padding(3.dp),
+    ) {
+        if (options.isNotEmpty()) {
+            Layout(
+                content = {
+                    Box(
+                        Modifier
+                            .then(
+                                if (c.cardShadow.alpha > 0f) {
+                                    Modifier.shadow(3.dp, SegmentInner, clip = false, ambientColor = c.cardShadow.copy(alpha = 0.22f), spotColor = c.cardShadow.copy(alpha = 0.16f))
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .clip(SegmentInner)
+                            .background(c.glassCardElevated, SegmentInner)
+                            .border(0.75.dp, borderBrush, SegmentInner)
+                            .drawWithContent {
+                                drawGlassSheen(sheenAlpha)
+                                drawContent()
+                            },
                     )
-                    .clip(SegmentInner)
-                    .selectable(on, role = Role.Tab) { onSelect(i) }
-                    .then(if (tags != null) Modifier.testTag(tags[i]) else Modifier),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(label, style = SegmentText, color = if (on) c.ink else c.ink2, maxLines = 1)
+                    Row(Modifier.fillMaxWidth()) {
+                        options.forEachIndexed { i, label ->
+                            val on = i == selected
+                            val textColor by animateColorAsState(if (on) c.ink else c.ink2, MikaMotion.pressSpring(reduce), label = "seg-txt-$i")
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .height(32.dp)
+                                    .clip(SegmentInner)
+                                    .selectable(on, role = Role.Tab) { onSelect(i) }
+                                    .then(if (tags != null) Modifier.testTag(tags[i]) else Modifier),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(label, style = SegmentText, color = textColor, maxLines = 1)
+                            }
+                        }
+                    }
+                },
+            ) { measurables, constraints ->
+                val rowPlaceable = measurables[1].measure(constraints)
+                val tabW = (rowPlaceable.width / options.size).coerceAtLeast(1)
+                val pillPlaceable = measurables[0].measure(Constraints.fixed(tabW, rowPlaceable.height))
+                layout(rowPlaceable.width, rowPlaceable.height) {
+                    pillPlaceable.placeRelative((tabW * indicatorIndex).roundToInt(), 0)
+                    rowPlaceable.placeRelative(0, 0)
+                }
             }
         }
     }
 }
 
-private val SegmentOuter = RoundedCornerShape(10.dp)
-private val SegmentInner = RoundedCornerShape(8.dp)
+private val SegmentOuter = RoundedCornerShape(MikaRadius.SegmentOuter)
+private val SegmentInner = RoundedCornerShape(MikaRadius.SegmentInner)
 private val SegmentText = TextStyle(fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
 
 /** Mirrors horizontal navigation symbols in RTL while leaving non-directional artwork unchanged. */
@@ -209,8 +335,8 @@ fun DirectionalIcon(icon: ImageVector, contentDescription: String?, modifier: Mo
 // ---------- 顶栏 ----------
 
 /**
- * 顶栏上的圆形图标按钮,40dp。[glass] 为真时是浮在内容上的白色玻璃圆。
- * [badge] 为真时右上角一个强调色小圆点(有别的事在进行);[enabled] 为假时变淡、不可点。
+ * 顶栏上的圆形图标按钮，40dp。[glass] 为真时是浮在内容上的真实液态玻璃圆（带折射与高光边）。
+ * [badge] 为真时右上角一个强调色小圆点(有别的事在进行)；[enabled] 为假时变淡、不可点。
  */
 @Composable
 fun BarIconButton(
@@ -220,13 +346,21 @@ fun BarIconButton(
     glass: Boolean = false,
     enabled: Boolean = true,
     badge: Boolean = false,
+    backdrop: GlassBackdrop? = LocalGlassBackdrop.current,
 ) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val glassModifier = if (glass) {
+        Modifier.liquidGlass(GlassMaterials.IconCircle, backdrop = backdrop, shape = CircleShape)
+    } else {
+        Modifier.clip(CircleShape)
+    }
     Box(
-        Modifier.size(MikaSize.IconButton)
-            .then(if (glass) Modifier.floatShadow(c, CircleShape).background(c.surface, CircleShape) else Modifier)
-            .clip(CircleShape)
-            .clickable(enabled = enabled, onClickLabel = label, role = Role.Button, onClick = onClick),
+        Modifier
+            .mikaPress(interaction, enabled = enabled, pressedScale = 0.92f, shape = CircleShape)
+            .size(MikaSize.IconButton)
+            .then(glassModifier)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, onClickLabel = label, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         DirectionalIcon(icon, label, Modifier.size(MikaSize.Icon).alpha(if (enabled) 1f else 0.35f), tint = c.ink)
@@ -240,8 +374,9 @@ fun BarIconButton(
 }
 
 /**
- * 顶栏:56 高,左右各一个图标按钮位,标题居中,可带一行副标题。
- * 底色默认是页面底色,内容在它下面滚动时不透字。
+ * 顶栏：56 高，左右各一个图标按钮位，标题居中，可带一行副标题。
+ * 默认启用克制液态玻璃（[glass] = true）：从 [LocalGlassBackdrop] 取背景做模糊与底边折射；
+ * 同时消费未被子按钮处理的手势，防止误触滚到顶栏下方的列表项。
  */
 @Composable
 fun TopBar(
@@ -254,10 +389,29 @@ fun TopBar(
     right: (@Composable RowScope.() -> Unit)? = null,
     subtitle: String? = null,
     subtitleColor: Color = Color.Unspecified,
-    background: Color = MikaTheme.colors.bg,
+    background: Color = Color.Unspecified,
+    glass: Boolean = true,
+    backdrop: GlassBackdrop? = LocalGlassBackdrop.current,
 ) {
     val c = MikaTheme.colors
-    Box(Modifier.fillMaxWidth().background(background).windowInsetsPadding(WindowInsets.statusBars)) {
+    val surfaceMod = if (glass && background == Color.Unspecified) {
+        Modifier.liquidGlass(GlassMaterials.TopBar, backdrop = backdrop, shape = RectangleShape)
+    } else {
+        Modifier.background(if (background == Color.Unspecified) c.bg else background)
+    }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .then(surfaceMod)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent().changes.forEach { if (!it.isConsumed) it.consume() }
+                    }
+                }
+            }
+            .windowInsetsPadding(WindowInsets.statusBars),
+    ) {
         Row(
             Modifier.fillMaxWidth().height(MikaSize.TopBar).padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -286,17 +440,20 @@ fun TopBar(
 fun SelectChip(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, small: Boolean = false) {
     val c = MikaTheme.colors
     val shape = if (small) SmallChipShape else MikaShapes.Pill
+    val interaction = remember { MutableInteractionSource() }
     Box(
         modifier
+            .mikaPress(interaction, pressedScale = 0.96f, shape = shape)
             .then(
                 when {
                     selected -> Modifier.background(c.ink, shape)
-                    small -> Modifier.background(c.fill, shape)
+                        .border(0.75.dp, c.specularHighlight.copy(alpha = if (c.isDark) 0.24f else 0.35f), shape)
+                    small -> Modifier.background(c.glassSubtle, shape).border(0.5.dp, c.glassEdge, shape)
                     else -> Modifier.cardSurface(c, shape)
                 },
             )
             .clip(shape)
-            .selectable(selected, role = Role.RadioButton, onClick = onClick)
+            .selectable(selected, interactionSource = interaction, indication = null, role = Role.RadioButton, onClick = onClick)
             .height(if (small) 28.dp else 34.dp)
             .padding(horizontal = if (small) 10.dp else 14.dp),
         contentAlignment = Alignment.Center,
@@ -320,8 +477,18 @@ enum class TagTone { Neutral, Accent }
 @Composable
 fun CapabilityTag(text: String, tone: TagTone = TagTone.Neutral) {
     val c = MikaTheme.colors
-    val (bg, fg) = if (tone == TagTone.Accent) c.accentSoft to c.accent else c.greySoft to c.ink2
-    Text(text, Modifier.background(bg, TagShape).padding(horizontal = 7.dp, vertical = 2.dp), style = TagText, color = fg, maxLines = 1)
+    val (bg, fg, rim) = if (tone == TagTone.Accent) {
+        Triple(c.accentSoft, c.accent, c.accent.copy(alpha = 0.22f))
+    } else {
+        Triple(c.glassSubtle, c.ink2, c.glassEdge)
+    }
+    Text(
+        text,
+        Modifier.background(bg, TagShape).border(0.5.dp, rim, TagShape).padding(horizontal = 7.dp, vertical = 2.dp),
+        style = TagText,
+        color = fg,
+        maxLines = 1,
+    )
 }
 
 private val TagShape = RoundedCornerShape(7.dp)
@@ -333,9 +500,11 @@ private val TagText = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight
 @Composable
 fun ProgressDots(count: Int, current: Int, modifier: Modifier = Modifier) {
     val c = MikaTheme.colors
+    val reduce = MikaTheme.reduceMotion
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)) {
         repeat(count) { i ->
-            Box(Modifier.size(if (i == current) 18.dp else 6.dp, 6.dp).background(if (i == current) c.accent else c.hair, CircleShape))
+            val w by animateDpAsState(if (i == current) 18.dp else 6.dp, MikaMotion.pillSpring(reduce), label = "dot-w-$i")
+            Box(Modifier.size(w, 6.dp).background(if (i == current) c.accent else c.hair, CircleShape))
         }
     }
 }

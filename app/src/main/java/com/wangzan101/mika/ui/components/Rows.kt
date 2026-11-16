@@ -1,8 +1,11 @@
 package com.wangzan101.mika.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,11 +29,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -39,6 +45,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.ui.theme.MikaColors
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaMotion
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaTheme
@@ -75,8 +82,15 @@ enum class TileTone {
 /** 行左边的图标块:30dp、圆角 9,里面图形 18dp。 */
 @Composable
 fun IconTile(icon: ImageVector, tone: TileTone = TileTone.Neutral) {
-    val (bg, fg) = tone.colors(MikaTheme.colors)
-    Box(Modifier.size(MikaSize.Tile).background(bg, MikaShapes.Tile), contentAlignment = Alignment.Center) {
+    val c = MikaTheme.colors
+    val (bg, fg) = tone.colors(c)
+    Box(
+        Modifier
+            .size(MikaSize.Tile)
+            .background(bg, MikaShapes.Tile)
+            .border(0.5.dp, c.specularHighlight.copy(alpha = if (c.isDark) 0.16f else 0.55f), MikaShapes.Tile),
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(icon, null, Modifier.size(MikaSize.TileIcon), tint = fg)
     }
 }
@@ -112,10 +126,18 @@ fun ListRow(
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val clickMod = if (onClick != null) {
+        Modifier
+            .mikaPress(interaction, pressedScale = 0.988f)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+    } else {
+        Modifier
+    }
     Row(
         Modifier.fillMaxWidth()
             .topHairline(first, if (icon != null) TextStartWithIcon else TextStartPlain, c.hair)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(clickMod)
             .heightIn(min = MikaSize.RowMin)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -172,10 +194,12 @@ fun RadioRow(
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Row(
         Modifier.fillMaxWidth()
             .topHairline(first, 50.dp, c.hair)
-            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .mikaPress(interaction, enabled = enabled, pressedScale = 0.988f)
+            .selectable(selected, interactionSource = interaction, indication = null, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .heightIn(min = 56.dp)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -194,12 +218,18 @@ fun RadioRow(
 @Composable
 private fun RadioMark(selected: Boolean, enabled: Boolean = true) {
     val c = MikaTheme.colors
-    if (selected && enabled) {
-        Box(Modifier.size(22.dp).background(c.accent, CircleShape), contentAlignment = Alignment.Center) {
-            Box(Modifier.size(10.dp).background(c.onAccent, CircleShape))
+    val reduce = MikaTheme.reduceMotion
+    val active = selected && enabled
+    val fill by animateColorAsState(if (active) c.accent else Color.Transparent, MikaMotion.switchSpring(reduce), label = "radio-fill")
+    val ring by animateColorAsState(if (active) c.accent else c.hair, MikaMotion.switchSpring(reduce), label = "radio-ring")
+    val innerScale by animateFloatAsState(if (active) 1f else 0f, MikaMotion.switchSpring(reduce), label = "radio-dot")
+    Box(
+        Modifier.size(22.dp).background(fill, CircleShape).border(1.6.dp, ring, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (innerScale > 0.01f) {
+            Box(Modifier.size(10.dp).graphicsLayer { scaleX = innerScale; scaleY = innerScale }.background(c.onAccent, CircleShape))
         }
-    } else {
-        Box(Modifier.size(22.dp).border(1.6.dp, c.hair, CircleShape))
     }
 }
 

@@ -1,6 +1,7 @@
 package com.wangzan101.mika.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
@@ -43,7 +44,11 @@ fun Modifier.lazyListScrollbar(
             shown = false
         }
     }
-    val alpha by animateFloatAsState(if (shown) THUMB_ALPHA else 0f, tween(if (shown) 120 else 400), label = "scrollbar")
+    val alpha by animateFloatAsState(
+        targetValue = if (shown) THUMB_ALPHA else 0f,
+        animationSpec = if (MikaTheme.reduceMotion) snap() else tween(if (shown) 120 else 400),
+        label = "scrollbar",
+    )
     return drawWithContent {
         drawContent()
         if (alpha <= 0f) return@drawWithContent
