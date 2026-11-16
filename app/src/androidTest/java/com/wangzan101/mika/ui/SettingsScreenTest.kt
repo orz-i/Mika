@@ -614,5 +614,61 @@ class SettingsScreenTest {
         assertEquals("libcronet.120.0.0.1.so", savedProfiles[0].second.cronetOffsetRules.first().libSubstring)
         assertTrue(savedProfiles[0].second.replaceBuiltinOffsets)
     }
+
+    @Test
+    fun capturePluginProfilesScreenAutoScanAppliesDiscoveredOffsets() {
+        val discovered = EbpfProbeProfile(
+            sslOffsetRules = listOf(com.agent.use.common.network.plugin.EbpfSslOffsetRule("libcronet.122.0.0.1.so", 0x501000L, 0x502000L, 0x503000L)),
+            cronetOffsetRules = listOf(com.agent.use.common.network.plugin.EbpfCronetOffsetRule("libcronet.122.0.0.1.so", 0x230000L, 0x210000L, 0x211000L, 0x212000L)),
+            replaceBuiltinOffsets = true,
+        )
+        val savedProfiles = mutableListOf<Pair<String, EbpfProbeProfile>>()
+        compose.setContent {
+            CapturePluginProfilesContent(
+                entries = emptyList(),
+                installedApps = listOf("com.xingin.xhs" to "小红书"),
+                onBack = {},
+                onSaveProfile = { pkg, profile -> savedProfiles += pkg to profile },
+                onDiscoverPackage = { pkg ->
+                    com.agent.use.client.network.ebpf.EbpfDiscoveryResult(
+                        ok = true,
+                        report = com.agent.use.common.network.plugin.EbpfDiscoveryReport(
+                            uid = 10333,
+                            arch = "arm64",
+                            scannedLibrariesCount = 1,
+                            rawHeadersOffset = 0x20,
+                            ioBufferDataOffset = 0x10,
+                            stringLayoutMode = 0,
+                            vtableSlots = Triple(3, 4, 5),
+                            libraries = listOf(
+                                com.agent.use.common.network.plugin.DiscoveredLibraryProbe(
+                                    path = "/data/app/com.xingin.xhs/lib/arm64/libcronet.122.0.0.1.so",
+                                    name = "libcronet.122.0.0.1.so",
+                                    inAppDir = true,
+                                    sslSource = "stripped_heuristic",
+                                    sslWriteOffset = 0x501000L,
+                                    sslReadOffset = 0x502000L,
+                                    sslSniOffset = 0x503000L,
+                                    cronetSource = "elf_heuristic",
+                                    cronetCreateOffset = 0x230000L,
+                                    cronetResponseStartedOffset = 0x210000L,
+                                    cronetReadCompletedOffset = 0x211000L,
+                                    cronetSucceededOffset = 0x212000L,
+                                ),
+                            ),
+                        ),
+                        suggestedProfile = discovered,
+                    )
+                },
+            )
+        }
+        compose.onNodeWithText("自动扫描应用 SO 并识别偏移").performScrollTo().performClick()
+        compose.clickInDialog("开始扫描")
+        compose.clickInDialog("应用并保存规则")
+
+        assertEquals(1, savedProfiles.size)
+        assertEquals("com.xingin.xhs", savedProfiles[0].first)
+        assertEquals("libcronet.122.0.0.1.so", savedProfiles[0].second.cronetOffsetRules.first().libSubstring)
+    }
 }
 

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -26,6 +27,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.agent.use.client.network.ebpf.EbpfDiscoveryResult
+import com.agent.use.client.network.ebpf.LocalRootEbpfCaptureEngine
 import com.agent.use.common.network.plugin.EbpfCronetAbiRule
 import com.agent.use.common.network.plugin.EbpfCronetOffsetRule
 import com.agent.use.common.network.plugin.EbpfProbeProfile
@@ -230,10 +233,37 @@ internal object CapturePluginCopy {
         }
         return parts.joinToString("\n")
     }
+
+    fun formatDiscoverySummary(result: EbpfDiscoveryResult): String {
+        val report = result.report ?: return result.error ?: "discover_failed"
+        val sb = StringBuilder()
+        sb.append("UID=${report.uid} · 架构=${report.arch} · 已扫描 ${report.scannedLibrariesCount} 个 .so\n")
+        if (report.libraries.isEmpty()) {
+            sb.append("未检测到匹配的 SSL / Cronet 钩子目标。\n")
+        } else {
+            for (lib in report.libraries) {
+                val scopeTag = if (lib.inAppDir) "应用目录" else "系统库"
+                sb.append("\n• ${lib.name} [$scopeTag]\n")
+                if (lib.hasSsl) {
+                    sb.append("  SSL(${lib.sslSource}): write=${lib.sslWriteOffset?.let(EbpfProbeProfile::formatOffset)} · read=${lib.sslReadOffset?.let(EbpfProbeProfile::formatOffset)} · sni=${lib.sslSniOffset?.let(EbpfProbeProfile::formatOffset) ?: "0x0"}\n")
+                }
+                if (lib.hasCronet) {
+                    sb.append("  Cronet(${lib.cronetSource}): create=${lib.cronetCreateOffset?.let(EbpfProbeProfile::formatOffset)} · hdr=${lib.cronetResponseStartedOffset?.let(EbpfProbeProfile::formatOffset)} · read=${lib.cronetReadCompletedOffset?.let(EbpfProbeProfile::formatOffset)} · fin=${lib.cronetSucceededOffset?.let(EbpfProbeProfile::formatOffset)}\n")
+                }
+            }
+        }
+        if (report.unmatchedAppLibs.isNotEmpty()) {
+            sb.append("\n未匹配的应用 SO (${report.unmatchedAppLibs.size}): ${report.unmatchedAppLibs.take(8).joinToString(", ")}")
+            if (report.unmatchedAppLibs.size > 8) sb.append("…")
+        }
+        return sb.toString().trim()
+    }
 }
 
+private enum class PluginAppPickMode { DraftPackage, ScanTarget }
+
 /**
- * 设置 › 高级与其他 › 端侧网络抓包 › eBPF 探测规则：展示并配置小红书 `libcronet.114.0.5735.38.so` 等快速偏移与 ABI 参数。
+ * 设置 › 高级与其他 › 端侧网络抓包 › eBPF 探测规则：展示并配置小红书 `libcronet.114.0.5735.38.so` 等快速偏移与 ABI 参数，并支持 `--discover-only` 一键扫描。
  */
 @Composable
 fun CapturePluginProfilesScreen(onBack: () -> Unit) {
@@ -270,6 +300,11 @@ fun CapturePluginProfilesScreen(onBack: () -> Unit) {
             store.resetAll()
             refreshEntries()
         },
+        onDiscoverPackage = { pkg ->
+            withContext(Dispatchers.IO) {
+                LocalRootEbpfCaptureEngine.discoverAppProfile(context, pkg, useHeuristicsOnly = true)
+            }
+        },
     )
 }
 
@@ -281,13 +316,32 @@ fun CapturePluginProfilesContent(
     onSaveProfile: (packageName: String, profile: EbpfProbeProfile) -> Unit = { _, _ -> },
     onResetPackage: (packageName: String) -> Unit = {},
     onResetAll: () -> Unit = {},
+    onDiscoverPackage: (suspend (String) -> EbpfDiscoveryResult)? = null,
 ) {
     val appLabels = remember(installedApps) { installedApps.toMap() }
     var draft by remember { mutableStateOf<CapturePluginDraft?>(null) }
     var invalidDraft by remember { mutableStateOf(false) }
-    var pickingApp by remember { mutableStateOf(false) }
+    var appPickMode by remember { mutableStateOf<PluginAppPickMode?>(null) }
     var appSearch by remember { mutableStateOf("") }
     var confirmingResetAll by remember { mutableStateOf(false) }
+    var scanInputOpen by remember { mutableStateOf(false) }
+    var scanPackageInput by remember { mutableStateOf("com.xingin.xhs") }
+    var scanningPackage by remember { mutableStateOf<String?>(null) }
+    var discoveryOutcome by remember { mutableStateOf<Pair<String, EbpfDiscoveryResult>?>(null) }
+
+    LaunchedEffect(scanningPackage) {
+        val pkg = scanningPackage ?: return@LaunchedEffect
+        val discoverer = onDiscoverPackage
+        if (discoverer == null) {
+            scanningPackage = null
+            return@LaunchedEffect
+        }
+        val res = discoverer(pkg)
+        if (scanningPackage == pkg) {
+            scanningPackage = null
+            discoveryOutcome = pkg to res
+        }
+    }
 
     val genericName = stringResource(R.string.network_capture_plugins_generic_name)
     fun displayTitle(entry: CapturePluginEntry): String = when (entry.packageName) {
@@ -299,10 +353,24 @@ fun CapturePluginProfilesContent(
     PageScaffold(stringResource(R.string.network_capture_plugins_title), onBack) {
         GroupLabel(stringResource(R.string.network_capture_plugins_actions))
         GroupCard {
+            if (onDiscoverPackage != null) {
+                ListRow(
+                    MikaIcons.Search,
+                    stringResource(R.string.network_capture_plugins_auto_scan),
+                    stringResource(R.string.network_capture_plugins_auto_scan_sub),
+                    first = true,
+                    onClick = {
+                        scanPackageInput = "com.xingin.xhs"
+                        scanInputOpen = true
+                    },
+                ) {
+                    RowChevron()
+                }
+            }
             ListRow(
                 MikaIcons.Plus,
                 stringResource(R.string.network_capture_plugins_add),
-                first = true,
+                first = onDiscoverPackage == null,
                 onClick = {
                     invalidDraft = false
                     draft = CapturePluginDraft()
@@ -360,7 +428,8 @@ fun CapturePluginProfilesContent(
     }
 
     val currentDraft = draft
-    if (currentDraft != null && !pickingApp) {
+    val pickMode = appPickMode
+    if (currentDraft != null && pickMode == null && !scanInputOpen && scanningPackage == null && discoveryOutcome == null) {
         MikaDialog(
             onDismissRequest = { draft = null },
             title = {
@@ -392,11 +461,22 @@ fun CapturePluginProfilesContent(
                             TextButton(
                                 onClick = {
                                     appSearch = ""
-                                    pickingApp = true
+                                    appPickMode = PluginAppPickMode.DraftPackage
                                 },
                             ) {
                                 Text(stringResource(R.string.settings_jump_confirm_profiles_pick_app))
                             }
+                        }
+                    }
+                    if (onDiscoverPackage != null && currentDraft.packageName.trim().let { it.isNotEmpty() && it != "*" }) {
+                        TextButton(
+                            onClick = {
+                                val pkg = currentDraft.packageName.trim()
+                                scanningPackage = pkg
+                            },
+                            modifier = Modifier.padding(top = 2.dp),
+                        ) {
+                            Text(stringResource(R.string.network_capture_plugins_scan_this_app))
                         }
                     }
 
@@ -578,7 +658,7 @@ fun CapturePluginProfilesContent(
         )
     }
 
-    if (currentDraft != null && pickingApp) {
+    if (pickMode != null) {
         val filtered = remember(installedApps, appSearch) {
             val q = appSearch.trim()
             if (q.isEmpty()) installedApps
@@ -587,7 +667,7 @@ fun CapturePluginProfilesContent(
             }
         }
         MikaDialog(
-            onDismissRequest = { pickingApp = false },
+            onDismissRequest = { appPickMode = null },
             title = { Text(stringResource(R.string.network_capture_plugins_field_package)) },
             text = {
                 Column {
@@ -604,9 +684,13 @@ fun CapturePluginProfilesContent(
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        invalidDraft = false
-                                        draft = currentDraft.copy(packageName = pkg)
-                                        pickingApp = false
+                                        if (pickMode == PluginAppPickMode.DraftPackage && currentDraft != null) {
+                                            invalidDraft = false
+                                            draft = currentDraft.copy(packageName = pkg)
+                                        } else if (pickMode == PluginAppPickMode.ScanTarget) {
+                                            scanPackageInput = pkg
+                                        }
+                                        appPickMode = null
                                     }
                                     .padding(vertical = 8.dp, horizontal = 4.dp),
                             ) {
@@ -618,10 +702,161 @@ fun CapturePluginProfilesContent(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { pickingApp = false }) {
+                TextButton(onClick = { appPickMode = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },
+        )
+    }
+
+    if (scanInputOpen && pickMode == null) {
+        MikaDialog(
+            onDismissRequest = { scanInputOpen = false },
+            title = { Text(stringResource(R.string.network_capture_plugins_scan_dialog_title)) },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = scanPackageInput,
+                        onValueChange = { scanPackageInput = it },
+                        label = { Text(stringResource(R.string.network_capture_plugins_field_package)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("capture-plugin-scan-package"),
+                    )
+                    if (installedApps.isNotEmpty()) {
+                        Row(Modifier.fillMaxWidth()) {
+                            TextButton(
+                                onClick = {
+                                    appSearch = ""
+                                    appPickMode = PluginAppPickMode.ScanTarget
+                                },
+                            ) {
+                                Text(stringResource(R.string.settings_jump_confirm_profiles_pick_app))
+                            }
+                        }
+                    }
+                    Text(
+                        stringResource(R.string.network_capture_plugins_scan_hint),
+                        style = MikaType.Caption,
+                        color = MikaTheme.colors.ink3,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val pkg = scanPackageInput.trim()
+                        if (pkg.isNotEmpty() && pkg != "*") {
+                            scanInputOpen = false
+                            scanningPackage = pkg
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.network_capture_plugins_scan_start))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { scanInputOpen = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    val activeScanPkg = scanningPackage
+    if (activeScanPkg != null) {
+        MikaDialog(
+            onDismissRequest = { scanningPackage = null },
+            title = { Text(stringResource(R.string.network_capture_plugins_scanning_title)) },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.padding(4.dp))
+                    Text(stringResource(R.string.network_capture_plugins_scanning_body, activeScanPkg))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { scanningPackage = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    val outcome = discoveryOutcome
+    if (outcome != null) {
+        val (scannedPkg, result) = outcome
+        val suggested = result.suggestedProfile
+        MikaDialog(
+            onDismissRequest = { discoveryOutcome = null },
+            title = {
+                Text(
+                    stringResource(
+                        if (result.ok) R.string.network_capture_plugins_scan_result_title
+                        else R.string.network_capture_plugins_scan_failed_title,
+                    ),
+                )
+            },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        CapturePluginCopy.formatDiscoverySummary(result),
+                        style = MikaType.Caption,
+                        color = MikaTheme.colors.ink2,
+                    )
+                    if (suggested != null) {
+                        TextButton(
+                            onClick = {
+                                val matchingEntry = entries.firstOrNull { it.packageName == scannedPkg }
+                                val entryForDraft = CapturePluginEntry(
+                                    packageName = scannedPkg,
+                                    profile = suggested,
+                                    isBuiltin = matchingEntry?.isBuiltin ?: false,
+                                    isOverridden = matchingEntry?.isOverridden ?: false,
+                                )
+                                invalidDraft = false
+                                draft = CapturePluginDraft.fromEntry(entryForDraft).copy(isNew = matchingEntry == null)
+                                discoveryOutcome = null
+                            },
+                            modifier = Modifier.padding(top = 6.dp),
+                        ) {
+                            Text(stringResource(R.string.network_capture_plugins_scan_open_editor))
+                        }
+                    } else if (result.ok) {
+                        Text(
+                            stringResource(R.string.network_capture_plugins_scan_empty_hint),
+                            style = MikaType.Caption,
+                            color = MikaTheme.colors.warn,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (suggested != null) {
+                    TextButton(
+                        onClick = {
+                            onSaveProfile(scannedPkg, suggested)
+                            discoveryOutcome = null
+                        },
+                    ) {
+                        Text(stringResource(R.string.network_capture_plugins_scan_apply_save))
+                    }
+                } else {
+                    TextButton(onClick = { discoveryOutcome = null }) {
+                        Text(stringResource(R.string.ok_got_it))
+                    }
+                }
+            },
+            dismissButton = if (suggested != null) {
+                {
+                    TextButton(onClick = { discoveryOutcome = null }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            } else null,
         )
     }
 

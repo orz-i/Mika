@@ -288,4 +288,17 @@
     <string name="network_capture_plugins_invalid">Проверьте пакет, библиотеку, смещения (0x... или десятичные) и параметры ABI.</string>
     <string name="network_capture_plugins_restore_one">Восстановить встроенное</string>
     <string name="network_capture_plugins_delete_one">Удалить правило</string>
+    <string name="network_capture_plugins_auto_scan">Автосканирование SO и поиск смещений</string>
+    <string name="network_capture_plugins_auto_scan_sub">Запуск libaau_ebpf.so --discover-only для эвристического поиска BoringSSL и Cronet</string>
+    <string name="network_capture_plugins_scan_this_app">Пересканировать приложение (--discover-only)</string>
+    <string name="network_capture_plugins_scan_dialog_title">Выберите приложение для сканирования</string>
+    <string name="network_capture_plugins_scan_hint">Сканирует нативные библиотеки и /proc/&lt;pid&gt;/maps (нужен Root; при extractNativeLibs=false сначала откройте приложение).</string>
+    <string name="network_capture_plugins_scan_start">Начать поиск</string>
+    <string name="network_capture_plugins_scanning_title">Сканирование ELF…</string>
+    <string name="network_capture_plugins_scanning_body">Выполняется --discover-only для %1$s</string>
+    <string name="network_capture_plugins_scan_result_title">Результат сканирования</string>
+    <string name="network_capture_plugins_scan_failed_title">Ошибка сканирования</string>
+    <string name="network_capture_plugins_scan_open_editor">Загрузить в редактор</string>
+    <string name="network_capture_plugins_scan_apply_save">Применить и сохранить</string>
+    <string name="network_capture_plugins_scan_empty_hint">Стандартные смещения BoringSSL/Cronet не найдены. Запустите приложение или используйте локальный набор анализа Python+Root.</string>
 </resources>

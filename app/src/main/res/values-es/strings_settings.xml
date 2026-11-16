@@ -284,4 +284,17 @@
     <string name="network_capture_plugins_invalid">Comprueba paquete, librería, desplazamientos (0x... o decimal) y parámetros ABI.</string>
     <string name="network_capture_plugins_restore_one">Restaurar valor integrado</string>
     <string name="network_capture_plugins_delete_one">Eliminar regla</string>
+    <string name="network_capture_plugins_auto_scan">Escanear SO y detectar desplazamientos</string>
+    <string name="network_capture_plugins_auto_scan_sub">Ejecuta libaau_ebpf.so --discover-only para detectar desplazamientos BoringSSL y Cronet</string>
+    <string name="network_capture_plugins_scan_this_app">Reescanear esta app (--discover-only)</string>
+    <string name="network_capture_plugins_scan_dialog_title">Seleccionar app a escanear</string>
+    <string name="network_capture_plugins_scan_hint">Explora bibliotecas nativas y /proc/&lt;pid&gt;/maps (requiere Root; abre la app antes si usa extractNativeLibs=false).</string>
+    <string name="network_capture_plugins_scan_start">Iniciar escaneo</string>
+    <string name="network_capture_plugins_scanning_title">Escaneando bibliotecas ELF…</string>
+    <string name="network_capture_plugins_scanning_body">Ejecutando --discover-only para %1$s</string>
+    <string name="network_capture_plugins_scan_result_title">Resultado del escaneo</string>
+    <string name="network_capture_plugins_scan_failed_title">Error de escaneo</string>
+    <string name="network_capture_plugins_scan_open_editor">Cargar en editor para ajustar</string>
+    <string name="network_capture_plugins_scan_apply_save">Aplicar y guardar regla</string>
+    <string name="network_capture_plugins_scan_empty_hint">Sin coincidencias estándar de BoringSSL/Cronet. Abre la app si empaqueta SO dentro del APK o usa la suite Python+Root local.</string>
 </resources>

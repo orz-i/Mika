@@ -291,4 +291,17 @@
     <string name="network_capture_plugins_invalid">نام بسته، کتابخانه، مقادیر آفست (0x... یا ده‌دهی) و پارامترهای ABI را بررسی کنید.</string>
     <string name="network_capture_plugins_restore_one">بازگردانی به پیش‌فرض داخلی</string>
     <string name="network_capture_plugins_delete_one">حذف قاعده</string>
+    <string name="network_capture_plugins_auto_scan">اسکن خودکار SO و تشخیص آفست‌ها</string>
+    <string name="network_capture_plugins_auto_scan_sub">اجرای libaau_ebpf.so --discover-only برای تشخیص آفست‌های BoringSSL و Cronet</string>
+    <string name="network_capture_plugins_scan_this_app">اسکن مجدد این برنامه (--discover-only)</string>
+    <string name="network_capture_plugins_scan_dialog_title">انتخاب برنامه هدف برای اسکن</string>
+    <string name="network_capture_plugins_scan_hint">کتابخانه‌های native و /proc/&lt;pid&gt;/maps را اسکن می‌کند (نیازمند Root؛ در صورت extractNativeLibs=false ابتدا برنامه را باز کنید).</string>
+    <string name="network_capture_plugins_scan_start">شروع اسکن</string>
+    <string name="network_capture_plugins_scanning_title">در حال اسکن کتابخانه‌های ELF…</string>
+    <string name="network_capture_plugins_scanning_body">در حال اجرای --discover-only برای %1$s</string>
+    <string name="network_capture_plugins_scan_result_title">گزارش اسکن</string>
+    <string name="network_capture_plugins_scan_failed_title">خطای اسکن</string>
+    <string name="network_capture_plugins_scan_open_editor">بارگذاری در ویرایشگر</string>
+    <string name="network_capture_plugins_scan_apply_save">اعمال و ذخیره قاعده</string>
+    <string name="network_capture_plugins_scan_empty_hint">آفست استاندارد BoringSSL/Cronet یافت نشد. ابتدا برنامه را باز کنید یا از ابزار تحلیل Python+Root روی دستگاه استفاده کنید.</string>
 </resources>

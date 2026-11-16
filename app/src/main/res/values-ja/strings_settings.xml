@@ -276,4 +276,17 @@
     <string name="network_capture_plugins_invalid">パッケージ名、ライブラリ名、オフセット値（0x... または 10 進数）、および ABI パラメータを確認してください。</string>
     <string name="network_capture_plugins_restore_one">組み込み既定に戻す</string>
     <string name="network_capture_plugins_delete_one">規則を削除</string>
+    <string name="network_capture_plugins_auto_scan">アプリ SO を自動スキャンしてオフセット検出</string>
+    <string name="network_capture_plugins_auto_scan_sub">libaau_ebpf.so --discover-only を実行して BoringSSL / Cronet オフセットを検出します</string>
+    <string name="network_capture_plugins_scan_this_app">このアプリを再スキャン (--discover-only)</string>
+    <string name="network_capture_plugins_scan_dialog_title">スキャン対象アプリを選択</string>
+    <string name="network_capture_plugins_scan_hint">ネイティブライブラリと /proc/&lt;pid&gt;/maps を走査します（Root 必須。未展開 SO の場合は先に対象アプリを開いてください）。</string>
+    <string name="network_capture_plugins_scan_start">スキャン開始</string>
+    <string name="network_capture_plugins_scanning_title">ELF ライブラリを走査中…</string>
+    <string name="network_capture_plugins_scanning_body">%1$s に対して --discover-only を実行中</string>
+    <string name="network_capture_plugins_scan_result_title">スキャン結果</string>
+    <string name="network_capture_plugins_scan_failed_title">スキャン失敗</string>
+    <string name="network_capture_plugins_scan_open_editor">エディタに読み込んで調整</string>
+    <string name="network_capture_plugins_scan_apply_save">適用して保存</string>
+    <string name="network_capture_plugins_scan_empty_hint">標準の BoringSSL/Cronet オフセットが見つかりませんでした。APK 直マップの場合はアプリを起動してから再試行するか、端末側 Python+Root 調査キットを使用してください。</string>
 </resources>

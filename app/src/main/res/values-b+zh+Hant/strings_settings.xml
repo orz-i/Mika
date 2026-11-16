@@ -276,4 +276,17 @@
     <string name="settings_jump_confirm_profiles_delete">刪除</string>
     <string name="settings_jump_confirm_profiles_unavailable">對映設定讀取失敗，可重置後重新設定。</string>
     <string name="settings_jump_confirm_profiles_reset">重置</string>
+    <string name="network_capture_plugins_auto_scan">自動掃描應用 SO 並辨識偏移</string>
+    <string name="network_capture_plugins_auto_scan_sub">呼叫 libaau_ebpf.so --discover-only 自動辨識 BoringSSL / Cronet 啟發式偏移</string>
+    <string name="network_capture_plugins_scan_this_app">掃描此應用目前偏移 (--discover-only)</string>
+    <string name="network_capture_plugins_scan_dialog_title">選擇要掃描的目標應用</string>
+    <string name="network_capture_plugins_scan_hint">將掃描應用原生函式庫目錄及 /proc/&lt;pid&gt;/maps（需 Root；若未解壓縮 SO，請先開啟目標應用再掃描）。</string>
+    <string name="network_capture_plugins_scan_start">開始掃描</string>
+    <string name="network_capture_plugins_scanning_title">正在掃描 ELF 特徵…</string>
+    <string name="network_capture_plugins_scanning_body">正在以 --discover-only 探測 %1$s</string>
+    <string name="network_capture_plugins_scan_result_title">掃描辨識結果</string>
+    <string name="network_capture_plugins_scan_failed_title">掃描失敗</string>
+    <string name="network_capture_plugins_scan_open_editor">填入編輯器微調</string>
+    <string name="network_capture_plugins_scan_apply_save">套用並儲存規則</string>
+    <string name="network_capture_plugins_scan_empty_hint">未命中標準 BoringSSL/Cronet 特徵。若應用直接自 APK 映射 SO，請先開啟目標應用後再掃描，或使用裝置端 Python + Root 套件進一步分析。</string>
 </resources>

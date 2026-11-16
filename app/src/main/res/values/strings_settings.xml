@@ -291,4 +291,17 @@
     <string name="settings_jump_confirm_profiles_delete">Delete</string>
     <string name="settings_jump_confirm_profiles_unavailable">Profile store could not be read. Reset to recover.</string>
     <string name="settings_jump_confirm_profiles_reset">Reset</string>
+    <string name="network_capture_plugins_auto_scan">Auto-scan app SO &amp; detect offsets</string>
+    <string name="network_capture_plugins_auto_scan_sub">Run libaau_ebpf.so --discover-only to detect BoringSSL &amp; Cronet offsets via ELF heuristics</string>
+    <string name="network_capture_plugins_scan_this_app">Re-scan this app via --discover-only</string>
+    <string name="network_capture_plugins_scan_dialog_title">Select target app to scan</string>
+    <string name="network_capture_plugins_scan_hint">Scans app native libraries and /proc/&lt;pid&gt;/maps (Root required; launch the target app first if it uses extractNativeLibs=false).</string>
+    <string name="network_capture_plugins_scan_start">Start scan</string>
+    <string name="network_capture_plugins_scanning_title">Scanning ELF libraries…</string>
+    <string name="network_capture_plugins_scanning_body">Running --discover-only for %1$s</string>
+    <string name="network_capture_plugins_scan_result_title">Scan report</string>
+    <string name="network_capture_plugins_scan_failed_title">Scan failed</string>
+    <string name="network_capture_plugins_scan_open_editor">Load into editor to tweak</string>
+    <string name="network_capture_plugins_scan_apply_save">Apply &amp; save rule</string>
+    <string name="network_capture_plugins_scan_empty_hint">No standard BoringSSL/Cronet offsets matched. If the app packs libs inside APK (extractNativeLibs=false), open the app first and retry, or run Mika Python+Root analysis.</string>
 </resources>
