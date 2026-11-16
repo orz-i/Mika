@@ -3,6 +3,8 @@ package com.wangzan101.mika.ui
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -12,8 +14,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.R
 import com.wangzan101.mika.core.usage.TokenBudgetLimits
+import com.wangzan101.mika.ui.components.KeyboardDismissArea
 import com.wangzan101.mika.ui.components.MikaDialog
 import com.wangzan101.mika.ui.components.RadioRow
+import com.wangzan101.mika.ui.components.keepsKeyboard
 import com.wangzan101.mika.ui.theme.MikaTheme
 import java.text.NumberFormat
 
@@ -37,31 +41,34 @@ internal fun TokenBudgetDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
-                Text(description, Modifier.padding(bottom = 8.dp))
-                RadioRow(
-                    stringResource(R.string.settings_token_budget_unlimited),
-                    selected = current == null, onClick = { onPick(null) }, first = true,
-                )
-                TokenBudgetLimits.PRESETS.forEach { n ->
-                    RadioRow(tokenBudgetNumber(n), selected = current == n, onClick = { onPick(n) })
-                }
-                OutlinedTextField(
-                    value = custom, onValueChange = onCustom, singleLine = true,
-                    label = { Text(stringResource(R.string.settings_token_budget_custom)) },
-                    isError = custom.isNotEmpty() && customValue == null,
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                )
-                if (custom.isNotEmpty() && customValue == null) {
-                    Text(
-                        stringResource(
-                            R.string.settings_token_budget_invalid,
-                            tokenBudgetNumber(TokenBudgetLimits.MIN), tokenBudgetNumber(TokenBudgetLimits.MAX),
-                        ),
-                        Modifier.padding(top = 4.dp),
+            KeyboardDismissArea {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(description, Modifier.padding(bottom = 8.dp))
+                    RadioRow(
+                        stringResource(R.string.settings_token_budget_unlimited),
+                        selected = current == null, onClick = { onPick(null) }, first = true,
                     )
+                    TokenBudgetLimits.PRESETS.forEach { n ->
+                        RadioRow(tokenBudgetNumber(n), selected = current == n, onClick = { onPick(n) })
+                    }
+                    OutlinedTextField(
+                        value = custom, onValueChange = onCustom, singleLine = true,
+                        label = { Text(stringResource(R.string.settings_token_budget_custom)) },
+                        isError = custom.isNotEmpty() && customValue == null,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).keepsKeyboard(),
+                    )
+                    if (custom.isNotEmpty() && customValue == null) {
+                        Text(
+                            stringResource(
+                                R.string.settings_token_budget_invalid,
+                                tokenBudgetNumber(TokenBudgetLimits.MIN), tokenBudgetNumber(TokenBudgetLimits.MAX),
+                            ),
+                            Modifier.padding(top = 4.dp),
+                            color = MikaTheme.colors.bad,
+                        )
+                    }
+                    saveError?.let { Text(it, Modifier.padding(top = 4.dp), color = MikaTheme.colors.bad) }
                 }
-                saveError?.let { Text(it, Modifier.padding(top = 4.dp), color = MikaTheme.colors.bad) }
             }
         },
         confirmButton = {

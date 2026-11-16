@@ -11,7 +11,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,7 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -66,7 +68,9 @@ import com.wangzan101.mika.ui.components.StepItem
 import com.wangzan101.mika.ui.components.StepState
 import com.wangzan101.mika.ui.components.TopBar
 import com.wangzan101.mika.ui.components.ValueTone
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.Dispatchers
@@ -219,21 +223,24 @@ private fun TimelineRow(s: TimelineStep, first: Boolean, last: Boolean, vm: RunT
     val netResults = s.networkResults
     val expandable = shot != null || netResults.isNotEmpty()
     val failed = s.result?.startsWith(stringResource(R.string.result_error_prefix)) == true
+    val stepInteraction = remember { MutableInteractionSource() }
     StepItem(
         if (failed) StepState.Failed else StepState.Done, first, last,
         Modifier.then(
             if (expandable) {
-                Modifier.clickable {
-                    when {
-                        shot != null && netResults.isEmpty() -> screenOpen = !screenOpen
-                        shot == null -> networkOpen = !networkOpen
-                        else -> {
-                            val next = !(screenOpen || networkOpen)
-                            screenOpen = next
-                            networkOpen = next
+                Modifier
+                    .mikaPress(stepInteraction, pressedScale = 0.99f)
+                    .clickable(interactionSource = stepInteraction, indication = null) {
+                        when {
+                            shot != null && netResults.isEmpty() -> screenOpen = !screenOpen
+                            shot == null -> networkOpen = !networkOpen
+                            else -> {
+                                val next = !(screenOpen || networkOpen)
+                                screenOpen = next
+                                networkOpen = next
+                            }
                         }
                     }
-                }
             } else {
                 Modifier
             }
@@ -279,24 +286,39 @@ private fun TimelineRow(s: TimelineStep, first: Boolean, last: Boolean, vm: RunT
                 }
             }
             if (shot != null) {
-                Text(
+                TimelineToggleLink(
                     if (screenOpen) stringResource(R.string.timeline_hide_screen) else stringResource(R.string.timeline_show_screen),
-                    Modifier.padding(top = 6.dp).clickable { screenOpen = !screenOpen },
-                    style = MikaType.Label, color = c.accent,
-                )
+                ) { screenOpen = !screenOpen }
                 if (screenOpen) Shot(vm, shot, s.step)
             }
             if (netResults.isNotEmpty()) {
                 val (showRes, hideRes) = networkToggleLabels(netResults)
-                Text(
+                TimelineToggleLink(
                     if (networkOpen) stringResource(hideRes) else stringResource(showRes),
-                    Modifier.padding(top = 6.dp).clickable { networkOpen = !networkOpen },
-                    style = MikaType.Label, color = c.accent,
-                )
+                ) { networkOpen = !networkOpen }
                 if (networkOpen) NetworkResultsCard(netResults)
             }
         }
     }
+}
+
+@Composable
+private fun TimelineToggleLink(label: String, onClick: () -> Unit) {
+    val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    Text(
+        label,
+        Modifier
+            .padding(top = 6.dp)
+            .mikaPress(interaction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+            .background(c.glassSubtle, MikaShapes.Pill)
+            .border(0.5.dp, c.glassEdge, MikaShapes.Pill)
+            .clip(MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        style = MikaType.Label,
+        color = c.accent,
+    )
 }
 
 private fun networkToggleLabels(results: List<TimelineNetworkResult>): Pair<Int, Int> {
@@ -312,9 +334,13 @@ private fun networkToggleLabels(results: List<TimelineNetworkResult>): Pair<Int,
 @Composable
 private fun NetworkResultsCard(results: List<TimelineNetworkResult>) {
     val c = MikaTheme.colors
+    val cardShape = RoundedCornerShape(12.dp)
     Column(
-        Modifier.fillMaxWidth().padding(top = 8.dp)
-            .background(c.fill, RoundedCornerShape(12.dp))
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .background(c.glassSubtle, cardShape)
+            .border(0.75.dp, Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom)), cardShape)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -435,10 +461,14 @@ private fun ResponseResultBlock(res: TimelineNetworkResult) {
 @Composable
 private fun NetworkMonoBox(text: String, truncated: Boolean) {
     val c = MikaTheme.colors
+    val boxShape = RoundedCornerShape(10.dp)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(
-            Modifier.fillMaxWidth().heightIn(max = 280.dp)
-                .background(c.surface.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 280.dp)
+                .background(c.glassCard, boxShape)
+                .border(0.5.dp, c.glassEdge, boxShape)
                 .verticalScroll(rememberScrollState())
                 .padding(10.dp),
         ) {
@@ -455,13 +485,17 @@ private fun NetworkMonoBox(text: String, truncated: Boolean) {
 @Composable
 private fun TagChip(t: Tag) {
     val c = MikaTheme.colors
-    val (bg, fg) = when (t.tone) {
-        TagTone.Ok -> c.okSoft to c.ok
-        TagTone.Warn -> c.warnSoft to c.warn
-        TagTone.Bad -> c.badSoft to c.bad
+    val (bg, fg, rim) = when (t.tone) {
+        TagTone.Ok -> Triple(c.okSoft, c.ok, c.ok.copy(alpha = 0.24f))
+        TagTone.Warn -> Triple(c.warnSoft, c.warn, c.warnSolid.copy(alpha = 0.28f))
+        TagTone.Bad -> Triple(c.badSoft, c.bad, c.bad.copy(alpha = 0.24f))
     }
     Text(
-        t.text, Modifier.background(bg, RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp),
+        t.text,
+        Modifier
+            .background(bg, MikaShapes.Pill)
+            .border(0.5.dp, rim, MikaShapes.Pill)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
         style = MikaType.Hint, fontWeight = FontWeight.SemiBold, color = fg,
     )
 }
@@ -469,6 +503,7 @@ private fun TagChip(t: Tag) {
 /** 当时的画面:在后台线程解码;文件已被清理时只说一句。 */
 @Composable
 private fun Shot(vm: RunTimelineViewModel, id: Int, step: Int) {
+    val c = MikaTheme.colors
     val image by produceState<ImageBitmap?>(null, id) {
         value = withContext(Dispatchers.IO) { vm.screen(id)?.let { BitmapFactory.decodeFile(it.path) }?.asImageBitmap() }
     }
@@ -476,7 +511,11 @@ private fun Shot(vm: RunTimelineViewModel, id: Int, step: Int) {
     image?.let {
         Image(
             it, stringResource(R.string.timeline_step_screen, step),
-            Modifier.padding(top = 8.dp).widthIn(max = 220.dp).clip(shape).background(MikaTheme.colors.fill, shape),
+            Modifier
+                .padding(top = 8.dp)
+                .widthIn(max = 220.dp)
+                .clip(shape)
+                .border(0.75.dp, c.glassEdge, shape),
             contentScale = ContentScale.FillWidth,
         )
     }

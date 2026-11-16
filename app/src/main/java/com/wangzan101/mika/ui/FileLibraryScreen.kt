@@ -1,19 +1,26 @@
 package com.wangzan101.mika.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -25,6 +32,8 @@ import com.wangzan101.mika.chat.FileLibrarySnapshot
 import com.wangzan101.mika.chat.LibraryFile
 import com.wangzan101.mika.ui.components.*
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
+import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.CancellationException
@@ -89,6 +98,7 @@ internal fun FileLibraryScreen(
     onAdded: (String) -> Boolean,
 ) {
     BackHandler(onBack = onBack)
+    val c = MikaTheme.colors
     val context = LocalContext.current
     val store = remember { ConversationStore.shared(context) }
     val scope = rememberCoroutineScope()
@@ -145,103 +155,261 @@ internal fun FileLibraryScreen(
             if (result == LibraryAttachmentResult.Added) savedElsewhere = !onAdded(id) else error = true
         }
     }
-    PageBackground {
-        Column(Modifier.fillMaxSize()) {
-            TopBar(stringResource(R.string.file_library_title), MikaIcons.Back, onBack, stringResource(R.string.back))
-            Column(Modifier.padding(horizontal = 16.dp)) {
-                SearchField(query, { query = it }, stringResource(R.string.file_library_search), Modifier.testTag("file-library-search"))
-                Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f)) {
-                        SelectChip(conversation?.let { titles[it] ?: stringResource(R.string.file_library_current) } ?: stringResource(R.string.file_library_all), conversation != null, { conversationMenu = true })
-                        DropdownMenu(expanded = conversationMenu, onDismissRequest = { conversationMenu = false }) {
-                            DropdownMenuItem(text = { Text(stringResource(R.string.file_library_all)) }, onClick = { conversation = null; conversationMenu = false })
-                            titles.forEach { (id, title) -> DropdownMenuItem(text = { Text(title, maxLines = 1) }, onClick = { conversation = id; conversationMenu = false }) }
-                            if (initialConversation != null && initialConversation !in titles) DropdownMenuItem(text = { Text(stringResource(R.string.file_library_current)) }, onClick = { conversation = initialConversation; conversationMenu = false })
+    val density = LocalDensity.current
+    val initialTopPx = WindowInsets.statusBars.getTop(density) + with(density) { MikaSize.TopBar.roundToPx() }
+    var topBarHeightPx by remember { mutableIntStateOf(initialTopPx) }
+    val topBarHeightDp = with(density) { topBarHeightPx.toDp() }
+    GlassBackdropHost(
+        modifier = Modifier.fillMaxSize(),
+        content = {
+            PageBackground {
+                Column(Modifier.fillMaxSize()) {
+                    Spacer(Modifier.height(topBarHeightDp + 4.dp))
+                    Column(Modifier.padding(horizontal = 16.dp)) {
+                        SearchField(query, { query = it }, stringResource(R.string.file_library_search), Modifier.testTag("file-library-search"))
+                        Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(Modifier.weight(1f)) {
+                                SelectChip(
+                                    conversation?.let { titles[it] ?: stringResource(R.string.file_library_current) } ?: stringResource(R.string.file_library_all),
+                                    conversation != null,
+                                    { conversationMenu = true },
+                                    Modifier.fillMaxWidth(),
+                                )
+                                LibraryDropdownMenu(expanded = conversationMenu, onDismissRequest = { conversationMenu = false }) {
+                                    LibraryMenuItem(stringResource(R.string.file_library_all), selected = conversation == null) {
+                                        conversation = null
+                                        conversationMenu = false
+                                    }
+                                    titles.forEach { (id, title) ->
+                                        LibraryMenuItem(title, selected = conversation == id) {
+                                            conversation = id
+                                            conversationMenu = false
+                                        }
+                                    }
+                                    if (initialConversation != null && initialConversation !in titles) {
+                                        LibraryMenuItem(stringResource(R.string.file_library_current), selected = conversation == initialConversation) {
+                                            conversation = initialConversation
+                                            conversationMenu = false
+                                        }
+                                    }
+                                }
+                            }
+                            Box(Modifier.weight(1f)) {
+                                val label = when (source) { 1 -> R.string.file_library_input; 2 -> R.string.file_library_output; else -> R.string.file_library_sources }
+                                SelectChip(stringResource(label), source != 0, { sourceMenu = true }, Modifier.fillMaxWidth())
+                                LibraryDropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }) {
+                                    listOf(R.string.file_library_sources, R.string.file_library_input, R.string.file_library_output).forEachIndexed { index, text ->
+                                        LibraryMenuItem(stringResource(text), selected = source == index) {
+                                            source = index
+                                            sourceMenu = false
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                    Box(Modifier.weight(1f)) {
-                        val label = when (source) { 1 -> R.string.file_library_input; 2 -> R.string.file_library_output; else -> R.string.file_library_sources }
-                        SelectChip(stringResource(label), source != 0, { sourceMenu = true })
-                        DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }) {
-                            listOf(R.string.file_library_sources, R.string.file_library_input, R.string.file_library_output).forEachIndexed { index, text ->
-                                DropdownMenuItem(text = { Text(stringResource(text)) }, onClick = { source = index; sourceMenu = false })
+                    if (loaded?.partial == true && loaded?.failed == false) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(stringResource(R.string.file_library_partial), Modifier.weight(1f).padding(vertical = 8.dp), style = MikaType.Hint, color = c.warn)
+                            MikaButton(stringResource(R.string.file_library_retry), { revision++ }, kind = ButtonKind.Text, size = ButtonSize.Small)
+                        }
+                    }
+                    when {
+                        loaded == null -> EmptyNote(stringResource(R.string.file_library_loading))
+                        loaded?.failed == true -> {
+                            Column {
+                                EmptyNote(stringResource(R.string.file_library_load_failed))
+                                MikaButton(
+                                    stringResource(R.string.file_library_retry),
+                                    { revision++ },
+                                    Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally),
+                                    kind = ButtonKind.Secondary,
+                                    size = ButtonSize.Small,
+                                )
+                            }
+                        }
+                        rows.isEmpty() -> EmptyNote(stringResource(R.string.file_library_empty))
+                        else -> LazyColumn(
+                            Modifier.fillMaxSize().navigationBarsPadding().testTag("file-library-list"),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            itemsIndexed(rows) { _, item ->
+                                val available by produceState<Boolean?>(null, item.handle, revision) {
+                                    value = null
+                                    value = try {
+                                        LibraryFileActions.isAvailable(context, item.handle)
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (_: Exception) {
+                                        false
+                                    }
+                                }
+                                val canOpen = !working && available == true
+                                val cardInteraction = remember { MutableInteractionSource() }
+                                MikaCard(
+                                    Modifier
+                                        .mikaPress(cardInteraction, enabled = canOpen, pressedScale = 0.985f, shape = MikaShapes.Card)
+                                        .clickable(interactionSource = cardInteraction, indication = null, enabled = canOpen) {
+                                            scope.launch { working = true; error = !LibraryFileActions.preview(context, item.handle); working = false }
+                                        },
+                                ) {
+                                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(item.name, style = MikaType.BodyStrong, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        val date = item.at?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) } ?: stringResource(R.string.file_library_unknown_time)
+                                        Text(listOfNotNull(item.size.takeIf { it.isNotBlank() }, date).joinToString(" · "), style = MikaType.Hint, color = c.ink3)
+                                        val location = item.location.takeIf { it.isNotBlank() && it != item.name }
+                                            ?: (item.handle as? LibraryFileHandle.Exported)?.file?.uri?.takeIf { uri -> rows.count { it.name == item.name } > 1 && uri.isNotBlank() }
+                                        if (location != null) Text(location, style = MikaType.Hint, color = c.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(item.conversations.joinToString(" · ") { titles[it] ?: it }, style = MikaType.Hint, color = c.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        FlowRow(
+                                            Modifier.padding(top = 4.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            CapabilityTag(stringResource(if (item.input) R.string.file_library_input else R.string.file_library_output))
+                                            StatusPill(
+                                                stringResource(when (available) { true -> R.string.file_library_available; false -> R.string.file_library_missing; null -> R.string.file_library_loading }),
+                                                tone = when (available) { true -> PillTone.Ok; false -> PillTone.Warn; null -> PillTone.Neutral },
+                                            )
+                                        }
+                                        FlowRow(
+                                            Modifier.padding(top = 6.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            if (available == false) {
+                                                MikaButton(stringResource(R.string.file_library_retry), { revision++ }, kind = ButtonKind.Tonal, size = ButtonSize.Small)
+                                            }
+                                            MikaButton(
+                                                stringResource(R.string.file_library_open),
+                                                { scope.launch { working = true; error = !LibraryFileActions.preview(context, item.handle); working = false } },
+                                                kind = ButtonKind.Secondary,
+                                                size = ButtonSize.Small,
+                                                enabled = canOpen,
+                                            )
+                                            MikaButton(
+                                                stringResource(R.string.file_library_share),
+                                                { scope.launch { working = true; error = !LibraryFileActions.share(context, item.handle); working = false } },
+                                                kind = ButtonKind.Tonal,
+                                                size = ButtonSize.Small,
+                                                enabled = canOpen,
+                                            )
+                                            MikaButton(
+                                                stringResource(R.string.file_library_add),
+                                                {
+                                                    if (fromDrawer) choosing = item
+                                                    else if (initialConversation != null) add(item, initialConversation)
+                                                    else if (vm.ui.value.conversationId == null) add(item, vm.libraryTargetConversation())
+                                                    else error = true
+                                                },
+                                                kind = ButtonKind.Primary,
+                                                size = ButtonSize.Small,
+                                                enabled = canOpen,
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-            if (loaded?.partial == true && loaded?.failed == false) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stringResource(R.string.file_library_partial), Modifier.weight(1f).padding(vertical = 12.dp), style = MikaType.Hint, color = MikaTheme.colors.warn)
-                    TextButton(onClick = { revision++ }) { Text(stringResource(R.string.file_library_retry)) }
-                }
+        },
+        overlay = {
+            Box(Modifier.onSizeChanged { if (it.height > 0) topBarHeightPx = it.height }) {
+                TopBar(stringResource(R.string.file_library_title), MikaIcons.Back, onBack, stringResource(R.string.back))
             }
-            when {
-                loaded == null -> EmptyNote(stringResource(R.string.file_library_loading))
-                loaded?.failed == true -> {
-                    Column {
-                        EmptyNote(stringResource(R.string.file_library_load_failed))
-                        TextButton(onClick = { revision++ }, modifier = Modifier.align(androidx.compose.ui.Alignment.CenterHorizontally)) { Text(stringResource(R.string.file_library_retry)) }
-                    }
-                }
-                rows.isEmpty() -> EmptyNote(stringResource(R.string.file_library_empty))
-                else -> LazyColumn(Modifier.fillMaxSize().navigationBarsPadding().testTag("file-library-list"), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    itemsIndexed(rows) { _, item ->
-                        val available by produceState<Boolean?>(null, item.handle, revision) {
-                            value = null
-                            value = try {
-                                LibraryFileActions.isAvailable(context, item.handle)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (_: Exception) {
-                                false
-                            }
-                        }
-                        Column(Modifier.fillMaxWidth().background(MikaTheme.colors.fill, RoundedCornerShape(14.dp)).padding(14.dp)) {
-                            Text(item.name, style = MikaType.Body, color = MikaTheme.colors.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            val date = item.at?.let { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(it)) } ?: stringResource(R.string.file_library_unknown_time)
-                            Text(listOfNotNull(item.size.takeIf { it.isNotBlank() }, date).joinToString(" · "), style = MikaType.Hint, color = MikaTheme.colors.ink3)
-                            val location = item.location.takeIf { it.isNotBlank() && it != item.name }
-                                ?: (item.handle as? LibraryFileHandle.Exported)?.file?.uri?.takeIf { uri -> rows.count { it.name == item.name } > 1 && uri.isNotBlank() }
-                            if (location != null) Text(location, style = MikaType.Hint, color = MikaTheme.colors.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(item.conversations.joinToString(" · ") { titles[it] ?: it }, style = MikaType.Hint, color = MikaTheme.colors.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(stringResource(if (item.input) R.string.file_library_input else R.string.file_library_output), style = MikaType.Hint, color = MikaTheme.colors.ink3)
-                            Text(stringResource(when (available) { true -> R.string.file_library_available; false -> R.string.file_library_missing; null -> R.string.file_library_loading }), style = MikaType.Hint, color = MikaTheme.colors.ink3)
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                if (available == false) TextButton(onClick = { revision++ }) { Text(stringResource(R.string.file_library_retry)) }
-                                TextButton(enabled = !working && available == true, onClick = { scope.launch { working = true; error = !LibraryFileActions.preview(context, item.handle); working = false } }) { Text(stringResource(R.string.file_library_open)) }
-                                TextButton(enabled = !working && available == true, onClick = { scope.launch { working = true; error = !LibraryFileActions.share(context, item.handle); working = false } }) { Text(stringResource(R.string.file_library_share)) }
-                                TextButton(enabled = !working && available == true, onClick = {
-                                    if (fromDrawer) choosing = item
-                                    else if (initialConversation != null) add(item, initialConversation)
-                                    else if (vm.ui.value.conversationId == null) add(item, vm.libraryTargetConversation())
-                                    else error = true
-                                }) { Text(stringResource(R.string.file_library_add)) }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+        },
+    )
     choosing?.let { item ->
-        AlertDialog(onDismissRequest = { choosing = null }, title = { Text(stringResource(R.string.file_library_choose)) }, text = {
-            Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
-                if (vm.canSwitch()) Text(stringResource(R.string.file_library_new), Modifier.fillMaxWidth().clickable {
-                    choosing = null
-                    add(item, store.newConversation())
-                }.padding(vertical = 12.dp))
-                titles.filter { (id, _) -> vm.canSwitch() || id == vm.ui.value.conversationId }.forEach { (id, title) -> Text(title, Modifier.fillMaxWidth().clickable {
-                    choosing = null
-                    add(item, id)
-                }.padding(vertical = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                if (vm.ui.value.conversationId == null) Text(stringResource(R.string.file_library_current), Modifier.fillMaxWidth().clickable {
-                    choosing = null
-                    add(item, vm.libraryTargetConversation())
-                }.padding(vertical = 12.dp))
-            }
-        }, confirmButton = { TextButton(onClick = { choosing = null }) { Text(stringResource(R.string.cancel)) } })
+        MikaDialog(
+            onDismissRequest = { choosing = null },
+            title = { Text(stringResource(R.string.file_library_choose)) },
+            text = {
+                Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                    var first = true
+                    fun nextFirst(): Boolean = first.also { first = false }
+                    if (vm.canSwitch()) {
+                        ListRow(
+                            null,
+                            stringResource(R.string.file_library_new),
+                            first = nextFirst(),
+                            titleColor = c.accent,
+                            onClick = {
+                                choosing = null
+                                add(item, store.newConversation())
+                            },
+                        )
+                    }
+                    titles.filter { (id, _) -> vm.canSwitch() || id == vm.ui.value.conversationId }.forEach { (id, title) ->
+                        ListRow(
+                            null,
+                            title,
+                            first = nextFirst(),
+                            onClick = {
+                                choosing = null
+                                add(item, id)
+                            },
+                        )
+                    }
+                    if (vm.ui.value.conversationId == null) {
+                        ListRow(
+                            null,
+                            stringResource(R.string.file_library_current),
+                            first = nextFirst(),
+                            onClick = {
+                                choosing = null
+                                add(item, vm.libraryTargetConversation())
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosing = null }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
-    if (error) AlertDialog(onDismissRequest = { error = false }, text = { Text(stringResource(R.string.file_library_error)) }, confirmButton = { TextButton(onClick = { error = false }) { Text(stringResource(R.string.done)) } })
-    if (savedElsewhere) AlertDialog(onDismissRequest = { savedElsewhere = false }, text = { Text(stringResource(R.string.file_library_draft_saved)) }, confirmButton = { TextButton(onClick = { savedElsewhere = false }) { Text(stringResource(R.string.done)) } })
+    if (error) {
+        MikaDialog(
+            onDismissRequest = { error = false },
+            text = { Text(stringResource(R.string.file_library_error)) },
+            confirmButton = { TextButton(onClick = { error = false }) { Text(stringResource(R.string.done)) } },
+        )
+    }
+    if (savedElsewhere) {
+        MikaDialog(
+            onDismissRequest = { savedElsewhere = false },
+            text = { Text(stringResource(R.string.file_library_draft_saved)) },
+            confirmButton = { TextButton(onClick = { savedElsewhere = false }) { Text(stringResource(R.string.done)) } },
+        )
+    }
+}
+
+@Composable
+private fun LibraryDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val c = MikaTheme.colors
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        shape = MikaShapes.Card,
+        containerColor = c.glassCardElevated,
+        tonalElevation = 0.dp,
+        shadowElevation = 12.dp,
+        border = BorderStroke(0.75.dp, Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom))),
+        content = content,
+    )
+}
+
+@Composable
+private fun LibraryMenuItem(text: String, selected: Boolean, onClick: () -> Unit) {
+    val c = MikaTheme.colors
+    DropdownMenuItem(
+        text = { Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        onClick = onClick,
+        colors = MenuDefaults.itemColors(textColor = if (selected) c.accent else c.ink),
+    )
 }

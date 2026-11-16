@@ -2,6 +2,7 @@ package com.wangzan101.mika.ui
 
 import com.wangzan101.mika.i18n.tr
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,7 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -37,6 +38,7 @@ import com.wangzan101.mika.ui.components.IconTile
 import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.PageBackground
 import com.wangzan101.mika.ui.components.ProgressDots
+import com.wangzan101.mika.ui.components.floatShadow
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
@@ -51,7 +53,11 @@ fun WelcomeScreen(onStart: () -> Unit) {
                 Column(Modifier.fillMaxWidth().padding(top = 40.dp, start = 8.dp, end = 8.dp, bottom = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Image(
                         painterResource(R.drawable.mika_launcher_art), null,
-                        Modifier.size(76.dp).shadow(14.dp, LogoShape, clip = false).clip(LogoShape),
+                        Modifier
+                            .size(76.dp)
+                            .floatShadow(c, LogoShape)
+                            .clip(LogoShape)
+                            .border(0.75.dp, Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom)), LogoShape),
                         contentScale = ContentScale.Crop,
                     )
                     Text(WelcomeCopy.TITLE, Modifier.padding(top = 20.dp), style = MikaType.LargeTitle, fontSize = 26.sp, color = c.ink, textAlign = TextAlign.Center)

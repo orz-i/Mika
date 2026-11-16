@@ -4,11 +4,11 @@ import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,7 +23,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -35,8 +34,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.wangzan101.mika.R
 import com.wangzan101.mika.cap.phone.PhoneServices
 import com.wangzan101.mika.capsule.previewFrames
@@ -51,7 +48,9 @@ import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.ListRow
 import com.wangzan101.mika.ui.components.PageScaffold
 import com.wangzan101.mika.ui.components.RowValue
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
@@ -151,10 +150,18 @@ private fun ScreenCard(row: ScreenRow, frames: StateFlow<Bitmap?>?, onOpenConver
             first = true, onClick = { onOpenConversation(row.conversationId) },
         ) { RowValue(ScreensCopy.state(row.state)) }
         if (row.displayId >= 0 || row.web) {
+            val previewInteraction = remember { MutableInteractionSource() }
             Text(
                 if (open) ScreensCopy.HIDE_PREVIEW else ScreensCopy.PREVIEW,
-                Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
-                    .clickable { open = !open }.testTag("screens-preview-${row.key}"),
+                Modifier
+                    .padding(start = 16.dp, top = 6.dp, bottom = 10.dp)
+                    .mikaPress(previewInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                    .background(c.glassSubtle, MikaShapes.Pill)
+                    .border(0.5.dp, c.glassEdge, MikaShapes.Pill)
+                    .clip(MikaShapes.Pill)
+                    .clickable(interactionSource = previewInteraction, indication = null) { open = !open }
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                    .testTag("screens-preview-${row.key}"),
                 fontSize = 13.sp, color = c.accent,
             )
             if (open && frames != null) LiveFrame(frames)
@@ -168,15 +175,24 @@ private fun ScreenCard(row: ScreenRow, frames: StateFlow<Bitmap?>?, onOpenConver
  */
 @Composable
 private fun LiveFrame(source: StateFlow<Bitmap?>) {
+    val c = MikaTheme.colors
     val frames = remember(source) { source.filterNotNull().previewFrames(same = ::sameFrame) }
     val frame by frames.collectAsState(initial = null)
     val bmp = frame ?: return
     var zoom by remember { mutableStateOf(false) }
+    val frameShape = RoundedCornerShape(10.dp)
+    val interaction = remember { MutableInteractionSource() }
     Image(
         bmp.asImageBitmap(), stringResource(R.string.screens_zoom),
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
-            .height(260.dp).clip(RoundedCornerShape(10.dp))
-            .clickable { zoom = true }.testTag("screens-zoom"),
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
+            .height(260.dp)
+            .mikaPress(interaction, pressedScale = 0.985f, shape = frameShape)
+            .clip(frameShape)
+            .border(0.75.dp, c.glassEdge, frameShape)
+            .clickable(interactionSource = interaction, indication = null) { zoom = true }
+            .testTag("screens-zoom"),
         contentScale = ContentScale.Fit,
     )
     if (zoom) FrameZoom(bmp) { zoom = false }
@@ -191,19 +207,17 @@ private fun FrameZoom(frame: Bitmap, onDismiss: () -> Unit) {
         scale = (scale * zoomChange).coerceIn(1f, 6f)
         offset = if (scale <= 1f) Offset.Zero else offset + panChange
     }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(
-            Modifier.fillMaxSize().background(MikaTheme.colors.bg.copy(alpha = 0.96f)).clickable { onDismiss() }
-                .testTag("screens-zoom-dialog"),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                frame.asImageBitmap(), null,
-                Modifier.fillMaxWidth().transformable(state)
-                    .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
-                contentScale = ContentScale.Fit,
-            )
-        }
+    GlassZoomDialog(
+        onDismiss = onDismiss,
+        dismissLabel = stringResource(R.string.collapse),
+        modifier = Modifier.testTag("screens-zoom-dialog"),
+    ) {
+        Image(
+            frame.asImageBitmap(), null,
+            Modifier.fillMaxWidth().transformable(state)
+                .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y),
+            contentScale = ContentScale.Fit,
+        )
     }
 }
 

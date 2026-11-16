@@ -1,10 +1,11 @@
 package com.wangzan101.mika.ui
 
-import androidx.compose.ui.res.stringResource
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -22,9 +22,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,10 +34,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -52,15 +52,21 @@ import com.wangzan101.mika.about.MikaLinks
 import com.wangzan101.mika.about.ReleaseInfo
 import com.wangzan101.mika.about.UpdateState
 import com.wangzan101.mika.ui.components.ButtonKind
+import com.wangzan101.mika.ui.components.ButtonSize
 import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.ListRow
-import com.wangzan101.mika.ui.components.MikaSwitch
+import com.wangzan101.mika.ui.components.MikaBottomSheet
 import com.wangzan101.mika.ui.components.MikaButton
+import com.wangzan101.mika.ui.components.MikaSwitch
 import com.wangzan101.mika.ui.components.PageScaffold
 import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.ValueTone
+import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.components.floatShadow
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 
@@ -140,7 +146,12 @@ fun AboutScreen(
         }
 
         Row(
-            Modifier.fillMaxWidth().padding(top = 2.dp).background(c.okSoft, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp),
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 2.dp)
+                .background(c.okSoft, MikaShapes.Card)
+                .border(0.75.dp, c.ok.copy(alpha = 0.24f), MikaShapes.Card)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(MikaIcons.Shield, null, Modifier.padding(top = 1.dp).size(18.dp), tint = c.ok)
@@ -148,6 +159,8 @@ fun AboutScreen(
         }
 
         Column(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            val licenseInteraction = remember { MutableInteractionSource() }
+            val licenseShape = RoundedCornerShape(6.dp)
             Text(
                 buildAnnotatedString {
                     val (before, after) = stringResource(R.string.about_released_under).split("%1\$s").let { it[0] to it.getOrElse(1) { "" } }
@@ -155,7 +168,11 @@ fun AboutScreen(
                     withStyle(SpanStyle(color = c.accent)) { append(AboutCopy.LICENSE_LINK) }
                     append(after)
                 },
-                Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onOpenLicense).padding(horizontal = 6.dp, vertical = 2.dp)
+                Modifier
+                    .mikaPress(licenseInteraction, pressedScale = 0.97f, shape = licenseShape)
+                    .clip(licenseShape)
+                    .clickable(interactionSource = licenseInteraction, indication = null, onClick = onOpenLicense)
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
                     .testTag("about-license"),
                 style = MikaType.Hint, color = c.ink3, textAlign = TextAlign.Center,
             )
@@ -182,13 +199,18 @@ fun AboutScreen(
 @Composable
 private fun Hero(versionName: String, build: String, beta: Boolean) {
     val c = MikaTheme.colors
+    val iconShape = RoundedCornerShape(20.dp)
     Column(
         Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Image(
             painterResource(R.drawable.mika_launcher_art), contentDescription = null,
-            Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)),
+            Modifier
+                .size(72.dp)
+                .floatShadow(c, iconShape)
+                .clip(iconShape)
+                .border(0.75.dp, Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom)), iconShape),
         )
         Text("Mika", Modifier.padding(top = 12.dp), style = MikaType.Title, fontWeight = FontWeight.Bold, color = c.ink)
         Text(AboutCopy.TAGLINE, Modifier.padding(top = 4.dp), style = MikaType.Caption, color = c.ink2, textAlign = TextAlign.Center)
@@ -196,7 +218,11 @@ private fun Hero(versionName: String, build: String, beta: Boolean) {
             Text(AboutCopy.version(versionName), style = MikaType.Hint, color = c.ink3)
             if (beta) {
                 Text(
-                    AboutCopy.BETA, Modifier.background(c.accentSoft, RoundedCornerShape(7.dp)).padding(horizontal = 7.dp, vertical = 1.dp),
+                    AboutCopy.BETA,
+                    Modifier
+                        .background(c.accentSoft, RoundedCornerShape(7.dp))
+                        .border(0.5.dp, c.accent.copy(alpha = 0.24f), RoundedCornerShape(7.dp))
+                        .padding(horizontal = 7.dp, vertical = 1.dp),
                     style = MikaType.Hint, fontWeight = FontWeight.SemiBold, color = c.accent,
                 )
             }
@@ -233,15 +259,10 @@ private fun ExternalMark() {
 @Composable
 private fun AboutSheetFrame(title: String, sub: String?, tag: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val c = MikaTheme.colors
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surface,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-    ) {
+    MikaBottomSheet(onDismissRequest = onDismiss) {
         // 面板内容太高(矮屏、大字号)时整体能滚,底下的按钮总够得着
         Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding()
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 16.dp).testTag(tag),
         ) {
             Text(title, style = MikaType.Title, color = c.ink)
@@ -251,13 +272,19 @@ private fun AboutSheetFrame(title: String, sub: String?, tag: String, onDismiss:
     }
 }
 
-/** 更新说明(Markdown),浅底、太长时在框里滚。 */
+/** 更新说明(Markdown),磨砂玻璃卡、太长时在框里滚。 */
 @Composable
 private fun NotesBox(notes: String) {
     val c = MikaTheme.colors
     Box(
-        Modifier.padding(top = 12.dp).fillMaxWidth().heightIn(max = 280.dp)
-            .background(c.fill, RoundedCornerShape(12.dp)).verticalScroll(rememberScrollState()).padding(12.dp),
+        Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth()
+            .heightIn(max = 280.dp)
+            .cardSurface(c, MikaShapes.Card)
+            .clip(MikaShapes.Card)
+            .verticalScroll(rememberScrollState())
+            .padding(14.dp),
     ) {
         MarkdownText(notes, MikaType.Caption.copy(color = c.ink2))
     }
@@ -269,10 +296,12 @@ internal fun UpdateSheet(r: ReleaseInfo, current: String, beta: Boolean, onOpenU
         if (r.notes.isNotBlank()) NotesBox(r.notes)
         if (r.apkUrl != null) UpdateDownloadControls(r)
         else MikaButton(AboutCopy.UPDATE_DOWNLOAD, { onOpenUrl(r.pageUrl) }, Modifier.fillMaxWidth().padding(top = 14.dp))
-        Text(
+        MikaButton(
             AboutCopy.UPDATE_LATER,
-            Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onDismiss).padding(vertical = 10.dp),
-            style = MikaType.Caption, color = MikaTheme.colors.ink3, textAlign = TextAlign.Center,
+            onDismiss,
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            kind = ButtonKind.Text,
+            size = ButtonSize.Medium,
         )
     }
 }
@@ -290,7 +319,7 @@ private fun ChangelogSheet(latest: ReleaseInfo?, onOpenAll: () -> Unit, onDismis
             )
             if (latest.notes.isNotBlank()) NotesBox(latest.notes)
         }
-        MikaButton(AboutCopy.CHANGELOG_ALL, onOpenAll, Modifier.fillMaxWidth().padding(top = 14.dp), kind = ButtonKind.Tonal)
+        MikaButton(AboutCopy.CHANGELOG_ALL, onOpenAll, Modifier.fillMaxWidth().padding(top = 14.dp), kind = ButtonKind.Secondary)
     }
 }
 

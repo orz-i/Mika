@@ -16,6 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,6 +52,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -86,7 +88,9 @@ import com.wangzan101.mika.ui.components.SelectChip
 import com.wangzan101.mika.ui.components.TagTone
 import com.wangzan101.mika.ui.components.TileTone
 import com.wangzan101.mika.ui.components.TopBar
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 
@@ -339,9 +343,16 @@ private fun ProvidersSection(ui: ModelSetupUi, actions: ModelSetupActions) {
     ui.probeNote?.let { FooterNote(it, Modifier.testTag("setup-probe-note"), color = c.warn) }
     // 刚存下的那家一个模型都没试通过:直接去选主模型(选的时候先试调用)
     if (ui.pickToProbe != null && ui.roles.main == null) {
+        val pickInteraction = remember { MutableInteractionSource() }
         Text(
             ModelSetupCopy.PICK_MAIN,
-            Modifier.padding(start = 16.dp, bottom = 12.dp).clickable { actions.pickRole(ModelRole.Main) }.testTag("setup-pick-main").padding(vertical = 4.dp),
+            Modifier
+                .padding(start = 16.dp, bottom = 12.dp)
+                .mikaPress(pickInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                .clip(MikaShapes.Pill)
+                .clickable(interactionSource = pickInteraction, indication = null) { actions.pickRole(ModelRole.Main) }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+                .testTag("setup-pick-main"),
             fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.accent,
         )
     }
@@ -360,8 +371,14 @@ private fun AddProviderForm(ui: ModelSetupUi, actions: ModelSetupActions) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         GroupLabel(ModelsCopy.ADD_PROVIDER, Modifier.weight(1f))
         if (ui.providers.isNotEmpty()) {
+            val cancelInteraction = remember { MutableInteractionSource() }
             Text(
-                ModelSetupCopy.CANCEL, Modifier.clickable(onClick = actions.closeForm).padding(horizontal = 4.dp, vertical = 6.dp),
+                ModelSetupCopy.CANCEL,
+                Modifier
+                    .mikaPress(cancelInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                    .clip(MikaShapes.Pill)
+                    .clickable(interactionSource = cancelInteraction, indication = null, onClick = actions.closeForm)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
                 fontSize = 13.sp, color = c.accent,
             )
         }
@@ -409,7 +426,16 @@ private fun AddProviderForm(ui: ModelSetupUi, actions: ModelSetupActions) {
             if (f.keyRequired) ModelSetupCopy.KEY_HINT else ModelSetupCopy.KEY_OPTIONAL, first = !f.urlEditable,
             keyboard = KeyboardType.Password, secret = !showKey, modifier = Modifier.testTag("setup-api-key"),
         ) {
-            Text(if (showKey) stringResource(R.string.hide) else stringResource(R.string.show), Modifier.clickable { showKey = !showKey }, fontSize = 13.sp, color = c.accent)
+            val showInteraction = remember { MutableInteractionSource() }
+            Text(
+                if (showKey) stringResource(R.string.hide) else stringResource(R.string.show),
+                Modifier
+                    .mikaPress(showInteraction, pressedScale = 0.95f, shape = MikaShapes.Pill)
+                    .clip(MikaShapes.Pill)
+                    .clickable(interactionSource = showInteraction, indication = null) { showKey = !showKey }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                fontSize = 13.sp, color = c.accent,
+            )
         }
         if (f.showModel) {
             InputRow(
@@ -420,9 +446,16 @@ private fun AddProviderForm(ui: ModelSetupUi, actions: ModelSetupActions) {
     }
     // 列表里没有要的模型、或这家不提供列表时,随时可以自己填(没列出模型时那一栏已经在了)
     if (!f.noList) {
+        val manualInteraction = remember { MutableInteractionSource() }
         Text(
             if (f.manual) ModelSetupCopy.MANUAL_OFF else ModelSetupCopy.MANUAL_ON,
-            Modifier.padding(start = 16.dp, top = 8.dp).clickable { actions.setManual(!f.manual) }.padding(vertical = 4.dp).testTag("setup-manual-model"),
+            Modifier
+                .padding(start = 16.dp, top = 8.dp)
+                .mikaPress(manualInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                .clip(MikaShapes.Pill)
+                .clickable(interactionSource = manualInteraction, indication = null) { actions.setManual(!f.manual) }
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+                .testTag("setup-manual-model"),
             fontSize = 13.sp, color = c.accent,
         )
     }
@@ -470,10 +503,17 @@ private fun AddProviderForm(ui: ModelSetupUi, actions: ModelSetupActions) {
 @Composable
 private fun PresetSuggestion(f: AddForm, label: String, onUse: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     FooterNote(ModelSetupCopy.presetSuggestion(f), Modifier.padding(top = 2.dp).testTag("setup-preset-hint"), color = c.warn)
     Text(
         ModelSetupCopy.usePreset(label),
-        Modifier.padding(start = 16.dp, bottom = 12.dp).clickable(onClick = onUse).testTag("setup-use-preset").padding(vertical = 4.dp),
+        Modifier
+            .padding(start = 16.dp, bottom = 12.dp)
+            .mikaPress(interaction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+            .clip(MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, onClick = onUse)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .testTag("setup-use-preset"),
         fontSize = 13.sp, fontWeight = FontWeight.Medium, color = c.accent,
     )
 }

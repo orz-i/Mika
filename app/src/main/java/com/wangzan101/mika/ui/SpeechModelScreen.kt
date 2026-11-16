@@ -3,12 +3,14 @@ package com.wangzan101.mika.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.SegmentedControl
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaType
 import androidx.compose.foundation.layout.Box
@@ -358,10 +360,15 @@ fun DoubaoSetupPage(choice: SpeechChoice, configured: Boolean, actions: SpeechPi
         )
         if (failed) FooterNote(tr(R.string.speech_doubao_save_failed), Modifier.padding(top = 8.dp), color = c.bad)
         if (configured) {
+            val removeInteraction = remember { MutableInteractionSource() }
             Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
                 Text(
                     tr(R.string.speech_doubao_remove),
-                    Modifier.clip(MikaShapes.Pill).clickable(onClick = actions.clearDoubao).padding(horizontal = 16.dp, vertical = 12.dp)
+                    Modifier
+                        .mikaPress(removeInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                        .clip(MikaShapes.Pill)
+                        .clickable(interactionSource = removeInteraction, indication = null, onClick = actions.clearDoubao)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                         .testTag("speech-doubao-remove"),
                     style = MikaType.Body, color = c.bad,
                 )

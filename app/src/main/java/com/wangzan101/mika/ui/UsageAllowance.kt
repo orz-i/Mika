@@ -2,9 +2,9 @@ package com.wangzan101.mika.ui
 
 import android.util.Log
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,8 +29,12 @@ import com.wangzan101.mika.i18n.uiLocale
 import com.wangzan101.mika.settings.AllowanceRoute
 import com.wangzan101.mika.settings.Provider
 import com.wangzan101.mika.settings.ProviderStore
+import com.wangzan101.mika.ui.components.ButtonKind
+import com.wangzan101.mika.ui.components.ButtonSize
 import com.wangzan101.mika.ui.components.GroupCard
+import com.wangzan101.mika.ui.components.Hairline
 import com.wangzan101.mika.ui.components.ListRow
+import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
@@ -51,16 +55,25 @@ internal fun UsageAllowanceCard(providers: List<Provider>, store: ProviderStore,
     val revisions by store.providerKeyRevisions.collectAsState()
     var refresh by remember { mutableIntStateOf(0) }
     GroupCard {
-        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(tr(R.string.usage_allowance_title), Modifier.weight(1f).padding(vertical = 12.dp),
-                style = MikaType.Body, color = MikaTheme.colors.ink)
+        Row(
+            Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                tr(R.string.usage_allowance_title),
+                Modifier.weight(1f),
+                style = MikaType.BodyStrong,
+                color = MikaTheme.colors.ink,
+            )
             if (routes.any { (_, route) -> route.source != null }) {
-                TextButton(onClick = { refresh++ }) { Text(tr(R.string.refresh)) }
+                MikaButton(tr(R.string.refresh), { refresh++ }, kind = ButtonKind.Tonal, size = ButtonSize.Small)
             }
         }
+        Hairline(start = 16.dp)
         routes.forEachIndexed { index, (provider, route) ->
             key(provider.id) {
-                AllowanceRow(provider, route, store, revisions[provider.id] ?: 0L, refresh, index == 0, onOpenUrl)
+                AllowanceRow(provider, route, store, revisions[provider.id] ?: 0L, refresh, first = true, onOpenUrl = onOpenUrl)
+                if (index < routes.lastIndex) Hairline(start = 16.dp)
             }
         }
     }

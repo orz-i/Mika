@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,18 +12,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -32,7 +29,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wangzan101.mika.about.Diagnostics
 import com.wangzan101.mika.ui.components.ButtonKind
+import com.wangzan101.mika.ui.components.MikaBottomSheet
 import com.wangzan101.mika.ui.components.MikaButton
+import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.Dispatchers
@@ -53,14 +53,20 @@ fun DiagnosticsSheet(load: () -> String, onDismiss: () -> Unit) {
             runCatching(load).getOrElse { Diagnostics.sanitize("${Diagnostics.HEADER}\n(failed to collect: ${it.javaClass.simpleName})\n") }
         }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 16.dp).testTag("diagnostics-sheet")) {
+    MikaBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp).testTag("diagnostics-sheet")) {
             Text(AboutCopy.DIAGNOSTICS_TITLE, style = MikaType.Title, color = c.ink)
             Text(AboutCopy.DIAGNOSTICS_NOTE, Modifier.padding(top = 2.dp), style = MikaType.Caption, color = c.ink3)
             Box(
-                Modifier.padding(top = 12.dp).fillMaxWidth().heightIn(min = 120.dp, max = 360.dp)
-                    .background(c.fill, RoundedCornerShape(12.dp)).verticalScroll(rememberScrollState())
-                    .horizontalScroll(rememberScrollState()).padding(12.dp),
+                Modifier
+                    .padding(top = 12.dp)
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp, max = 360.dp)
+                    .cardSurface(c, MikaShapes.Card)
+                    .clip(MikaShapes.Card)
+                    .verticalScroll(rememberScrollState())
+                    .horizontalScroll(rememberScrollState())
+                    .padding(12.dp),
             ) {
                 Text(
                     text ?: AboutCopy.DIAGNOSTICS_LOADING, Modifier.testTag("diagnostics-text"),
@@ -75,7 +81,7 @@ fun DiagnosticsSheet(load: () -> String, onDismiss: () -> Unit) {
                 )
                 MikaButton(
                     AboutCopy.DIAGNOSTICS_SHARE, { text?.let { shareDiagnostics(context, it) } },
-                    Modifier.weight(1f).testTag("diagnostics-share"), kind = ButtonKind.Tonal, enabled = ready,
+                    Modifier.weight(1f).testTag("diagnostics-share"), kind = ButtonKind.Secondary, enabled = ready,
                 )
             }
         }

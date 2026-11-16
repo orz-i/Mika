@@ -1,6 +1,7 @@
 package com.wangzan101.mika.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -19,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -32,6 +34,8 @@ import com.wangzan101.mika.ui.components.FooterNote
 import com.wangzan101.mika.ui.components.MikaDialog
 import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.SelectChip
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 
@@ -78,8 +82,15 @@ internal fun ReasoningControl(ui: ModelSetupUi, role: ModelRole, modifier: Modif
 /** 卡片下方的轻量设置入口：没有额外表格或底色，保留足够的点击高度。 */
 @Composable
 internal fun ModelOptionButton(text: String, tag: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
     Row(
-        modifier.height(44.dp).clickable(onClick = onClick).testTag(tag).padding(horizontal = 4.dp),
+        modifier
+            .height(44.dp)
+            .mikaPress(interaction, pressedScale = 0.97f, shape = MikaShapes.Button)
+            .clip(MikaShapes.Button)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .testTag(tag)
+            .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {

@@ -7,10 +7,13 @@ import android.content.Intent
 import androidx.compose.ui.platform.LocalContext
 import com.wangzan101.mika.ui.components.keepsKeyboard
 import com.wangzan101.mika.ui.components.KeyboardDismissArea
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.wangzan101.mika.ui.components.MikaDialog
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -193,11 +196,19 @@ private fun SkillBody(r: SkillRow, expanded: Boolean) = ChangesAndText(r.changed
 private fun ChangesAndText(changed: List<String>, markdown: String, expanded: Boolean) {
     val c = MikaTheme.colors
     if (changed.isEmpty() && !expanded) return
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
+    val boxShape = RoundedCornerShape(10.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
+            .background(c.glassSubtle, boxShape)
+            .border(0.5.dp, c.glassEdge, boxShape)
+            .padding(10.dp),
+    ) {
         if (changed.isNotEmpty()) {
             Text(stringResource(R.string.skills_changed_lines), style = MikaType.Hint, color = c.ink3)
             changed.forEach { Text(it, style = MikaType.Hint, color = if (it.startsWith("+")) c.ok else c.bad) }
         }
-        if (expanded) Text(markdown, Modifier.padding(top = 6.dp), style = MikaType.Hint, color = c.ink2)
+        if (expanded) Text(markdown, Modifier.padding(top = if (changed.isNotEmpty()) 6.dp else 0.dp), style = MikaType.Hint, color = c.ink2)
     }
 }

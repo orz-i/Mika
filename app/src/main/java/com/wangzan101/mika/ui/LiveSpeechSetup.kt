@@ -1,6 +1,9 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +34,7 @@ import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.SegmentedControl
 import com.wangzan101.mika.ui.components.SelectChip
 import com.wangzan101.mika.ui.components.StatusPill
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
@@ -59,8 +63,16 @@ internal fun LiveServiceRow(
         subtitle = subtitle,
         trailing = {
             if (configured) {
+                val editInteraction = remember { MutableInteractionSource() }
                 Row(
-                    Modifier.clip(MikaShapes.Pill).clickable(onClick = onOpen).padding(start = 8.dp, top = 6.dp, bottom = 6.dp).testTag(tag),
+                    Modifier
+                        .mikaPress(editInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                        .background(c.glassSubtle, MikaShapes.Pill)
+                        .border(0.5.dp, c.glassEdge, MikaShapes.Pill)
+                        .clip(MikaShapes.Pill)
+                        .clickable(interactionSource = editInteraction, indication = null, onClick = onOpen)
+                        .padding(start = 10.dp, end = 6.dp, top = 5.dp, bottom = 5.dp)
+                        .testTag(tag),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(tr(R.string.speech_doubao_edit), style = MikaType.Value, color = c.ink2)
@@ -248,10 +260,15 @@ private fun BailianFunAsr(
     )
     probe.error?.let { FooterNote(it, Modifier.padding(top = 8.dp).testTag("speech-live-failed"), color = c.bad) }
     if (configured) {
+        val removeInteraction = remember { MutableInteractionSource() }
         Box(Modifier.fillMaxWidth().padding(top = 6.dp), contentAlignment = Alignment.Center) {
             Text(
                 tr(R.string.speech_bailian_remove),
-                Modifier.clip(MikaShapes.Pill).clickable(onClick = { onClear(region) }).padding(horizontal = 16.dp, vertical = 12.dp)
+                Modifier
+                    .mikaPress(removeInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                    .clip(MikaShapes.Pill)
+                    .clickable(interactionSource = removeInteraction, indication = null, onClick = { onClear(region) })
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
                     .testTag("speech-bailian-remove"),
                 style = MikaType.Body, color = c.bad,
             )

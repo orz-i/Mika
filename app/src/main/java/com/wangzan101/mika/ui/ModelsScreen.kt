@@ -10,7 +10,9 @@ import androidx.compose.ui.res.stringResource
 import com.wangzan101.mika.ui.components.keepsKeyboard
 import com.wangzan101.mika.ui.components.KeyboardDismissArea
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +23,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -31,13 +32,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import com.wangzan101.mika.ui.components.MikaBottomSheet
+import com.wangzan101.mika.ui.components.MikaCard
 import com.wangzan101.mika.ui.components.MikaDialog
+import com.wangzan101.mika.ui.components.mikaPress
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -87,7 +90,6 @@ import com.wangzan101.mika.ui.components.TileTone
 import com.wangzan101.mika.ui.components.TopBar
 import com.wangzan101.mika.ui.components.ValueTone
 import com.wangzan101.mika.ui.theme.MikaIcons
-import com.wangzan101.mika.ui.theme.MikaRadius
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaTheme
@@ -118,13 +120,23 @@ internal fun Page(title: String, onBack: () -> Unit, content: @Composable () -> 
 @Composable
 internal fun RoleCard(icon: ImageVector, label: String, line: ModelsCopy.RoleLine, first: Boolean = false, tag: String, onClick: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Column {
         if (!first) Hairline(start = 0.dp)
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).testTag(tag).padding(horizontal = 16.dp, vertical = 14.dp),
+            Modifier.fillMaxWidth()
+                .mikaPress(interaction, pressedScale = 0.988f)
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                .testTag(tag)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Box(Modifier.size(40.dp).background(c.neutralSoft, RoleTileShape), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(40.dp)
+                    .background(c.neutralSoft, RoleTileShape)
+                    .border(0.5.dp, c.specularHighlight.copy(alpha = if (c.isDark) 0.16f else 0.55f), RoleTileShape),
+                contentAlignment = Alignment.Center,
+            ) {
                 Icon(icon, null, Modifier.size(21.dp), tint = c.ink)
             }
             Column(Modifier.weight(1f)) {
@@ -152,13 +164,24 @@ private val RoleTileShape = RoundedCornerShape(12.dp)
 @Composable
 internal fun ProviderRow(p: Provider, line: String, first: Boolean, warning: String? = null, onClick: () -> Unit) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     Column {
         if (!first) Hairline()
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("provider-${p.name}").padding(horizontal = 16.dp).padding(vertical = 11.dp),
+            Modifier.fillMaxWidth()
+                .mikaPress(interaction, pressedScale = 0.988f)
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                .testTag("provider-${p.name}")
+                .padding(horizontal = 16.dp)
+                .padding(vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Box(Modifier.size(MikaSize.Tile).background(c.neutralSoft, MikaShapes.Tile), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(MikaSize.Tile)
+                    .background(c.neutralSoft, MikaShapes.Tile)
+                    .border(0.5.dp, c.specularHighlight.copy(alpha = if (c.isDark) 0.16f else 0.55f), MikaShapes.Tile),
+                contentAlignment = Alignment.Center,
+            ) {
                 Text(p.name.take(1).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = c.ink)
             }
             Column(Modifier.weight(1f)) {
@@ -264,9 +287,16 @@ internal fun ManualModel(p: Provider, state: ListState?, first: Boolean, onUse: 
     val running = state == ListState.Running
     val enabled = name.isNotBlank() && !running
     val example = ModelSetupCopy.modelExample(ProviderPresets.forHost(p.baseUrl)?.kind ?: p.kind)
+    val useInteraction = remember { MutableInteractionSource() }
     InputRow(ModelsCopy.MODEL_NAME, name, { name = it }, example, first = first, modifier = Modifier.testTag("manual-model")) {
         Text(
-            if (running) ModelSetupCopy.TESTING else ModelsCopy.USE, Modifier.clickable(enabled = enabled) { onUse(name.trim()) }.testTag("manual-model-use"),
+            if (running) ModelSetupCopy.TESTING else ModelsCopy.USE,
+            Modifier
+                .mikaPress(useInteraction, enabled = enabled, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                .clip(MikaShapes.Pill)
+                .clickable(interactionSource = useInteraction, indication = null, enabled = enabled) { onUse(name.trim()) }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .testTag("manual-model-use"),
             fontSize = 13.sp, fontWeight = FontWeight.Medium, color = if (enabled) MikaTheme.colors.accent else MikaTheme.colors.ink3,
         )
     }
@@ -416,7 +446,14 @@ fun ProviderDetailContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetail
             title = { Text(ModelsCopy.CHANGE_KEY) },
             text = {
                 KeyboardDismissArea {
-                    Box(Modifier.fillMaxWidth().keepsKeyboard().background(c.fill, MikaShapes.Button).padding(12.dp)) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .keepsKeyboard()
+                            .background(c.glassSubtle, MikaShapes.Button)
+                            .border(0.75.dp, Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom)), MikaShapes.Button)
+                            .padding(12.dp),
+                    ) {
                         if (key.isEmpty()) Text(ModelsCopy.NEW_KEY_HINT, style = MikaType.Body, color = c.ink3)
                         BasicTextField(
                             key, { key = it }, Modifier.fillMaxWidth().testTag("new-key"), singleLine = true,
@@ -551,16 +588,20 @@ fun AllModelsContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetailActio
                 is ListState.Failed -> FooterNote(ModelSetupCopy.failed(state.message), color = c.bad)
                 else -> Unit
             }
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
-                itemsIndexed(shown, key = { _, o -> o.id }) { i, o ->
-                    Box(Modifier.fillMaxWidth().clip(rowShape(i, shown.size)).background(c.surface)) {
-                        ModelRow(o, ui.rolesOf(p.id, o.id), first = i == 0) { using = o }
+            LazyColumn(
+                Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                itemsIndexed(shown, key = { _, o -> o.id }) { _, o ->
+                    MikaCard {
+                        ModelRow(o, ui.rolesOf(p.id, o.id), first = true) { using = o }
                     }
                 }
                 item {
                     FooterNote(
                         if (q.isNotEmpty() && shown.isEmpty()) ModelsCopy.NO_MATCH else ModelsCopy.allModelsNote(all.size),
-                        Modifier.padding(top = 10.dp),
+                        Modifier.padding(top = 6.dp),
                     )
                 }
             }
@@ -569,20 +610,18 @@ fun AllModelsContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetailActio
     using?.let { o -> UseAsSheet(ui, p, o.id, onUse = { role -> actions.use(role, o.id) }, onVision = { actions.setVision(o.id, it) }, onDismiss = { using = null }) }
 }
 
-/** 一张卡拆成懒加载的行时,每行的圆角:首行上圆、末行下圆。 */
-private fun rowShape(i: Int, n: Int): RoundedCornerShape {
-    val r = MikaRadius.Card
-    return RoundedCornerShape(topStart = if (i == 0) r else 0.dp, topEnd = if (i == 0) r else 0.dp,
-        bottomStart = if (i == n - 1) r else 0.dp, bottomEnd = if (i == n - 1) r else 0.dp)
-}
-
 /** 模型一行:模型名(等宽)和标签,右边标着它在给哪些用途干活。 */
 @Composable
 private fun ModelRow(o: ModelOption, roles: List<ModelRole>, first: Boolean, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
     Column {
         if (!first) Hairline(start = 16.dp)
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onClick).testTag("model-${o.id}").padding(horizontal = 16.dp, vertical = 11.dp),
+            Modifier.fillMaxWidth()
+                .mikaPress(interaction, pressedScale = 0.988f)
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+                .testTag("model-${o.id}")
+                .padding(horizontal = 16.dp, vertical = 11.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Column(Modifier.weight(1f)) {
@@ -603,8 +642,8 @@ private fun ModelRow(o: ModelOption, roles: List<ModelRole>, first: Boolean, onC
 @Composable
 private fun UseAsSheet(ui: ModelSetupUi, p: Provider, model: String, onUse: (ModelRole) -> Unit, onVision: (Boolean) -> Unit, onDismiss: () -> Unit) {
     val c = MikaTheme.colors
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)) {
-        Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp).testTag("use-as")) {
+    MikaBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(bottom = 8.dp).testTag("use-as")) {
             Text(model, Modifier.padding(horizontal = 16.dp), style = ModelIdStyle, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(ModelsCopy.useAsSubtitle(ModelsCopy.providerName(p)), Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp), style = MikaType.Caption, color = c.ink3)
             ModelRole.entries.forEachIndexed { i, role ->

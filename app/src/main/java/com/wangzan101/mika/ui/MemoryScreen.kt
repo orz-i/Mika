@@ -7,7 +7,10 @@ import androidx.compose.ui.res.stringResource
 import com.wangzan101.mika.ui.components.keepsKeyboard
 import com.wangzan101.mika.ui.components.KeyboardDismissArea
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -47,7 +51,9 @@ import com.wangzan101.mika.ui.components.SegmentedControl
 import com.wangzan101.mika.ui.components.SheetAction
 import com.wangzan101.mika.ui.components.SubPage
 import com.wangzan101.mika.ui.components.TileTone
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaIcons
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 
@@ -107,7 +113,18 @@ fun MemoryScreen(
         }) else null,
     ) {
         ui.brokenNotice?.let {
-            GroupCard { Text(stringResource(R.string.memory_unreadable), Modifier.padding(16.dp), style = MikaType.Caption, color = MikaTheme.colors.warn) }
+            val c = MikaTheme.colors
+            Text(
+                stringResource(R.string.memory_unreadable),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+                    .background(c.warnSoft, MikaShapes.Card)
+                    .border(0.75.dp, c.warnSolid.copy(alpha = 0.28f), MikaShapes.Card)
+                    .padding(16.dp),
+                style = MikaType.Caption,
+                color = c.warn,
+            )
         }
 
         val pendingLabel = if (ui.pendingCount > 0) stringResource(R.string.memory_pending_n, ui.pendingCount) else stringResource(R.string.memory_pending)
@@ -244,7 +261,16 @@ private fun MemoryRow(r: Row, first: Boolean, onClick: (() -> Unit)?) {
 
 @Composable
 internal fun Link(text: String, onClick: () -> Unit) {
-    Text(text, Modifier.clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 2.dp), style = MikaType.Hint, fontWeight = FontWeight.Medium, color = MikaTheme.colors.accent)
+    val interaction = remember { MutableInteractionSource() }
+    Text(
+        text,
+        Modifier
+            .mikaPress(interaction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+            .clip(MikaShapes.Pill)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        style = MikaType.Hint, fontWeight = FontWeight.Medium, color = MikaTheme.colors.accent,
+    )
 }
 
 @Composable

@@ -5,7 +5,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,12 +16,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -37,10 +39,13 @@ import com.wangzan101.mika.ui.components.ButtonSize
 import com.wangzan101.mika.ui.components.GroupCard
 import com.wangzan101.mika.ui.components.GroupLabel
 import com.wangzan101.mika.ui.components.ListRow
+import com.wangzan101.mika.ui.components.MikaBottomSheet
 import com.wangzan101.mika.ui.components.MikaButton
 import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.ValueTone
+import com.wangzan101.mika.ui.components.mikaPress
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 
@@ -121,23 +126,23 @@ class SignInSheetActions(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SignInSheet(ui: ModelSetupUi, kind: SignInKind, actions: SignInSheetActions) {
-    val c = MikaTheme.colors
-    ModalBottomSheet(
-        onDismissRequest = actions.dismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.surface,
-        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-    ) {
-        SignInSheetBody(ui, kind, actions)
+    MikaBottomSheet(onDismissRequest = actions.dismiss) {
+        SignInSheetBody(ui, kind, actions, paddedForNav = false)
     }
 }
 
 /** 面板里的内容(不带面板本身,便于测试)。 */
 @Composable
-internal fun SignInSheetBody(ui: ModelSetupUi, kind: SignInKind, actions: SignInSheetActions) {
+internal fun SignInSheetBody(ui: ModelSetupUi, kind: SignInKind, actions: SignInSheetActions, paddedForNav: Boolean = true) {
     val (_, running, failure) = ui.signInState(kind)
     val code = ui.accountSignIn.userCode.takeIf { running && kind == SignInKind.Xai && it.isNotBlank() }
-    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 20.dp).testTag("signin-sheet-${kind.tag}")) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .then(if (paddedForNav) Modifier.navigationBarsPadding() else Modifier)
+            .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
+            .testTag("signin-sheet-${kind.tag}"),
+    ) {
         when {
             code != null -> DeviceCodeBody(ui.accountSignIn, code) { actions.cancel(kind) }
             // 同一时刻只有一次登录:别家正在登录时这里不能开始
@@ -151,19 +156,25 @@ private fun IntroBody(kind: SignInKind, running: Boolean, failure: String?, busy
     val c = MikaTheme.colors
     Text(ModelsCopy.signInTitle(kind), Modifier.fillMaxWidth(), style = MikaType.Title, color = c.ink, textAlign = TextAlign.Center)
     Text(ModelsCopy.signInBody(kind), Modifier.padding(top = 10.dp), fontSize = 13.5.sp, lineHeight = 21.sp, color = c.ink2)
-    ModelsCopy.signInRisk(kind)?.let { Note(it, c.warnSoft, c.warn, Modifier.testTag("signin-risk")) }
-    ModelsCopy.signInInfo(kind)?.let { Note(it, c.fill, c.ink2) }
+    ModelsCopy.signInRisk(kind)?.let { Note(it, c.warnSoft, c.warn, c.warnSolid.copy(alpha = 0.28f), Modifier.testTag("signin-risk")) }
+    ModelsCopy.signInInfo(kind)?.let { Note(it, c.glassSubtle, c.ink2, c.glassEdge) }
     MikaButton(
         ModelsCopy.signInStart(kind), { actions.start(kind) },
         Modifier.fillMaxWidth().padding(top = 16.dp).testTag("signin-start"), enabled = !running && !busy,
     )
     if (busy) Text(ModelsCopy.SIGN_IN_BUSY, Modifier.padding(top = 10.dp).testTag("signin-busy"), fontSize = 13.sp, lineHeight = 18.sp, color = c.ink2)
     if (running) {
+        val cancelInteraction = remember { MutableInteractionSource() }
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(ModelsCopy.signInWaiting(kind), Modifier.weight(1f), fontSize = 13.sp, lineHeight = 18.sp, color = c.ink2)
             Text(
                 ModelSetupCopy.CANCEL,
-                Modifier.clickable { actions.cancel(kind) }.padding(start = 12.dp, top = 4.dp, bottom = 4.dp).testTag("signin-cancel"),
+                Modifier
+                    .mikaPress(cancelInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                    .clip(MikaShapes.Pill)
+                    .clickable(interactionSource = cancelInteraction, indication = null) { actions.cancel(kind) }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .testTag("signin-cancel"),
                 fontSize = 13.sp, color = c.accent,
             )
         }
@@ -190,13 +201,20 @@ private fun DeviceCodeBody(s: AccountSignInUi, code: String, cancel: () -> Unit)
         fontSize = 13.5.sp, lineHeight = 21.sp, color = c.ink2, textAlign = TextAlign.Center,
     )
     Text(
-        code, Modifier.fillMaxWidth().padding(top = 16.dp).testTag("signin-code"),
+        code,
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp)
+            .background(c.glassSubtle, MikaShapes.Card)
+            .border(0.75.dp, c.glassEdge, MikaShapes.Card)
+            .padding(vertical = 12.dp, horizontal = 16.dp)
+            .testTag("signin-code"),
         fontFamily = FontFamily.Monospace, fontSize = 30.sp, lineHeight = 36.sp, letterSpacing = 4.sp,
         fontWeight = FontWeight.SemiBold, color = c.ink, textAlign = TextAlign.Center,
     )
     if (s.expiresAtMs > 0) {
         val minutes = ((s.expiresAtMs - System.currentTimeMillis()) / 60_000).coerceAtLeast(1)
-        Text(ModelsCopy.codeValid(minutes.toInt()), Modifier.fillMaxWidth().padding(top = 4.dp), style = MikaType.Hint, color = c.ink3, textAlign = TextAlign.Center)
+        Text(ModelsCopy.codeValid(minutes.toInt()), Modifier.fillMaxWidth().padding(top = 6.dp), style = MikaType.Hint, color = c.ink3, textAlign = TextAlign.Center)
     }
     MikaButton(
         ModelsCopy.XAI_CODE_COPY_REOPEN, { copyAndReopen(context, code, s.openUrl) },
@@ -213,9 +231,16 @@ private fun DeviceCodeBody(s: AccountSignInUi, code: String, cancel: () -> Unit)
 }
 
 @Composable
-private fun Note(text: String, bg: Color, fg: Color, modifier: Modifier = Modifier) {
+private fun Note(text: String, bg: Color, fg: Color, border: Color, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(12.dp)
     Text(
-        text, modifier.fillMaxWidth().padding(top = 12.dp).background(bg, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+        text,
+        modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .background(bg, shape)
+            .border(0.75.dp, border, shape)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         fontSize = 12.5.sp, lineHeight = 19.sp, color = fg,
     )
 }

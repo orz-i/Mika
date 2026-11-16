@@ -1,5 +1,7 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -8,7 +10,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.OutlinedTextField
@@ -189,16 +193,26 @@ fun PlanEditorDialog(
                     PlanSwitch(tr(R.string.plans_enabled), draft.enabled, { draft = draft.copy(enabled = it) }, "plan-editor-enabled")
 
                     preview?.let { plan ->
+                        val c = MikaTheme.colors
+                        val previewShape = RoundedCornerShape(10.dp)
                         Spacer(Modifier.height(8.dp))
-                        Text(tr(R.string.plans_preview), style = MikaType.Caption, color = MikaTheme.colors.ink3)
-                        val zone = plan.calendarZone ?: draft.zone
-                        upcoming(plan, System.currentTimeMillis(), 3).forEachIndexed { index, at ->
-                            Text(
-                                "${index + 1}  ${formatPlanEditorTime(at, zone)} ($zone)",
-                                Modifier.testTag("plan-editor-preview-$index"),
-                                style = MikaType.Caption,
-                                color = MikaTheme.colors.ink3,
-                            )
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .background(c.glassSubtle, previewShape)
+                                .border(0.5.dp, c.glassEdge, previewShape)
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                        ) {
+                            Text(tr(R.string.plans_preview), style = MikaType.Caption, color = c.ink3)
+                            val zone = plan.calendarZone ?: draft.zone
+                            upcoming(plan, System.currentTimeMillis(), 3).forEachIndexed { index, at ->
+                                Text(
+                                    "${index + 1}  ${formatPlanEditorTime(at, zone)} ($zone)",
+                                    Modifier.testTag("plan-editor-preview-$index"),
+                                    style = MikaType.Caption,
+                                    color = c.ink2,
+                                )
+                            }
                         }
                     }
                     if (attempted && preview == null) {

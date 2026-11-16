@@ -5,9 +5,11 @@ import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -50,9 +53,11 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
@@ -80,11 +85,14 @@ import com.wangzan101.mika.core.usage.UsageStep
 import com.wangzan101.mika.core.usage.UsageTotals
 import com.wangzan101.mika.settings.ProviderStore
 import com.wangzan101.mika.ui.components.FooterNote
+import com.wangzan101.mika.ui.components.GlassMaterials
 import com.wangzan101.mika.ui.components.IconTile
 import com.wangzan101.mika.ui.components.MikaCard
 import com.wangzan101.mika.ui.components.PageScaffold
 import com.wangzan101.mika.ui.components.SegmentedControl
 import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.components.liquidGlass
+import com.wangzan101.mika.ui.components.mikaPress
 import com.wangzan101.mika.ui.theme.MikaColors
 import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaShapes
@@ -325,12 +333,19 @@ fun UsageContent(
             tags = UsagePreset.entries.map { "usage-range-${it.name}" },
         )
         if (report == null) return@PageScaffold
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.Center) {
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             Text(UsageCopy.rangeText(report.range, today), style = MikaType.Hint, color = c.ink3)
             if (preset == UsagePreset.Custom) {
+                val changeInteraction = remember { MutableInteractionSource() }
                 Text(" · ", style = MikaType.Hint, color = c.ink3)
                 Text(
-                    UsageCopy.CHANGE_DATES, Modifier.clickable(role = Role.Button, onClick = onPickCustom).testTag("usage-change-dates"),
+                    UsageCopy.CHANGE_DATES,
+                    Modifier
+                        .mikaPress(changeInteraction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+                        .clip(MikaShapes.Pill)
+                        .clickable(interactionSource = changeInteraction, indication = null, role = Role.Button, onClick = onPickCustom)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .testTag("usage-change-dates"),
                     style = MikaType.Hint, color = c.accent, fontWeight = FontWeight.Medium,
                 )
             }
@@ -419,14 +434,22 @@ private val TotalStyle = TextStyle(fontSize = 34.sp, lineHeight = 40.sp, fontWei
 
 @Composable
 private fun Stat(label: String, value: String, modifier: Modifier) {
-    Column(modifier) {
-        Text(label, style = MikaType.Hint, color = MikaTheme.colors.ink3, maxLines = 1)
+    val c = MikaTheme.colors
+    Column(
+        modifier
+            .background(c.glassSubtle, StatShape)
+            .border(0.5.dp, c.glassEdge, StatShape)
+            .padding(horizontal = 6.dp, vertical = 7.dp),
+    ) {
+        Text(label, style = MikaType.Hint, color = c.ink3, maxLines = 1)
         Text(
             value, Modifier.padding(top = 2.dp), style = MikaType.Value, fontWeight = FontWeight.SemiBold,
-            color = MikaTheme.colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
     }
 }
+
+private val StatShape = RoundedCornerShape(10.dp)
 
 /** 一张图的卡片:左边标题,右边一句小字。 */
 @Composable
@@ -471,57 +494,87 @@ private fun RankRow(
     dim: Boolean = false, bold: Boolean = false, onClick: (() -> Unit)? = null, tag: String,
 ) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    val clickMod = if (onClick != null) {
+        Modifier
+            .mikaPress(interaction, pressedScale = 0.985f, shape = RowShape)
+            .clip(RowShape)
+            .clickable(interactionSource = interaction, indication = null, role = Role.Button, onClick = onClick)
+    } else {
+        Modifier
+    }
+    val selectedMod = if (bold) {
+        Modifier
+            .background(c.glassSubtle, RowShape)
+            .border(0.5.dp, Brush.linearGradient(listOf(c.specularHighlight, c.specularMid, c.specularBottom)), RowShape)
+    } else {
+        Modifier
+    }
     Row(
         Modifier.fillMaxWidth()
-            .then(if (onClick != null) Modifier.clip(RowShape).clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .then(selectedMod)
+            .then(clickMod)
             .alpha(if (dim) 0.4f else 1f)
-            .padding(vertical = 8.dp)
+            .padding(horizontal = 6.dp, vertical = 8.dp)
             .testTag(tag),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            name, Modifier.width(118.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
+            name, Modifier.width(114.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
             style = (if (mono) RankMono else RankText).let { if (bold) it.copy(fontWeight = FontWeight.SemiBold) else it },
             color = if (muted) c.ink3 else c.ink,
         )
         Box(Modifier.weight(1f).height(14.dp)) {
             Canvas(Modifier.fillMaxWidth().fillMaxHeight()) {
+                val trackR = 4.dp.toPx()
+                drawRoundRect(c.glassSubtle, cornerRadius = CornerRadius(trackR))
+                drawRoundRect(c.glassEdge, cornerRadius = CornerRadius(trackR), style = Stroke(0.5.dp.toPx()))
                 val w = (size.width * fraction.coerceIn(0f, 1f)).coerceAtLeast(2.dp.toPx())
                 val r = 4.dp.toPx().coerceAtMost(w / 2)
                 val path = Path().apply {
-                    addRoundRect(RoundRect(0f, 0f, w, size.height, topRightCornerRadius = CornerRadius(r), bottomRightCornerRadius = CornerRadius(r)))
+                    addRoundRect(RoundRect(0f, 0f, w, size.height, topLeftCornerRadius = CornerRadius(trackR), bottomLeftCornerRadius = CornerRadius(trackR), topRightCornerRadius = CornerRadius(r), bottomRightCornerRadius = CornerRadius(r)))
                 }
-                drawPath(path, color)
+                drawPath(path, Brush.verticalGradient(listOf(color.copy(alpha = 0.86f), color)))
             }
         }
-        Column(Modifier.width(74.dp), horizontalAlignment = Alignment.End) {
+        Column(Modifier.width(72.dp), horizontalAlignment = Alignment.End) {
             Text(UsageCopy.tokens(tokens), style = RankValue, color = c.ink, maxLines = 1)
             Text(UsageCopy.percent(share), style = RankShare, color = c.ink3, maxLines = 1)
         }
     }
 }
 
-private val RowShape = RoundedCornerShape(8.dp)
+private val RowShape = RoundedCornerShape(10.dp)
 private val RankText = TextStyle(fontSize = 13.5.sp, lineHeight = 18.sp)
 private val RankMono = TextStyle(fontSize = 12.5.sp, lineHeight = 18.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Medium)
 private val RankValue = TextStyle(fontSize = 13.sp, lineHeight = 17.sp)
 private val RankShare = TextStyle(fontSize = 11.sp, lineHeight = 14.sp)
 
-/** 切换服务商的胶囊:选中时强调色实底;[deleted] 的名字变淡、后面写「（已删除）」。 */
+/** 切换服务商的胶囊:选中时强调色渐变;[deleted] 的名字变淡、后面写「（已删除）」。 */
 @Composable
 private fun UsageChip(text: String, selected: Boolean, onClick: () -> Unit, deleted: Boolean = false, tag: String) {
     val c = MikaTheme.colors
+    val interaction = remember { MutableInteractionSource() }
     val fg = when {
         selected -> c.onAccent
         deleted -> c.ink3
         else -> c.ink
     }
+    val surfaceMod = if (selected) {
+        Modifier
+            .background(Brush.verticalGradient(listOf(c.accentHighlight, c.accent)), MikaShapes.Pill)
+            .border(0.75.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.42f), Color.White.copy(alpha = 0.08f))), MikaShapes.Pill)
+    } else {
+        Modifier.cardSurface(c, MikaShapes.Pill)
+    }
     Box(
-        Modifier.height(34.dp)
-            .then(if (selected) Modifier.background(c.accent, MikaShapes.Pill) else Modifier.cardSurface(c, MikaShapes.Pill))
+        Modifier
+            .mikaPress(interaction, pressedScale = 0.96f, shape = MikaShapes.Pill)
+            .height(34.dp)
+            .then(surfaceMod)
             .clip(MikaShapes.Pill)
-            .selectable(selected, role = Role.Tab, onClick = onClick)
+            .selectable(selected, interactionSource = interaction, indication = null, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 14.dp)
             .testTag(tag),
         contentAlignment = Alignment.Center,
@@ -591,6 +644,10 @@ private fun TrendChart(report: UsageReport, selected: String?, today: LocalDate)
             drawLine(c.grid, Offset(plotStart, h), Offset(plotStart + plot, h), 1.dp.toPx())
             stacks.forEachIndexed { i, segs ->
                 val x = plotStart + if (rtl) plot - colW - i * step else i * step
+                if (tapped == i) {
+                    val colR = 4.dp.toPx().coerceAtMost(colW / 2)
+                    drawRoundRect(c.glassSubtle, Offset(x, 0f), Size(colW, h), CornerRadius(colR))
+                }
                 var bottom = h
                 segs.forEachIndexed { k, s ->
                     val top = k == segs.lastIndex
@@ -598,16 +655,17 @@ private fun TrendChart(report: UsageReport, selected: String?, today: LocalDate)
                     val drawn = if (top) segH else (segH - gap).coerceAtLeast(0.5f)
                     val base = if (s.slot != null) c.series.getOrNull(s.slot) ?: c.seriesOther else c.seriesOther
                     val color = if (selectedSlot != null && selectedSlot != (s.slot ?: -1)) base.copy(alpha = base.alpha * 0.25f) else base
+                    val brush = Brush.verticalGradient(listOf(color.copy(alpha = color.alpha * 0.88f), color))
                     if (top) {
                         val r = 4.dp.toPx().coerceAtMost(colW / 2).coerceAtMost(drawn)
                         drawPath(
                             Path().apply {
                                 addRoundRect(RoundRect(x, bottom - drawn, x + colW, bottom, topLeftCornerRadius = CornerRadius(r), topRightCornerRadius = CornerRadius(r)))
                             },
-                            color,
+                            brush,
                         )
                     } else {
-                        drawRect(color, Offset(x, bottom - drawn), Size(colW, drawn))
+                        drawRect(brush, Offset(x, bottom - drawn), Size(colW, drawn))
                     }
                     bottom -= segH
                 }
@@ -632,9 +690,15 @@ private fun TrendChart(report: UsageReport, selected: String?, today: LocalDate)
 
 @Composable
 private fun LegendItem(color: Color, name: String) {
+    val c = MikaTheme.colors
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-        Box(Modifier.size(9.dp).background(color, LegendShape))
-        Text(name, style = MikaType.Hint, color = MikaTheme.colors.ink2, maxLines = 1)
+        Box(
+            Modifier
+                .size(9.dp)
+                .background(color, LegendShape)
+                .border(0.5.dp, c.specularHighlight.copy(alpha = if (c.isDark) 0.22f else 0.55f), LegendShape),
+        )
+        Text(name, style = MikaType.Hint, color = c.ink2, maxLines = 1)
     }
 }
 
@@ -654,34 +718,39 @@ private fun TrendTip(b: UsageBucket, report: UsageReport, index: Int, gutter: Dp
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val rows = b.byProvider.entries.sortedByDescending { it.value }
     Column(
-        Modifier.layout { m, cons ->
-            val p = m.measure(cons.copy(minWidth = 0, minHeight = 0))
-            layout(cons.maxWidth, p.height) {
-                val plot = cons.maxWidth - gutter.roundToPx()
-                val logicalCenter = plot / report.series.size.toFloat() * (index + 0.5f)
-                val center = if (rtl) cons.maxWidth - logicalCenter else logicalCenter
-                p.place((center - p.width / 2f).toInt().coerceIn(0, (cons.maxWidth - p.width).coerceAtLeast(0)), 0)
+        Modifier
+            .layout { m, cons ->
+                val p = m.measure(cons.copy(minWidth = 0, minHeight = 0))
+                layout(cons.maxWidth, p.height) {
+                    val plot = cons.maxWidth - gutter.roundToPx()
+                    val logicalCenter = plot / report.series.size.toFloat() * (index + 0.5f)
+                    val center = if (rtl) cons.maxWidth - logicalCenter else logicalCenter
+                    p.place((center - p.width / 2f).toInt().coerceIn(0, (cons.maxWidth - p.width).coerceAtLeast(0)), 0)
+                }
             }
-        }.background(c.ink, TipShape).padding(horizontal = 9.dp, vertical = 6.dp).testTag("usage-chart-tip"),
+            .liquidGlass(GlassMaterials.FloatingPill, backdrop = null, shape = TipShape)
+            .padding(horizontal = 10.dp, vertical = 7.dp)
+            .testTag("usage-chart-tip"),
     ) {
         Text(
             "${UsageCopy.period(b, report.step, today)} · ${UsageCopy.tokens(b.tokens)}",
-            style = TipText, fontWeight = FontWeight.SemiBold, color = c.bg, maxLines = 1,
+            style = TipText, fontWeight = FontWeight.SemiBold, color = c.ink, maxLines = 1,
         )
         rows.forEach { (id, v) ->
             val name = report.provider(id)?.let(UsageCopy::providerName) ?: id
-            Text("$name　${UsageCopy.tokens(v)}", style = TipText, color = c.bg, maxLines = 1)
+            Text("$name　${UsageCopy.tokens(v)}", style = TipText, color = c.ink2, maxLines = 1)
         }
     }
 }
 
-private val TipShape = RoundedCornerShape(8.dp)
+private val TipShape = RoundedCornerShape(10.dp)
 private val TipText = TextStyle(fontSize = 11.5.sp, lineHeight = 18.sp)
 
 /** 自定义范围的日期选择:只能选账本还留着的日子(最近 [UsageLedger.KEEP_DAYS] 天)到今天,两头都选了才可查看。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UsageRangePicker(today: LocalDate, from: LocalDate?, to: LocalDate?, onPicked: (LocalDate, LocalDate) -> Unit, onDismiss: () -> Unit) {
+    val c = MikaTheme.colors
     // 日期选择器的日期是 UTC 零点的毫秒数
     fun millis(d: LocalDate) = d.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
     fun date(ms: Long) = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
@@ -699,6 +768,8 @@ private fun UsageRangePicker(today: LocalDate, from: LocalDate?, to: LocalDate?,
     val end = state.selectedEndDateMillis
     DatePickerDialog(
         onDismissRequest = onDismiss,
+        shape = MikaShapes.Dialog,
+        colors = DatePickerDefaults.colors(containerColor = c.surface),
         confirmButton = {
             TextButton({ if (start != null && end != null) onPicked(date(start), date(end)) }, enabled = start != null && end != null) {
                 Text(tr(R.string.view))
@@ -706,6 +777,11 @@ private fun UsageRangePicker(today: LocalDate, from: LocalDate?, to: LocalDate?,
         },
         dismissButton = { TextButton(onDismiss) { Text(tr(R.string.cancel)) } },
     ) {
-        DateRangePicker(state, Modifier.weight(1f), showModeToggle = false)
+        DateRangePicker(
+            state,
+            Modifier.weight(1f),
+            showModeToggle = false,
+            colors = DatePickerDefaults.colors(containerColor = Color.Transparent),
+        )
     }
 }

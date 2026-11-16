@@ -5,7 +5,13 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,6 +23,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -28,6 +36,8 @@ import com.wangzan101.mika.about.DownloadPhase
 import com.wangzan101.mika.about.ReleaseInfo
 import com.wangzan101.mika.ui.components.ButtonKind
 import com.wangzan101.mika.ui.components.MikaButton
+import com.wangzan101.mika.ui.components.cardSurface
+import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.CancellationException
@@ -122,6 +132,7 @@ internal fun UpdateDownloadActions(
     onInstall: () -> Unit,
     onCancel: () -> Unit,
 ) {
+    val c = MikaTheme.colors
     val active = state.phase == DownloadPhase.Downloading || state.phase == DownloadPhase.Paused
     val text = when {
         busy -> stringResource(R.string.about_update_working)
@@ -132,13 +143,54 @@ internal fun UpdateDownloadActions(
         state.phase == DownloadPhase.Failed -> stringResource(R.string.about_update_retry)
         else -> stringResource(R.string.about_update_download_in_app)
     }
-    MikaButton(text, if (state.phase == DownloadPhase.Ready) onInstall else onDownload,
-        Modifier.fillMaxWidth().padding(top = 14.dp), enabled = !busy && !active)
-    if (active || state.phase == DownloadPhase.Ready) {
-        MikaButton(stringResource(R.string.about_update_cancel), onCancel,
-            Modifier.fillMaxWidth().padding(top = 10.dp), kind = ButtonKind.Tonal, enabled = !busy)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 14.dp)
+            .cardSurface(c, MikaShapes.Card)
+            .padding(14.dp),
+    ) {
+        val percent = state.percent
+        if (active && percent != null) {
+            val progress = (percent / 100f).coerceIn(0f, 1f)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp)
+                    .height(6.dp)
+                    .clip(MikaShapes.Pill)
+                    .background(c.glassSubtle)
+                    .border(0.5.dp, c.glassEdge, MikaShapes.Pill),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(progress)
+                        .background(Brush.horizontalGradient(listOf(c.accent, c.accentHighlight)), MikaShapes.Pill),
+                )
+            }
+        }
+        MikaButton(
+            text,
+            if (state.phase == DownloadPhase.Ready) onInstall else onDownload,
+            Modifier.fillMaxWidth(),
+            enabled = !busy && !active,
+        )
+        if (active || state.phase == DownloadPhase.Ready) {
+            MikaButton(
+                stringResource(R.string.about_update_cancel),
+                onCancel,
+                Modifier.fillMaxWidth().padding(top = 10.dp),
+                kind = ButtonKind.Secondary,
+                enabled = !busy,
+            )
+        }
+        val note = error ?: if (state.phase == DownloadPhase.Failed) R.string.about_update_error else R.string.about_update_install_hint
+        Text(
+            stringResource(note),
+            Modifier.padding(top = 10.dp),
+            style = MikaType.Caption,
+            color = if (error != null || state.phase == DownloadPhase.Failed) c.bad else c.ink3,
+        )
     }
-    val note = error ?: if (state.phase == DownloadPhase.Failed) R.string.about_update_error else R.string.about_update_install_hint
-    Text(stringResource(note),
-        Modifier.padding(top = 8.dp), style = MikaType.Caption, color = MikaTheme.colors.ink3)
 }

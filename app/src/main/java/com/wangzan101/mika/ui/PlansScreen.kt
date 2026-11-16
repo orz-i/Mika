@@ -5,7 +5,11 @@ import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
 import android.content.Context
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.wangzan101.mika.chat.ConversationStore
 import com.wangzan101.mika.ui.components.MikaDialog
 import androidx.compose.material3.Text
@@ -100,7 +104,21 @@ fun PlansScreen(context: Context, onBack: () -> Unit, onOpenConversation: (Strin
             listOf(tr(R.string.plans_running_n, running.size), tr(R.string.plans_stopped_n, stopped.size)), segment, { segment = it },
             tags = listOf("plans-segment-running", "plans-segment-stopped"),
         )
-        error?.let { Text(it, Modifier.padding(top = 8.dp), style = MikaType.Caption, color = MikaTheme.colors.bad) }
+        error?.let {
+            val c = MikaTheme.colors
+            val errShape = RoundedCornerShape(12.dp)
+            Text(
+                it,
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .background(c.badSoft, errShape)
+                    .border(0.75.dp, c.bad.copy(alpha = 0.24f), errShape)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                style = MikaType.Caption,
+                color = c.bad,
+            )
+        }
         if (shown.isEmpty()) {
             GroupLabel("")
             EmptyNote(
