@@ -4,6 +4,7 @@ import android.net.VpnService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -13,6 +14,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -21,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.agent.use.common.network.CaptureMode
 import com.wangzan101.mika.R
 import com.wangzan101.mika.cap.phone.PhoneServices
+import com.wangzan101.mika.cap.phone.network.CapturePluginProfileStore
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.ui.components.FooterNote
 import com.wangzan101.mika.ui.components.GroupCard
@@ -29,6 +32,7 @@ import com.wangzan101.mika.ui.components.ListRow
 import com.wangzan101.mika.ui.components.MikaSwitch
 import com.wangzan101.mika.ui.components.PageScaffold
 import com.wangzan101.mika.ui.components.RadioRow
+import com.wangzan101.mika.ui.components.RowChevron
 import com.wangzan101.mika.ui.components.RowValue
 import com.wangzan101.mika.ui.components.TileTone
 import com.wangzan101.mika.ui.components.ValueTone
@@ -80,12 +84,15 @@ fun NetworkCaptureScreen(
     mode: CaptureMode,
     onMode: (CaptureMode) -> Unit,
     onBack: () -> Unit,
+    onOpenPlugins: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val network = remember(context) { PhoneServices.of(context).network }
+    val pluginStore = remember(context) { CapturePluginProfileStore.forContext(context) }
     var ebpfSupported by remember { mutableStateOf<Boolean?>(null) }
     var vpnGranted by remember { mutableStateOf(VpnService.prepare(context) == null) }
     var cacheCount by remember { mutableIntStateOf(network.cachedHistoryCount()) }
+    var pluginEntries by remember { mutableStateOf(emptyList<com.wangzan101.mika.cap.phone.network.CapturePluginEntry>()) }
     val isCapturing = network.isCapturing()
     val currentPkg = network.currentPackage
     val activeMode = network.getActiveMode()
@@ -95,11 +102,19 @@ fun NetworkCaptureScreen(
         ebpfSupported = withContext(Dispatchers.IO) { runCatching { network.isEbpfSupported() }.getOrDefault(false) }
         vpnGranted = VpnService.prepare(context) == null
         cacheCount = network.cachedHistoryCount()
+        pluginStore.loadIntoRegistry()
+        pluginEntries = pluginStore.snapshotEntries()
     }
 
     val vpnAuthLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         vpnGranted = VpnService.prepare(context) == null
     }
+
+    val builtinCount = pluginEntries.count { it.isBuiltin }
+    val customCount = pluginEntries.count { it.isOverridden }
+    val xhsLib = pluginEntries.firstOrNull { it.packageName == "com.xingin.xhs" }
+        ?.let { it.profile.cronetOffsetRules.firstOrNull()?.libSubstring ?: it.profile.sslOffsetRules.firstOrNull()?.libSubstring }
+        ?: "ELF"
 
     NetworkCaptureContent(
         enabled = enabled,
@@ -130,6 +145,12 @@ fun NetworkCaptureScreen(
             network.clearHistory()
             cacheCount = 0
         },
+        pluginSummary = if (pluginEntries.isNotEmpty()) {
+            stringResource(R.string.network_capture_plugins_row_summary, builtinCount, customCount, xhsLib)
+        } else {
+            null
+        },
+        onOpenPlugins = onOpenPlugins,
         onBack = onBack,
     )
 }
@@ -149,6 +170,8 @@ fun NetworkCaptureContent(
     onClearCache: () -> Unit,
     onBack: () -> Unit,
     lastError: String? = null,
+    pluginSummary: String? = null,
+    onOpenPlugins: (() -> Unit)? = null,
 ) {
     PageScaffold(stringResource(R.string.network_capture_title), onBack) {
         GroupCard {
@@ -237,6 +260,23 @@ fun NetworkCaptureContent(
                         style = MikaType.Value,
                         color = MikaTheme.colors.bad,
                     )
+                }
+            }
+        }
+
+        if (onOpenPlugins != null) {
+            GroupLabel(stringResource(R.string.network_capture_plugins_group))
+            GroupCard {
+                ListRow(
+                    MikaIcons.Apps,
+                    stringResource(R.string.network_capture_plugins_row_title),
+                    pluginSummary,
+                    first = true,
+                    onClick = onOpenPlugins,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RowChevron()
+                    }
                 }
             }
         }

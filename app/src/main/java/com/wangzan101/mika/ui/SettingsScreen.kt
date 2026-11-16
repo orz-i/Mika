@@ -67,7 +67,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置里能进入的子页面;[Home] 是设置首页,[Advanced] 集中放置连接、维护和工程能力。 */
-private enum class SettingsPage { Home, Advanced, AppAccess, PhoneOps, JumpConfirmProfiles, Wechat, DuringWork, Capsule, Language, Notifications, Recommendations, Sandbox, Recovery, SelfCheck, ComputerAccess, McpServers, Root, NetworkCapture, Developer, RunStats }
+private enum class SettingsPage { Home, Advanced, AppAccess, PhoneOps, JumpConfirmProfiles, Wechat, DuringWork, Capsule, Language, Notifications, Recommendations, Sandbox, Recovery, SelfCheck, ComputerAccess, McpServers, Root, NetworkCapture, NetworkCapturePlugins, Developer, RunStats }
 
 /**
  * 设置页:总状态卡 + 常用 / 我的数据 / 其他。高级与其他只增加一层,各子页返回来时的页面。
@@ -165,6 +165,7 @@ fun SettingsScreen(
     val back = {
         page = when (page) {
             SettingsPage.JumpConfirmProfiles -> SettingsPage.PhoneOps
+            SettingsPage.NetworkCapturePlugins -> SettingsPage.NetworkCapture
             SettingsPage.RunStats -> SettingsPage.Developer
             SettingsPage.SelfCheck -> SettingsPage.Recovery
             SettingsPage.Sandbox, SettingsPage.Recovery, SettingsPage.ComputerAccess,
@@ -262,7 +263,9 @@ fun SettingsScreen(
             mode = networkCaptureMode,
             onMode = { flags.setNetworkCaptureMode(it); networkCaptureMode = it },
             onBack = toAdvanced,
+            onOpenPlugins = { page = SettingsPage.NetworkCapturePlugins },
         )
+        SettingsPage.NetworkCapturePlugins -> CapturePluginProfilesScreen(onBack = { page = SettingsPage.NetworkCapture })
         SettingsPage.Developer -> DeveloperOptionsScreen(
             speed, onSpeed = { flags.setSpeed(it); speed = it }, onBack = toAdvanced,
             grounding = visionConfig?.let { GroundingSetting(it.model, it.capabilities.groundingVerified) },

@@ -17,7 +17,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.agent.use.common.network.CaptureMode
+import com.agent.use.common.network.plugin.EbpfProbeProfile
+import com.agent.use.common.network.plugin.NetworkCapturePluginRegistry
+import com.wangzan101.mika.cap.phone.network.CapturePluginEntry
 import com.wangzan101.mika.capsule.CapsuleMode
 import com.wangzan101.mika.core.agent.SpeedFlags
 import com.wangzan101.mika.core.cap.sandbox.SandboxStatus
@@ -553,6 +558,61 @@ class SettingsScreenTest {
         compose.onNodeWithTag("jump-profile-input-target").performTextInput("com.tencent.mm")
         compose.clickInDialog("保存")
         assertEquals(Triple("com.tencent.weread", "微信读书小程序", "com.tencent.mm"), saved)
+    }
+
+    @Test
+    fun networkCaptureScreenOpensPluginProfiles() {
+        var openedPlugins = 0
+        compose.setContent {
+            NetworkCaptureContent(
+                enabled = true,
+                onEnabled = {},
+                mode = CaptureMode.AUTO,
+                onMode = {},
+                ebpfSupported = true,
+                vpnGranted = true,
+                onRequestVpnPermission = {},
+                activeSummary = null,
+                cacheCount = 0,
+                onClearCache = {},
+                onBack = {},
+                pluginSummary = "内置 2 项 / 自定义 0 项（libcronet.114.0.5735.38.so）",
+                onOpenPlugins = { openedPlugins++ },
+            )
+        }
+        compose.onNodeWithText("eBPF 探测插件与偏移规则").performScrollTo().performClick()
+        assertEquals(1, openedPlugins)
+    }
+
+    @Test
+    fun capturePluginProfilesScreenDisplaysAndEditsXiaohongshuOffsets() {
+        val xhsBuiltin = NetworkCapturePluginRegistry.listBuiltinProfiles().getValue("com.xingin.xhs")
+        val savedProfiles = mutableListOf<Pair<String, EbpfProbeProfile>>()
+        val entries = listOf(
+            CapturePluginEntry(
+                packageName = "com.xingin.xhs",
+                profile = xhsBuiltin,
+                isBuiltin = true,
+                isOverridden = false,
+            ),
+        )
+        compose.setContent {
+            CapturePluginProfilesContent(
+                entries = entries,
+                installedApps = listOf("com.xingin.xhs" to "小红书"),
+                onBack = {},
+                onSaveProfile = { pkg, profile -> savedProfiles += pkg to profile },
+            )
+        }
+        compose.onNodeWithText("libcronet.114.0.5735.38.so").assertIsDisplayed()
+        compose.onNodeWithText("小红书 (com.xingin.xhs)").performScrollTo().performClick()
+        compose.onNodeWithTag("capture-plugin-input-lib").performTextReplacement("libcronet.120.0.0.1.so")
+        compose.clickInDialog("保存")
+
+        assertEquals(1, savedProfiles.size)
+        assertEquals("com.xingin.xhs", savedProfiles[0].first)
+        assertEquals("libcronet.120.0.0.1.so", savedProfiles[0].second.cronetOffsetRules.first().libSubstring)
+        assertTrue(savedProfiles[0].second.replaceBuiltinOffsets)
     }
 }
 
