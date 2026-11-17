@@ -218,6 +218,23 @@ object CustodyAttribution {
             )
         }
 
+        // R5c: 存在托管屏且近期存在 Agent 动作时，若目标通过自身进程/SDK 唤醒或复用主屏既有后台任务（根保留桌面 origin），
+        // 交由上层核验是否直跳并拉回虚拟屏（R1 已提前排除主屏原有顶部/同任务；有近期用户点击则按 R4 放行）。
+        val isRecentAgentBackgroundResume =
+            !arrival.newTask &&
+                arrival.taskId !in context.existingMainUserTaskIds &&
+                origin.pkg != null &&
+                origin.pkg in context.launcherPackages
+        if (context.managedDisplays.isNotEmpty() &&
+            context.hasRecentAgentAction(arrival.at) &&
+            (isSelfOriginated(arrival, origin) || isRecentAgentBackgroundResume)
+        ) {
+            if (hasRecentUserIntent(arrival.at, context)) {
+                return AttributionResult.Ignore(IgnoreReason.USER_INTENT_EVIDENCE)
+            }
+            return AttributionResult.Unattributed(recentAgentAction = true)
+        }
+
         // R6: 其它 -> Ignore
         return AttributionResult.Ignore(IgnoreReason.OTHER)
     }
@@ -278,11 +295,7 @@ object CustodyAttribution {
                 val pendingUserDismiss = (entry.state as? LedgerState.Resolved)?.let {
                     it.by == InterstitialActor.USER && it.choice == InterstitialChoice.UNKNOWN
                 } == true
-                val selfOriginatedTarget = !origin.isUnknown && when {
-                    !origin.pkg.isNullOrBlank() && !arrival.pkg.isNullOrBlank() -> origin.pkg == arrival.pkg
-                    origin.uid >= FIRST_APPLICATION_UID && arrival.uid >= FIRST_APPLICATION_UID -> origin.uid == arrival.uid
-                    else -> false
-                }
+                val selfOriginatedTarget = isSelfOriginated(arrival, origin)
                 when {
                     systemMediated -> targetPkg == null || arrival.pkg == null || arrival.pkg == targetPkg
                     selfOriginatedTarget -> {
@@ -301,6 +314,14 @@ object CustodyAttribution {
             }
             .sortedWith(R2_PREFERENCE)
             .firstOrNull()
+    }
+
+    private fun isSelfOriginated(arrival: Arrival, origin: LaunchOrigin): Boolean {
+        if (origin.isUnknown) return false
+        if (!origin.pkg.isNullOrBlank() && !arrival.pkg.isNullOrBlank()) {
+            return origin.pkg == arrival.pkg
+        }
+        return origin.uid >= FIRST_APPLICATION_UID && arrival.uid >= FIRST_APPLICATION_UID && origin.uid == arrival.uid
     }
 
     private fun isSystemMediatedOrigin(origin: LaunchOrigin): Boolean {

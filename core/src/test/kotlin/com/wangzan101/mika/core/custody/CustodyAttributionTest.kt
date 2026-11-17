@@ -465,4 +465,78 @@ class CustodyAttributionTest {
             ),
         )
     }
+
+    @Test
+    fun `R5c treats self-originated wakeups and background launcher-root resumes as Unattributed only during recent agent actions`() {
+        val wechatPkg = "com.tencent.mm"
+        val wechatUid = 10433
+        val bgResumeArrival = Arrival(
+            taskId = 49336,
+            pkg = wechatPkg,
+            userId = 0,
+            uid = wechatUid,
+            displayId = 0,
+            fromDisplay = Arrival.UNKNOWN_DISPLAY,
+            newTask = false,
+            sameTask = false,
+            topActivity = "com.tencent.mm/.plugin.base.stub.WXBizEntryActivity",
+            at = 10_200L,
+            standardTask = true,
+        )
+        val selfOrigin = LaunchOrigin(uid = wechatUid, pkg = wechatPkg, confidence = OriginConfidence.HIGH)
+        val launcherOrigin = LaunchOrigin(uid = 10233, pkg = launcherPkg, confidence = OriginConfidence.HIGH)
+
+        // 无授权框直跳：近期 Agent 动作窗口内的目标自启动 -> Unattributed(recentAgentAction = true)
+        assertEquals(
+            AttributionResult.Unattributed(recentAgentAction = true),
+            CustodyAttribution.attribute(
+                bgResumeArrival,
+                selfOrigin,
+                baseContext(previousMainTopTaskId = 49337, existingMainUserTaskIds = setOf(49337), lastAgentActionAtMs = 9_500L),
+            ),
+        )
+
+        // 目标入口透明页退出后，任务历史根 LauncherUI 带原桌面 origin 切回前台 -> 同样在近期动作窗内归入 Unattributed(true)
+        assertEquals(
+            AttributionResult.Unattributed(recentAgentAction = true),
+            CustodyAttribution.attribute(
+                bgResumeArrival,
+                launcherOrigin,
+                baseContext(previousMainTopTaskId = 49337, existingMainUserTaskIds = setOf(49337), lastAgentActionAtMs = 9_500L),
+            ),
+        )
+        // 即便 sameTask=true，只要 taskId 不在 existingMainUserTaskIds 且处于近期 Agent 动作窗内，仍应按 R5c 归入 Unattributed(true)
+        assertEquals(
+            AttributionResult.Unattributed(recentAgentAction = true),
+            CustodyAttribution.attribute(
+                bgResumeArrival.copy(sameTask = true),
+                launcherOrigin,
+                baseContext(previousMainTopTaskId = 49337, existingMainUserTaskIds = setOf(49337), lastAgentActionAtMs = 9_500L),
+            ),
+        )
+
+        // 若 1.5s 内有用户点击桌面/通知意图 -> 视为用户主动切换，不误判越屏
+        assertEquals(
+            AttributionResult.Ignore(IgnoreReason.USER_INTENT_EVIDENCE),
+            CustodyAttribution.attribute(
+                bgResumeArrival,
+                selfOrigin,
+                baseContext(
+                    previousMainTopTaskId = 49337,
+                    lastAgentActionAtMs = 9_500L,
+                    userIntents = listOf(UserIntentEvidence(UserIntentSource.LAUNCHER, launcherPkg, at = 9_800L)),
+                ),
+            ),
+        )
+
+        // 空闲期（超出 3s Agent 动作窗）仍按 R6 Ignore(OTHER) 放过
+        assertEquals(
+            AttributionResult.Ignore(IgnoreReason.OTHER),
+            CustodyAttribution.attribute(
+                bgResumeArrival,
+                selfOrigin,
+                baseContext(previousMainTopTaskId = 49337, lastAgentActionAtMs = 5_000L),
+            ),
+        )
+    }
 }
