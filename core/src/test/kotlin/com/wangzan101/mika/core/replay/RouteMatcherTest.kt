@@ -1,6 +1,9 @@
 package com.wangzan101.mika.core.replay
 
 import com.wangzan101.mika.core.agent.FakeModel
+import com.wangzan101.mika.core.knowledge.KnowledgeEntry
+import com.wangzan101.mika.core.knowledge.KnowledgeStore
+import com.wangzan101.mika.core.knowledge.Surface
 import com.wangzan101.mika.core.model.ModelReply
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.model.StopReason
@@ -73,5 +76,75 @@ class RouteMatcherTest {
         val routes = (1..7).map { memo.copy(id = "r$it", template = "在备忘录里写{1}" + "很".repeat(it)) }
         val got = RouteMatcher(FakeModel(), MemRoutes(*routes.toTypedArray()), null).candidates(goal)
         assertEquals(listOf("r1", "r2", "r3", "r4", "r5"), got.map { it.id })
+    }
+
+    @Test fun relaxedMatchingSupportsParaphraseAndReorderWithPackageMatch() = runTest {
+        val wechatPkg = "com.tencent.mm"
+        val taobaoPkg = "com.taobao.taobao"
+        val knowledge = KnowledgeStore(
+            listOf(
+                KnowledgeEntry("微信", "微信", Surface.Android, listOf(wechatPkg), emptyList(), listOf("WeChat"), null, "", "正文"),
+                KnowledgeEntry("淘宝", "淘宝", Surface.Android, listOf(taobaoPkg), emptyList(), listOf("Taobao"), null, "", "正文"),
+            ),
+        )
+        val sendRoute = memo.copy(id = "wx_send", template = "在微信里给{1}发消息说{2}", slots = 2, packages = listOf(wechatPkg))
+        val wrongWechatRoute = memo.copy(id = "wx_del", template = "在微信里删除与{1}的聊天记录", slots = 1, packages = listOf(wechatPkg))
+        val searchRoute = memo.copy(id = "tb_search", template = "在淘宝里搜索{1}", slots = 1, packages = listOf(taobaoPkg))
+
+        // 1. 精确匹配仍然保持最高优先级（无需 knowledge 也可命中）
+        assertEquals(
+            RouteChoice(sendRoute, listOf("张三丰", "晚上好")),
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["张三丰", "晚上好"]}""")), MemRoutes(sendRoute), null)
+                .choose("在微信里给张三丰发消息说晚上好"),
+        )
+
+        // 2. 同义改写 + 语序调整（"在微信里给{1}发消息说{2}" -> "用微信给张三发送晚上好消息"）
+        val paraphrasedGoal = "用微信给张三发送晚上好消息"
+        assertEquals(
+            RouteChoice(sendRoute, listOf("张三", "晚上好")),
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["张三", "晚上好"]}""")), MemRoutes(sendRoute), knowledge)
+                .choose(paraphrasedGoal),
+        )
+
+        // 3. 较短模板的同义改写（"在淘宝里搜索{1}" -> "帮我用淘宝查一下无线耳机"）
+        assertEquals(
+            RouteChoice(searchRoute, listOf("无线耳机")),
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["无线耳机"]}""")), MemRoutes(searchRoute), knowledge)
+                .choose("帮我用淘宝查一下无线耳机"),
+        )
+
+        // 4. 同 App 下意图不匹配（相似度过低）严格拒绝
+        assertNull(
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["张三"]}""")), MemRoutes(wrongWechatRoute), knowledge)
+                .choose(paraphrasedGoal),
+        )
+
+        // 5. 无包名命中（knowledge=null）不启用放宽匹配
+        assertNull(
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["张三", "晚上好"]}""")), MemRoutes(sendRoute), null)
+                .choose(paraphrasedGoal),
+        )
+
+        // 6. 严格拦截伪造槽位、超短/歧义槽位、重叠槽位、数字截半、以及紧贴模板字面的局部截断（张三 vs 张三丰）
+        assertNull(
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["李四", "晚上好"]}""")), MemRoutes(sendRoute), knowledge)
+                .choose(paraphrasedGoal),
+        )
+        assertNull(
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["张", "晚上好"]}""")), MemRoutes(sendRoute), knowledge)
+                .choose(paraphrasedGoal),
+        )
+        assertNull(
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["张三", "张三发送"]}""")), MemRoutes(sendRoute), knowledge)
+                .choose(paraphrasedGoal),
+        )
+        assertNull(
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["10"]}""")), MemRoutes(searchRoute), knowledge)
+                .choose("帮我用淘宝查一下100元耳机"),
+        )
+        assertNull(
+            RouteMatcher(FakeModel(text("""{"route": 1, "slots": ["张三", "晚上好"]}""")), MemRoutes(sendRoute), knowledge)
+                .choose("在微信里给张三丰发消息说晚上好"),
+        )
     }
 }

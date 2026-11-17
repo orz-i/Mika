@@ -49,6 +49,10 @@ data class Route(
     val lastUsedMs: Long,
 )
 
+/** 判断路线是否涉及指定包名（兼容包名仅出现在步骤前后锚点中的记录）。 */
+fun Route.involvesPackage(packageName: String): Boolean =
+    packageName in packages || steps.any { it.before.packageName == packageName || it.after.packageName == packageName }
+
 /** 路线的大小上限:步数和落盘字节数。 */
 const val MAX_ROUTE_STEPS = 60
 const val MAX_ROUTE_BYTES = 64 * 1024

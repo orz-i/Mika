@@ -19,6 +19,21 @@ interface RouteStore {
         put(replacing(r, old))
         old.filter { it.id != r.id }.forEach { remove(it.id) }
     }
+
+    /** 列出涉及 [packageName] 的全部路线。 */
+    fun forPackage(packageName: String): List<Route> = all().filter { it.involvesPackage(packageName) }
+
+    /** 切换指定路线的停用状态。 */
+    fun setDisabled(id: String, disabled: Boolean) {
+        update(id) { r -> if (r.disabled == disabled) null else r.copy(disabled = disabled) }
+    }
+
+    /** 删除涉及 [packageName] 的全部路线，返回删除条数。 */
+    fun removePackage(packageName: String): Int {
+        val targets = forPackage(packageName)
+        targets.forEach { remove(it.id) }
+        return targets.size
+    }
 }
 
 /** 同一条路:每步的工具、参数、目标都一样(锚点每次读屏略有出入,不算)。 */

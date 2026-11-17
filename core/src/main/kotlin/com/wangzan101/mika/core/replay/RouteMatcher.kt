@@ -27,19 +27,32 @@ data class RouteChoice(val route: Route, val slots: List<String>)
 class RouteMatcher(private val model: ChatModel, val store: RouteStore, private val knowledge: KnowledgeStore?) {
 
     fun candidates(goal: String, limit: Int = 5): List<Route> {
-        val apps = knowledge?.matchTask(goal, Int.MAX_VALUE)?.flatMap { it.packages }?.toSet().orEmpty()
+        val apps = matchedPackages(goal)
         val g = bigrams(goal)
+        val gSquashed = squash(goal).lowercase()
         return store.all().filter { !it.disabled }
-            .map { it to jaccard(g, bigrams(SLOT.replace(it.template, "\u0000"))) }
-            .filter { (r, sim) -> sim >= MIN_SIMILARITY || r.packages.any(apps::contains) }
-            .sortedByDescending { it.second }
+            .map { r ->
+                val tmpl = SLOT.replace(r.template, "\u0000")
+                val sim = jaccard(g, bigrams(tmpl))
+                val fixed = squash(SLOT.replace(r.template, "")).lowercase()
+                val charSim = multisetCharDice(gSquashed, fixed)
+                val pkgMatched = r.packages.any(apps::contains)
+                val rankScore = maxOf(sim, if (pkgMatched) charSim else 0.0) + if (pkgMatched) 0.1 else 0.0
+                Triple(r, sim >= MIN_SIMILARITY || pkgMatched, rankScore)
+            }
+            .filter { it.second }
+            .sortedByDescending { it.third }
             .take(limit)
             .map { it.first }
     }
 
+    private fun matchedPackages(goal: String): Set<String> =
+        knowledge?.matchTask(goal, Int.MAX_VALUE)?.flatMap { it.packages }?.toSet().orEmpty()
+
     suspend fun choose(goal: String): RouteChoice? {
         val list = candidates(goal)
         if (list.isEmpty()) return null
+        val apps = matchedPackages(goal)
         val text = list.withIndex().joinToString("\n", "用户原话:$goal\n\n做法模板:\n") { (i, r) -> "${i + 1}. ${r.template}" }
         val reply = try {
             withTimeoutOrNull(TIMEOUT_MS) { model.complete(PROMPT, listOf(Message(Role.User, listOf(Part.Text(text)), Author.Mika)), emptyList()) } ?: return null
@@ -48,11 +61,15 @@ class RouteMatcher(private val model: ChatModel, val store: RouteStore, private 
         } catch (e: Exception) {
             return null
         }
-        return parse(reply.parts.filterIsInstance<Part.Text>().joinToString("") { it.text }, list, goal)
+        return parse(reply.parts.filterIsInstance<Part.Text>().joinToString("") { it.text }, list, goal, apps)
     }
 
     companion object {
         const val MIN_SIMILARITY = 0.3
+        const val RELAXED_FILLED_DICE_THRESHOLD = 0.50
+        const val RELAXED_FIXED_DICE_THRESHOLD = 0.28
+        const val RELAXED_HYBRID_THRESHOLD = 0.38
+        const val MIN_RELAXED_SLOT_LEN = 2
         const val TIMEOUT_MS = 20_000L
         private val SLOT = Regex("\\{\\d+\\}")
         private val SLOT_N = Regex("\\{(\\d+)\\}")
@@ -67,7 +84,12 @@ class RouteMatcher(private val model: ChatModel, val store: RouteStore, private 
 
         val PROMPT: String by lazy { Prompts.role("route_match") }
 
-        internal fun parse(text: String, list: List<Route>, goal: String): RouteChoice? {
+        internal fun parse(
+            text: String,
+            list: List<Route>,
+            goal: String,
+            matchedPackages: Set<String> = emptySet(),
+        ): RouteChoice? {
             val start = text.indexOf('{'); val end = text.lastIndexOf('}')
             if (start < 0 || end <= start) return null
             val o = try { Json.parseToJsonElement(text.substring(start, end + 1)) as? JsonObject } catch (e: Exception) { null } ?: return null
@@ -77,13 +99,120 @@ class RouteMatcher(private val model: ChatModel, val store: RouteStore, private 
             val route = list.getOrNull(idx - 1) ?: return null
             val slots = (o["slots"] as? JsonArray ?: JsonArray(emptyList())).map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.contentOrNull ?: return null }
             if (slots.size != route.slots) return null
-            // 每个槽值在原话里恰好出现一次,且把槽值填回模板要正好得到原话:槽的边界和模板的固定文字对齐
-            // (「张三」不能从「张三丰」里抠出来)
+            // 每个槽值必须在用户原话里逐字且唯一出现
             if (slots.any { it.isBlank() || occurrences(goal, it) != 1 }) return null
             var unknown = false
             val filled = SLOT_N.replace(route.template) { m -> slots.getOrNull(m.groupValues[1].toInt() - 1) ?: run { unknown = true; "" } }
-            if (unknown || squash(filled) != squash(goal)) return null
+            if (unknown) return null
+
+            // 1. 最高优先级：填回模板后忽略空白与原话完全一致
+            if (squash(filled) == squash(goal)) {
+                return RouteChoice(route, slots)
+            }
+
+            // 2. 放宽兜底：同包名命中 + 模板与填充后文本相似度过阈值 + 严格槽位长度/唯一性/不重叠/防截断校验，支持同义改写与语序调整
+            if (!passesRelaxedMatch(route, slots, filled, goal, matchedPackages)) return null
             return RouteChoice(route, slots)
+        }
+
+        private fun passesRelaxedMatch(
+            route: Route,
+            slots: List<String>,
+            filled: String,
+            goal: String,
+            matchedPackages: Set<String>,
+        ): Boolean {
+            if (matchedPackages.isEmpty() || route.packages.none { it in matchedPackages }) return false
+            if (slots.any { it.trim().length < MIN_RELAXED_SLOT_LEN }) return false
+
+            val spans = mutableListOf<IntRange>()
+            for ((idx, slot) in slots.withIndex()) {
+                val pos = goal.indexOf(slot)
+                if (pos < 0) return false
+                val end = pos + slot.length - 1
+                // 防止从英文或数字连续词内部截半（例如把 "100" 抠成 "10"）
+                if (slot.first().isAsciiAlnum() && pos > 0 && goal[pos - 1].isAsciiAlnum()) return false
+                if (slot.last().isAsciiAlnum() && end + 1 < goal.length && goal[end + 1].isAsciiAlnum()) return false
+                if (hasGluedTemplateOverflow(route.template, idx + 1, slot, goal, pos)) return false
+                spans += pos..end
+            }
+            val sortedSpans = spans.sortedBy { it.first }
+            for (i in 1 until sortedSpans.size) {
+                if (sortedSpans[i - 1].last >= sortedSpans[i].first) return false
+            }
+
+            val goalSquashed = squash(goal).lowercase()
+            val filledSquashed = squash(filled).lowercase()
+            val fixedTemplate = squash(SLOT_N.replace(route.template, "")).lowercase()
+            val remainingGoal = stripSpans(goal, sortedSpans).let(::squash).lowercase()
+
+            val filledDice = multisetCharDice(filledSquashed, goalSquashed)
+            val fixedDice = multisetCharDice(fixedTemplate, remainingGoal)
+            val filledBigram = jaccard(bigrams(filledSquashed), bigrams(goalSquashed))
+            val hybridFilled = 0.5 * filledBigram + 0.5 * filledDice
+
+            return filledDice >= RELAXED_FILLED_DICE_THRESHOLD &&
+                fixedDice >= RELAXED_FIXED_DICE_THRESHOLD &&
+                hybridFilled >= RELAXED_HYBRID_THRESHOLD
+        }
+
+        /** 若模板占位符 {k} 紧贴前后固定字面字符，而原话同一锚点之间夹了更长文本却只截取了前缀/后缀，则拒绝部分截断槽。 */
+        private fun hasGluedTemplateOverflow(
+            template: String,
+            slotNum: Int,
+            slot: String,
+            goal: String,
+            slotPos: Int,
+        ): Boolean {
+            val token = "{$slotNum}"
+            val tIdx = template.indexOf(token)
+            if (tIdx < 0) return false
+            val prefixChar = template.getOrNull(tIdx - 1)?.takeIf { !it.isWhitespace() && it != '}' }
+            val suffixChar = template.getOrNull(tIdx + token.length)?.takeIf { !it.isWhitespace() && it != '{' }
+            if (prefixChar != null && suffixChar != null && slotPos > 0) {
+                val pInGoal = goal.lastIndexOf(prefixChar, slotPos - 1)
+                val sInGoal = goal.indexOf(suffixChar, slotPos + slot.length)
+                if (pInGoal >= 0 && sInGoal >= slotPos + slot.length) {
+                    val gapLeft = goal.substring(pInGoal + 1, slotPos)
+                    val gapRight = goal.substring(slotPos + slot.length, sInGoal)
+                    if ((gapLeft.length in 1..2 || gapRight.length in 1..2) &&
+                        gapLeft.length in 0..2 && gapRight.length in 0..2 &&
+                        gapLeft.none { it.isWhitespace() } && gapRight.none { it.isWhitespace() }
+                    ) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        private fun stripSpans(s: String, sortedSpans: List<IntRange>): String {
+            if (sortedSpans.isEmpty()) return s
+            val sb = StringBuilder(s.length)
+            var cursor = 0
+            for (r in sortedSpans) {
+                if (r.first > cursor) sb.append(s, cursor, r.first)
+                cursor = r.last + 1
+            }
+            if (cursor < s.length) sb.append(s, cursor, s.length)
+            return sb.toString()
+        }
+
+        private fun Char.isAsciiAlnum(): Boolean = this in 'a'..'z' || this in 'A'..'Z' || this in '0'..'9'
+
+        internal fun multisetCharDice(a: String, b: String): Double {
+            if (a.isEmpty() || b.isEmpty()) return 0.0
+            val counts = HashMap<Char, Int>()
+            for (ch in a) counts[ch] = (counts[ch] ?: 0) + 1
+            var common = 0
+            for (ch in b) {
+                val c = counts[ch] ?: 0
+                if (c > 0) {
+                    common++
+                    counts[ch] = c - 1
+                }
+            }
+            return (2.0 * common) / (a.length + b.length).toDouble()
         }
 
         /** 字符二元组;占位符(\u0000)切断前后。 */
