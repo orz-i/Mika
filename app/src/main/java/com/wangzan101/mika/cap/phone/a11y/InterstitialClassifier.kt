@@ -183,10 +183,6 @@ internal class InterstitialClassifier(
                         reason = if (window.hasPasswordField) "password" else "secure",
                         safety = safety,
                     )
-                window.isExcludeFromRecents ->
-                    classifiedNeedsUser(id, ctx, window, "exclude_from_recents", safety, dialogTexts)
-                window.isDialogWindow ->
-                    classifiedNeedsUser(id, ctx, window, "dialog", safety, dialogTexts)
                 else -> ClassificationOutcome.None
             }
         }

@@ -222,6 +222,7 @@ internal class DisplayCustodian(
     private val recentPositiveTapAt = HashMap<Int, Pair<String, Long>>() // displayId -> (pkg, atMs)
     private val waitersForResolution = CopyOnWriteArrayList<CompletableDeferred<Unit>>()
     @Volatile private var pendingAccessDenial: com.wangzan101.mika.core.access.AppAccessDenied? = null
+    @Volatile private var movedToMainGrace: Pair<String, Long>? = null
 
     @Volatile private var started = false
     @Volatile private var closed = false
@@ -330,7 +331,7 @@ internal class DisplayCustodian(
         if (!pkg.isNullOrBlank()) {
             vdPackages += pkg
             val uid = runtime.uidOfPackage(pkg)
-            if (uid >= 0) uids += uid
+            if (uid >= android.os.Process.FIRST_APPLICATION_UID) uids += uid
         }
         if (taskId >= 0) {
             existingMainUserTaskIds -= taskId
@@ -405,6 +406,7 @@ internal class DisplayCustodian(
         val moved = runtime.moveTask(taskToMove, Display.DEFAULT_DISPLAY)
         if (moved) {
             lastAgentActionAtMs = clock()
+            movedToMainGrace = pending.id to (clock() + MAIN_MOVE_SETTLE_GRACE_MS)
             stateMutex.withLock {
                 val cur = _interstitialState.value ?: return@withLock
                 if (cur.id == pending.id) {
@@ -653,7 +655,10 @@ internal class DisplayCustodian(
         val now = if (arrival.at > 0L) arrival.at else clock()
         syncVdMetadata(vd)
 
-        if (vd > Display.DEFAULT_DISPLAY && arrival.displayId == vd) {
+        if (vd > Display.DEFAULT_DISPLAY &&
+            (arrival.displayId == vd ||
+                (arrival.taskId >= 0 && arrival.packageName in vdPackages && runtime.displayOfTask(arrival.taskId) == vd))
+        ) {
             recordVdArrival(vd, arrival)
             return
         }
@@ -713,10 +718,26 @@ internal class DisplayCustodian(
             }
 
             is AttributionResult.Unattributed -> {
-                updateMainTopTracker(arrival.taskId, arrival.packageName)
-                // 即使 Shell Origin 无法完全归因，若系统跳转弹窗刚落在主屏且近期有 Agent 动作，交由分类器进一步核验
-                if (arrival.packageName !in launcherPackages && arrival.packageName != selfPackage) {
-                    tryClassifyMainWindowForArrival(arrival, resolvedOrigin, vd, now, unattributed = true)
+                if (_interstitialState.value?.let { it.taskId >= 0 && it.taskId == arrival.taskId && !it.onVirtualDisplay } == true) {
+                    return
+                }
+                // 即使 Shell Origin 无法完全归因，若在近期 Agent 动作窗内落到主屏：
+                // 1）若为系统授权弹窗/选择器，交由分类器代点或挂起等待；
+                // 2）若为无授权弹窗的普通第三方 App 直跳，直接拉回虚拟屏，且拉回前不污染 currentMainTopTaskId。
+                val handled = if (arrival.packageName !in launcherPackages && arrival.packageName != selfPackage) {
+                    tryClassifyMainWindowForArrival(
+                        arrival = arrival,
+                        origin = resolvedOrigin,
+                        vd = vd,
+                        now = now,
+                        unattributed = true,
+                        recentAgentAction = result.recentAgentAction,
+                    )
+                } else {
+                    false
+                }
+                if (!handled) {
+                    updateMainTopTracker(arrival.taskId, arrival.packageName)
                 }
             }
 
@@ -727,14 +748,18 @@ internal class DisplayCustodian(
     }
 
     private suspend fun recordVdArrival(vd: Int, arrival: CustodyArrival) {
+        val now = if (arrival.at > 0L) arrival.at else clock()
+        val isInterstitialPkg = arrival.packageName.isNotBlank() &&
+            classifier.isSystemApp(arrival.packageName) &&
+            (_interstitialState.value?.packageName == arrival.packageName ||
+                ledger.activeOrRecent(now).any { it.packageName == arrival.packageName })
         val uids = managedUidsByDisplay.getOrPut(vd) { ConcurrentHashMap.newKeySet() }
-        if (arrival.uid >= 0) uids += arrival.uid
-        if (arrival.packageName.isNotBlank()) {
+        if (arrival.uid >= android.os.Process.FIRST_APPLICATION_UID) uids += arrival.uid
+        if (arrival.packageName.isNotBlank() && !isInterstitialPkg) {
             vdPackages += arrival.packageName
             val pmUid = runtime.uidOfPackage(arrival.packageName)
-            if (pmUid >= 0) uids += pmUid
+            if (pmUid >= android.os.Process.FIRST_APPLICATION_UID) uids += pmUid
         }
-        val now = if (arrival.at > 0L) arrival.at else clock()
         stateMutex.withLock {
             existingMainUserTaskIds -= arrival.taskId
             val active = _interstitialState.value
@@ -828,6 +853,9 @@ internal class DisplayCustodian(
     ) {
         val pkg = arrival.packageName
         if (vd <= Display.DEFAULT_DISPLAY || pkg.isBlank()) return
+        if (_interstitialState.value?.let { it.taskId >= 0 && it.taskId == arrival.taskId && !it.onVirtualDisplay } == true) {
+            return
+        }
 
         // 如果是由 R2（来自已打开或刚解决的选择器 / 跳转确认弹窗）触发的新任务到达：
         if (spill.reason == SpillReason.INTERSTITIAL_LEDGER && spill.ledgerEntryId != null) {
@@ -883,11 +911,20 @@ internal class DisplayCustodian(
         vd: Int,
         now: Long,
         unattributed: Boolean,
-    ) {
-        if (vd <= Display.DEFAULT_DISPLAY) return
+        recentAgentAction: Boolean = false,
+    ): Boolean {
+        if (vd <= Display.DEFAULT_DISPLAY) return false
+        if (_interstitialState.value?.let { it.taskId >= 0 && it.taskId == arrival.taskId && !it.onVirtualDisplay } == true) {
+            return false
+        }
         val activePending = _interstitialState.value
         val activeAge = activePending?.let { now - it.sinceMs } ?: Long.MAX_VALUE
-        // 若正处于挂起的用户中间页期间（Chooser/JumpConfirm），先看是否命中 R2 补救，否则不把普通未归因切屏误抓进来
+        if (!recentAgentAction && (activePending == null || activeAge >= 15_000L)) {
+            return false
+        }
+        val isSysPkg = classifier.isSystemApp(arrival.packageName)
+        // 若正处于挂起的用户中间页期间（Chooser/JumpConfirm），先看是否命中 R2 补救，否则不把普通未归因切屏误抓进来；
+        // 若处于近期 Agent 动作窗内，系统包按中间页核验，普通第三方应用直跳则在确认非敏感认证弹窗后直接拉回 VD。
         val pair = classifyDisplayWindowWithSettle(
             displayId = Display.DEFAULT_DISPLAY,
             expectedPackage = arrival.packageName,
@@ -896,31 +933,83 @@ internal class DisplayCustodian(
             attributedDisplayId = if (unattributed) Display.DEFAULT_DISPLAY else vd,
             origin = origin,
             nowMs = now,
-            checkSecure = false,
-            requireMatchedJumpToAct = true,
-        ) ?: return
+            checkSecure = recentAgentAction && !isSysPkg,
+            requireMatchedJumpToAct = !recentAgentAction || isSysPkg,
+        )
 
-        val (outcome, inspected) = pair
-        if (outcome is InterstitialClassifier.ClassificationOutcome.Classified &&
-            outcome.interstitial is Interstitial.JumpConfirm
-        ) {
-            val fixedInterstitial = resolveJumpConfirmForVd(
-                jc = outcome.interstitial as Interstitial.JumpConfirm,
-                onSameDisplayAsVd = false,
-                vd = vd,
-                nowMs = now,
-            ) ?: return
-            processClassifiedInterstitial(
-                outcome = outcome.copy(interstitial = fixedInterstitial),
-                inspected = inspected,
-                displayId = Display.DEFAULT_DISPLAY,
-                taskId = arrival.taskId,
-                userId = arrival.userId,
-                attributionSpill = AttributionResult.Spill(vd, SpillReason.MANAGED_ORIGIN_NO_USER_INTENT),
-                vd = vd,
-                nowMs = now,
-            )
+        if (pair != null) {
+            val (outcome, inspected) = pair
+            if (outcome is InterstitialClassifier.ClassificationOutcome.Classified) {
+                when (val interstitial = outcome.interstitial) {
+                    is Interstitial.JumpConfirm -> {
+                        val fixedInterstitial = resolveJumpConfirmForVd(
+                            jc = interstitial,
+                            onSameDisplayAsVd = false,
+                            vd = vd,
+                            nowMs = now,
+                        ) ?: return false
+                        processClassifiedInterstitial(
+                            outcome = outcome.copy(interstitial = fixedInterstitial),
+                            inspected = inspected,
+                            displayId = Display.DEFAULT_DISPLAY,
+                            taskId = arrival.taskId,
+                            userId = arrival.userId,
+                            attributionSpill = AttributionResult.Spill(vd, SpillReason.MANAGED_ORIGIN_NO_USER_INTENT),
+                            vd = vd,
+                            nowMs = now,
+                        )
+                        return true
+                    }
+                    is Interstitial.Chooser -> if (recentAgentAction) {
+                        processClassifiedInterstitial(
+                            outcome = outcome,
+                            inspected = inspected,
+                            displayId = Display.DEFAULT_DISPLAY,
+                            taskId = arrival.taskId,
+                            userId = arrival.userId,
+                            attributionSpill = AttributionResult.Spill(vd, SpillReason.MANAGED_ORIGIN_NO_USER_INTENT),
+                            vd = vd,
+                            nowMs = now,
+                        )
+                        return true
+                    }
+                    is Interstitial.NeedsUser -> {
+                        val keepOnMainForUser = isSysPkg ||
+                            interstitial.reason == "secure" ||
+                            interstitial.reason == "password" ||
+                            outcome.safety.hasPasswordField ||
+                            outcome.safety.isAuthenticator ||
+                            outcome.safety.isFlagSecure ||
+                            outcome.safety.isRuntimePermission
+                        if (recentAgentAction && keepOnMainForUser) {
+                            processClassifiedInterstitial(
+                                outcome = outcome,
+                                inspected = inspected,
+                                displayId = Display.DEFAULT_DISPLAY,
+                                taskId = arrival.taskId,
+                                userId = arrival.userId,
+                                attributionSpill = AttributionResult.Spill(vd, SpillReason.MANAGED_ORIGIN_NO_USER_INTENT),
+                                vd = vd,
+                                nowMs = now,
+                            )
+                            return true
+                        }
+                    }
+                }
+            }
         }
+
+        if (recentAgentAction && !isSysPkg && arrival.taskId >= 0) {
+            pullTaskBackToVd(
+                taskId = arrival.taskId,
+                pkg = arrival.packageName,
+                userId = arrival.userId,
+                vd = vd,
+                fromJumpConfirm = null,
+            )
+            return true
+        }
+        return false
     }
 
     private suspend fun handleFollowupAfterInterstitial(
@@ -1083,11 +1172,12 @@ internal class DisplayCustodian(
         // 1. 先检查当前正在等待用户处理的挂起中间页是否已经消失
         val active = _interstitialState.value
         if (active != null && active.displayId == displayId) {
+            val graceActive = movedToMainGrace?.let { (id, until) -> id == active.id && nowMs < until } == true
             val stillPresent = windows.any { w ->
                 w.inspection.packageName == active.packageName &&
                     (active.taskId < 0 || w.inspection.taskId < 0 || w.inspection.taskId == active.taskId)
             }
-            if (!stillPresent) {
+            if (!stillPresent && !graceActive) {
                 Log.i(TAG, "windowScan($displayId) active=${active.packageName}/${active.taskId} not present in ${windows.map { "${it.inspection.packageName}/${it.inspection.taskId}/${it.inspection.windowType}" }}")
                 resolveDismissedInterstitial(active, nowMs)
             }
@@ -1196,6 +1286,9 @@ internal class DisplayCustodian(
             nowMs - recentPos.second in 0L..2_500L
 
         val initialChoice = if (explicitDeny) InterstitialChoice.DENY else InterstitialChoice.UNKNOWN
+        if (movedToMainGrace?.first == active.id) {
+            movedToMainGrace = null
+        }
         stateMutex.withLock {
             ledger.resolve(active.id, InterstitialActor.USER, initialChoice, nowMs)
             _interstitialState.value = null
@@ -1439,9 +1532,24 @@ internal class DisplayCustodian(
             targetPackage = interstitial.targetPackage ?: "",
         )
         val entry = ledger.open(interstitial, nowMs)
+        val hosting = hostingEnabled()
+        val movedToVd = hosting &&
+            displayId == Display.DEFAULT_DISPLAY &&
+            taskId >= 0 &&
+            vd > Display.DEFAULT_DISPLAY &&
+            runtime.moveTask(taskId, vd)
+        if (movedToVd) {
+            stateMutex.withLock {
+                existingMainUserTaskIds -= taskId
+                if (currentMainTopTaskId == taskId) {
+                    currentMainTopTaskId = runtime.topTaskId(Display.DEFAULT_DISPLAY)
+                }
+            }
+        }
+        val activeDisplayId = if (movedToVd) vd else displayId
         val userTouched = userActedEntries.contains(entry.interstitial.id)
         val policyRequest = JumpConfirmRequest(
-            hostingEnabled = hostingEnabled(),
+            hostingEnabled = hosting,
             attributedDisplayId = attributionDisplayId,
             lastAgentActionAtMs = lastAgentActionAtMs,
             nowMs = nowMs,
@@ -1462,13 +1570,19 @@ internal class DisplayCustodian(
         )
 
         val decision = JumpConfirmPolicy.evaluate(policyRequest)
-        Log.i(TAG, "jumpConfirm decision=$decision pkg=${interstitial.packageName} target=${interstitial.targetPackage} task=$taskId allowUser=$allowUserInteraction")
+        Log.i(TAG, "jumpConfirm decision=$decision pkg=${interstitial.packageName} target=${interstitial.targetPackage} task=$taskId activeDisp=$activeDisplayId movedToVd=$movedToVd allowUser=$allowUserInteraction")
         if (decision is JumpConfirmDecision.Allow) {
             if (rateLimiter.tryAcquire(routeKey)) {
-                val okClick = inspected.performPositiveClick(decision.buttonToClick)
+                val okClick = performPositiveClickOnCustodyDialog(
+                    inspected = inspected,
+                    displayId = activeDisplayId,
+                    taskId = taskId,
+                    interstitial = interstitial,
+                    button = decision.buttonToClick,
+                )
                 if (okClick) {
                     val vanished = awaitDialogDismissed(
-                        displayId = displayId,
+                        displayId = activeDisplayId,
                         packageName = interstitial.packageName,
                         taskId = taskId,
                         timeoutMs = AUTO_CLICK_DISAPPEAR_TIMEOUT_MS,
@@ -1483,9 +1597,9 @@ internal class DisplayCustodian(
                             degraded = false,
                             reason = null,
                             by = "agent",
-                            displayId = displayId,
+                            displayId = activeDisplayId,
                         )
-                        val pulled = displayId == vd
+                        val pulled = activeDisplayId == vd
                         stateMutex.withLock {
                             enqueueSpill(
                                 SpillReport(
@@ -1506,7 +1620,7 @@ internal class DisplayCustodian(
                         }
                         return
                     }
-                    // 1s 未消失：本机拦截或无效点击，立即熔断并降级为手动流程
+                    // 1s 未消失：本机拦截或无效点击，立即熔断并降级为手动流程（需要人时移回主屏）
                     onCircuitBreak()
                     recordJumpConfirmEvent(
                         initiator = interstitial.initiatorPackage,
@@ -1516,18 +1630,20 @@ internal class DisplayCustodian(
                         degraded = true,
                         reason = "not_dismissed_1s",
                         by = "agent",
-                        displayId = displayId,
+                        displayId = activeDisplayId,
                     )
                     parkJumpConfirmForUserOrFail(
                         interstitial = interstitial,
-                        displayId = displayId,
+                        displayId = activeDisplayId,
                         taskId = taskId,
+                        vd = vd,
                         degradeReason = JumpConfirmDegradeReason.DEVICE_CIRCUIT_BROKEN,
                         nowMs = clock(),
+                        moveBackToMainForUser = true,
                     )
                     return
                 } else {
-                    // ACTION_CLICK 直接失败：熔断并降级
+                    // ACTION_CLICK 直接失败：熔断并降级（需要人时移回主屏）
                     onCircuitBreak()
                     recordJumpConfirmEvent(
                         initiator = interstitial.initiatorPackage,
@@ -1537,14 +1653,16 @@ internal class DisplayCustodian(
                         degraded = true,
                         reason = "action_click_failed",
                         by = "agent",
-                        displayId = displayId,
+                        displayId = activeDisplayId,
                     )
                     parkJumpConfirmForUserOrFail(
                         interstitial = interstitial,
-                        displayId = displayId,
+                        displayId = activeDisplayId,
                         taskId = taskId,
+                        vd = vd,
                         degradeReason = JumpConfirmDegradeReason.DEVICE_CIRCUIT_BROKEN,
                         nowMs = clock(),
+                        moveBackToMainForUser = true,
                     )
                     return
                 }
@@ -1562,24 +1680,59 @@ internal class DisplayCustodian(
                 degraded = true,
                 reason = degradeReason.name.lowercase(),
                 by = null,
-                displayId = displayId,
+                displayId = activeDisplayId,
             )
         }
         parkJumpConfirmForUserOrFail(
             interstitial = interstitial,
-            displayId = displayId,
+            displayId = activeDisplayId,
             taskId = taskId,
+            vd = vd,
             degradeReason = degradeReason,
             nowMs = nowMs,
+            moveBackToMainForUser = movedToVd || (hosting && degradeReason != JumpConfirmDegradeReason.HOSTING_DISABLED),
         )
+    }
+
+    private suspend fun performPositiveClickOnCustodyDialog(
+        inspected: InspectedWindow,
+        displayId: Int,
+        taskId: Int,
+        interstitial: Interstitial.JumpConfirm,
+        button: ConfirmButton,
+    ): Boolean {
+        if (inspected.performPositiveClick(button)) {
+            return true
+        }
+        if (displayId == Display.DEFAULT_DISPLAY || displayId != runtime.managedDisplayId()) {
+            return false
+        }
+        for (attempt in 0 until WINDOW_SETTLE_ATTEMPTS) {
+            delay(WINDOW_SETTLE_STEP_MS)
+            val windows = runtime.inspectDisplayWindows(
+                displayId = displayId,
+                componentHint = interstitial.componentName,
+                checkSecureOnUnreadable = false,
+            )
+            val matched = windows.firstOrNull { w ->
+                w.inspection.packageName == interstitial.packageName &&
+                    (taskId < 0 || w.inspection.taskId < 0 || w.inspection.taskId == taskId)
+            }
+            if (matched != null && matched.performPositiveClick(button)) {
+                return true
+            }
+        }
+        return false
     }
 
     private suspend fun parkJumpConfirmForUserOrFail(
         interstitial: Interstitial.JumpConfirm,
         displayId: Int,
         taskId: Int,
+        vd: Int,
         degradeReason: JumpConfirmDegradeReason?,
         nowMs: Long,
+        moveBackToMainForUser: Boolean = false,
     ) {
         val targetLabel = interstitial.targetLabel
             ?: interstitial.targetPackage?.let(runtime::appLabel)
@@ -1620,13 +1773,27 @@ internal class DisplayCustodian(
             return
         }
 
-        val onVd = displayId != Display.DEFAULT_DISPLAY
-        Log.i(TAG, "parkJumpConfirm setting state disp=$displayId task=$taskId pkg=${interstitial.packageName} reason=$degradeReason")
+        val movedToMain = moveBackToMainForUser &&
+            displayId != Display.DEFAULT_DISPLAY &&
+            taskId >= 0 &&
+            runtime.moveTask(taskId, Display.DEFAULT_DISPLAY)
+        val effectiveDisplayId = if (movedToMain) Display.DEFAULT_DISPLAY else displayId
+        val parkAtMs = if (movedToMain) clock() else nowMs
+        if (movedToMain) {
+            lastAgentActionAtMs = parkAtMs
+            movedToMainGrace = interstitial.id to (parkAtMs + MAIN_MOVE_SETTLE_GRACE_MS)
+        }
+        val onVd = effectiveDisplayId != Display.DEFAULT_DISPLAY
+        val ledgerDisplayId = if (vd > Display.DEFAULT_DISPLAY) vd else interstitial.displayId
+        Log.i(TAG, "parkJumpConfirm setting state disp=$effectiveDisplayId movedToMain=$movedToMain task=$taskId pkg=${interstitial.packageName} reason=$degradeReason")
         stateMutex.withLock {
+            if (ledgerDisplayId != interstitial.displayId) {
+                ledger.open(interstitial.copy(displayId = ledgerDisplayId), parkAtMs)
+            }
             _interstitialState.value = PendingInterstitial(
                 id = interstitial.id,
                 kind = InterstitialKind.JUMP_CONFIRM,
-                displayId = displayId,
+                displayId = effectiveDisplayId,
                 taskId = taskId,
                 packageName = interstitial.packageName,
                 appLabel = runtime.appLabel(interstitial.packageName),
@@ -1635,7 +1802,7 @@ internal class DisplayCustodian(
                 targetLabel = targetLabel,
                 onVirtualDisplay = onVd,
                 degradeReason = degradeReason,
-                sinceMs = nowMs,
+                sinceMs = parkAtMs,
                 previousMainTopTaskId = previousMainTopTaskId,
             )
             enqueueSpill(
@@ -1668,12 +1835,19 @@ internal class DisplayCustodian(
         val deadline = clock() + timeoutMs
         while (clock() < deadline) {
             delay(DISMISS_POLL_INTERVAL_MS)
-            val windows = runtime.inspectDisplayWindows(displayId)
-            val stillThere = windows.any { w ->
+            val activeWindows = runtime.inspectDisplayWindows(displayId)
+            val stillOnActive = activeWindows.any { w ->
                 w.inspection.packageName == packageName &&
                     (taskId < 0 || w.inspection.taskId < 0 || w.inspection.taskId == taskId)
             }
-            if (!stillThere) return true
+            val stillOnDefault = if (!stillOnActive && displayId != Display.DEFAULT_DISPLAY && taskId >= 0) {
+                runtime.inspectDisplayWindows(Display.DEFAULT_DISPLAY).any { w ->
+                    w.inspection.packageName == packageName && w.inspection.taskId == taskId
+                }
+            } else {
+                false
+            }
+            if (!stillOnActive && !stillOnDefault) return true
         }
         return false
     }
@@ -1689,6 +1863,7 @@ internal class DisplayCustodian(
         checkSecure: Boolean,
         requireMatchedJumpToAct: Boolean = false,
     ): Pair<InterstitialClassifier.ClassificationOutcome, InspectedWindow>? {
+        val isSysPkg = classifier.isSystemApp(expectedPackage)
         for (attempt in 0 until WINDOW_SETTLE_ATTEMPTS) {
             val isLastAttempt = attempt == WINDOW_SETTLE_ATTEMPTS - 1
             val windows = runtime.inspectDisplayWindows(
@@ -1701,6 +1876,23 @@ internal class DisplayCustodian(
                     (expectedTaskId < 0 || w.inspection.taskId < 0 || w.inspection.taskId == expectedTaskId)
             } ?: if (attempt == 0 && windows.isEmpty()) null else windows.firstOrNull { w ->
                 w.inspection.packageName == expectedPackage
+            }
+
+            if (matched == null &&
+                expectedTaskId >= 0 &&
+                runtime.displayOfTask(expectedTaskId) != displayId &&
+                !runtime.visibleOnMainScreen(expectedPackage, 0)
+            ) {
+                return null
+            }
+
+            if (!isSysPkg &&
+                matched != null &&
+                matched.inspection.isExcludeFromRecents &&
+                !matched.inspection.hasPasswordField &&
+                !matched.inspection.isAuthenticator
+            ) {
+                return InterstitialClassifier.ClassificationOutcome.None to matched
             }
 
             if (matched != null && (matched.inspection.readable || isLastAttempt)) {
@@ -1719,7 +1911,7 @@ internal class DisplayCustodian(
                 if (outcome !is InterstitialClassifier.ClassificationOutcome.Classified) {
                     if (requireMatchedJumpToAct) return null
                     // 系统选择器或系统包刚起窗时第一帧可能尚未渲染出列表或文案，留一次 settle 机会
-                    if (matched.inspection.texts.isNotEmpty() || isLastAttempt) {
+                    if (!isSysPkg || matched.inspection.texts.isNotEmpty() || isLastAttempt) {
                         return outcome to matched
                     }
                 }
@@ -1743,10 +1935,64 @@ internal class DisplayCustodian(
             pendingAccessDenial = denied
             return
         }
-        val moved = runtime.moveTask(taskId, vd)
-        if (moved) {
-            onTargetObserved(pkg, taskId)
-            onTaskPulledBack(taskId, pkg, userId, vd)
+        val initialDisplay = runtime.displayOfTask(taskId)
+        var effectiveTaskId = taskId
+        var pulled = when (initialDisplay) {
+            vd -> true
+            Display.DEFAULT_DISPLAY -> runtime.moveTask(taskId, vd)
+            else -> false
+        }
+        if (!pulled) {
+            val mainTopTask = runtime.topTaskId(Display.DEFAULT_DISPLAY)
+            val canPullMainTop = mainTopTask >= 0 &&
+                mainTopTask != taskId &&
+                runtime.packageOfTask(mainTopTask) == pkg &&
+                stateMutex.withLock { mainTopTask !in existingMainUserTaskIds }
+            if (canPullMainTop && runtime.moveTask(mainTopTask, vd)) {
+                effectiveTaskId = mainTopTask
+                pulled = true
+            }
+        }
+        if (!pulled) {
+            val vdTopTask = runtime.topTaskId(vd)
+            val targetAlreadyOnVd = (vdTopTask >= 0 && runtime.packageOfTask(vdTopTask) == pkg) ||
+                runtime.displayOfTask(taskId) == vd
+            if (targetAlreadyOnVd && !runtime.visibleOnMainScreen(pkg, userId)) {
+                effectiveTaskId = if (vdTopTask >= 0 && runtime.packageOfTask(vdTopTask) == pkg) vdTopTask else taskId
+                pulled = true
+            }
+        }
+        if (pulled) {
+            onTargetObserved(pkg, effectiveTaskId)
+            onTaskPulledBack(effectiveTaskId, pkg, userId, vd)
+            stateMutex.withLock {
+                existingMainUserTaskIds -= taskId
+                existingMainUserTaskIds -= effectiveTaskId
+                if (currentMainTopTaskId == taskId || currentMainTopTaskId == effectiveTaskId) {
+                    currentMainTopTaskId = runtime.topTaskId(Display.DEFAULT_DISPLAY)
+                }
+                enqueueSpill(
+                    SpillReport(
+                        OpenedElsewhere(
+                            packageName = pkg,
+                            app = runtime.appLabel(pkg),
+                            pulledBack = true,
+                            inProfile = inProfileOf(pkg, userId),
+                            jumpConfirm = fromJumpConfirm,
+                        ),
+                    ),
+                )
+            }
+            return
+        }
+        if (fromJumpConfirm == null &&
+            runtime.displayOfTask(taskId) != Display.DEFAULT_DISPLAY &&
+            !runtime.visibleOnMainScreen(pkg, userId)
+        ) {
+            stateMutex.withLock {
+                existingMainUserTaskIds -= taskId
+            }
+            return
         }
         stateMutex.withLock {
             enqueueSpill(
@@ -1754,7 +2000,7 @@ internal class DisplayCustodian(
                     OpenedElsewhere(
                         packageName = pkg,
                         app = runtime.appLabel(pkg),
-                        pulledBack = moved,
+                        pulledBack = false,
                         inProfile = inProfileOf(pkg, userId),
                         jumpConfirm = fromJumpConfirm,
                     ),
@@ -1977,6 +2223,7 @@ internal class DisplayCustodian(
         private const val WINDOW_RECHECK_MS = 350L
         private const val POST_RESOLVE_SETTLE_MS = 750L
         private const val DENY_SETTLE_WAIT_MS = 3_500L
+        private const val MAIN_MOVE_SETTLE_GRACE_MS = 400L
         private const val DEFAULT_CUSTODY_OPEN_TTL_MS = 30 * 60_000L
         private const val RECENT_RESOLVED_SCAN_SUPPRESS_MS = 2_500L
         private const val MAX_PENDING_SPILLS = 8

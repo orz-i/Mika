@@ -878,7 +878,7 @@ class DisplayCustodianTest {
             ),
         )
         val pulledSpill = custodianOn.drainAndTakeLatestSpill()
-        assertEquals(listOf(48931 to VD_ID), rtOn.moveCalls.toList())
+        assertEquals(listOf(48922 to VD_ID, 48931 to VD_ID), rtOn.moveCalls.toList())
         assertTrue(pulledSpill?.opened?.pulledBack == true)
         custodianOn.close()
     }
@@ -1203,5 +1203,357 @@ class DisplayCustodianTest {
         } finally {
             profilesFile.delete()
         }
+    }
+
+    @Test
+    fun unpromptedCrossAppDirectJumpFromVirtualDisplayPullsExistingBackgroundTaskBackAndPreservesMainTop() = runTest {
+        val rt = FakeRuntime().apply {
+            taskPackages[20] = WEREAD_PKG
+            taskDisplays[49336] = Display.DEFAULT_DISPLAY
+            taskPackages[49336] = INITIATOR_PKG
+            topTaskByDisplay[Display.DEFAULT_DISPLAY] = 1
+        }
+        val custodian = DisplayCustodian(
+            runtime = rt,
+            classifier = classifier(),
+            selfPackage = SELF_PKG,
+            launcherPackages = setOf(LAUNCHER_PKG),
+            appAccess = AppAccessPolicy.ALLOW,
+            hostingEnabled = { false },
+            isDeviceCircuitBroken = { false },
+            onCircuitBreak = {},
+            targetAppProvider = { WEREAD_PKG to 20 },
+            clock = { 180_000L + testScheduler.currentTime },
+            parentScope = backgroundScope,
+        )
+
+        custodian.start()
+        custodian.onTargetObserved(WEREAD_PKG, taskId = 20)
+        custodian.onAgentActionStarting(expectedTargetPkg = null, beforePkg = WEREAD_PKG)
+        runCurrent()
+
+        // 虚拟屏内广告跳转直接通过 OpenSDK 唤醒主屏后台已有微信任务 49336，未弹系统授权窗；
+        // 且 LaunchOriginResolver 仅看见微信自启动（origin = com.tencent.mm/10123）
+        rt.windowsByDisplay[Display.DEFAULT_DISPLAY] = listOf(
+            DisplayCustodian.InspectedWindow(
+                InterstitialClassifier.WindowInspection(
+                    displayId = Display.DEFAULT_DISPLAY,
+                    taskId = 49336,
+                    windowId = 1901,
+                    packageName = INITIATOR_PKG,
+                    componentName = "com.tencent.mm/.plugin.base.stub.WXBizEntryActivity",
+                    isDialogWindow = false,
+                    texts = listOf("微信", "通讯录", "发现"),
+                ),
+            ) { false },
+        )
+        rt.emitArrival(
+            arrival(
+                taskId = 49336,
+                pkg = INITIATOR_PKG,
+                displayId = Display.DEFAULT_DISPLAY,
+                originUid = INITIATOR_UID,
+                originPkg = INITIATOR_PKG,
+                sameTask = false,
+                fromDisplay = Display.DEFAULT_DISPLAY,
+                managedDisplay = CustodyArrival.NO_MANAGED_DISPLAY,
+                at = 180_050L,
+            ),
+        )
+        val firstSpill = custodian.drainAndTakeLatestSpill()
+        assertEquals(listOf(49336 to VD_ID), rt.moveCalls.toList())
+        assertTrue("Unprompted direct jump must be pulled back to VD", firstSpill?.opened?.pulledBack == true)
+        assertEquals(INITIATOR_PKG, firstSpill?.opened?.packageName)
+        assertNull("Must not park user interstitial when no dialog appeared", custodian.interstitialState.value)
+
+        // 紧接着同一任务若再次从主屏弹出同任务切换事件（sameTask=true），也不得误判主屏 InUse（WAS_MAIN_TOP_TASK），仍继续回捞；
+        // 最后任务在虚拟屏稳定后不再重复迁移
+        rt.emitArrival(
+            arrival(
+                taskId = 49336,
+                pkg = INITIATOR_PKG,
+                displayId = Display.DEFAULT_DISPLAY,
+                originUid = INITIATOR_UID,
+                originPkg = INITIATOR_PKG,
+                sameTask = true,
+                fromDisplay = Display.DEFAULT_DISPLAY,
+                managedDisplay = CustodyArrival.NO_MANAGED_DISPLAY,
+                at = 180_120L,
+            ),
+        )
+        val secondSpill = custodian.drainAndTakeLatestSpill()
+        assertTrue("Re-bounced sameTask arrival must still be pulled back, never R1 InUse", secondSpill?.opened?.pulledBack == true)
+        assertEquals(2, rt.moveCalls.size)
+
+        rt.emitArrival(
+            arrival(
+                taskId = 49336,
+                pkg = INITIATOR_PKG,
+                displayId = VD_ID,
+                originUid = INITIATOR_UID,
+                originPkg = INITIATOR_PKG,
+                sameTask = true,
+                fromDisplay = VD_ID,
+                managedDisplay = VD_ID,
+                at = 180_160L,
+            ),
+        )
+        custodian.drainAndTakeLatestSpill()
+        assertEquals(2, rt.moveCalls.size)
+        custodian.close()
+    }
+
+    @Test
+    fun switchOnJumpConfirmMovesDialogToVdAndReturnsToMainOnlyWhenNeedingHuman() = runTest {
+        // Case A：开关开启 + 已知目标 -> 先移入虚拟屏托管再自动代点，不移回主屏
+        val rtA = FakeRuntime()
+        val eventsA = mutableListOf<RunEvent.JumpConfirm>()
+        var clickedOnVd = false
+        val custodianA = DisplayCustodian(
+            runtime = rtA,
+            classifier = classifier(),
+            selfPackage = SELF_PKG,
+            launcherPackages = setOf(LAUNCHER_PKG),
+            appAccess = AppAccessPolicy.ALLOW,
+            recordEvent = { if (it is RunEvent.JumpConfirm) eventsA += it },
+            hostingEnabled = { true },
+            isDeviceCircuitBroken = { false },
+            onCircuitBreak = {},
+            allowUserInteraction = true,
+            targetAppProvider = { INITIATOR_PKG to 20 },
+            clock = { 190_000L + testScheduler.currentTime },
+            parentScope = backgroundScope,
+        )
+        custodianA.start()
+        custodianA.onTargetObserved(INITIATOR_PKG, taskId = 20)
+        custodianA.onAgentActionStarting(expectedTargetPkg = TARGET_PKG, beforePkg = INITIATOR_PKG)
+        runCurrent()
+
+        rtA.windowsByDisplay[Display.DEFAULT_DISPLAY] = listOf(
+            jumpConfirmWindow(
+                taskId = 601,
+                titleText = "“微信”想要打开“淘宝”",
+                clickAction = {
+                    clickedOnVd = rtA.taskDisplays[601] == VD_ID
+                    rtA.windowsByDisplay[Display.DEFAULT_DISPLAY] = emptyList()
+                    rtA.windowsByDisplay[VD_ID] = emptyList()
+                    true
+                },
+            ),
+        )
+        rtA.emitArrival(arrival(taskId = 601, pkg = SYSTEM_GUARD_PKG, at = 190_050L))
+        custodianA.drainAndTakeLatestSpill()
+        assertTrue("Dialog task must be moved to VD before auto-clicking", clickedOnVd)
+        assertTrue(rtA.moveCalls.contains(601 to VD_ID))
+        assertFalse(rtA.moveCalls.contains(601 to Display.DEFAULT_DISPLAY))
+        assertEquals(1, eventsA.size)
+        assertEquals("auto_allowed", eventsA.single().result)
+        assertEquals(VD_ID, eventsA.single().displayId)
+        custodianA.close()
+
+        // Case B：开关开启 + 未知目标 + allowUserInteraction=true -> 先进 VD，因需人工介入再移回主屏
+        val rtB = FakeRuntime().apply { taskPackages[20] = WEREAD_PKG }
+        val custodianB = DisplayCustodian(
+            runtime = rtB,
+            classifier = classifier(),
+            selfPackage = SELF_PKG,
+            launcherPackages = setOf(LAUNCHER_PKG),
+            appAccess = AppAccessPolicy.ALLOW,
+            hostingEnabled = { true },
+            isDeviceCircuitBroken = { false },
+            onCircuitBreak = {},
+            allowUserInteraction = true,
+            targetAppProvider = { WEREAD_PKG to 20 },
+            clock = { 200_000L + testScheduler.currentTime },
+            parentScope = backgroundScope,
+        )
+        custodianB.start()
+        custodianB.onTargetObserved(WEREAD_PKG, taskId = 20)
+        custodianB.onAgentActionStarting(expectedTargetPkg = null, beforePkg = WEREAD_PKG)
+        runCurrent()
+
+        rtB.windowsByDisplay[Display.DEFAULT_DISPLAY] = listOf(
+            jumpConfirmWindow(
+                taskId = 602,
+                titleText = "“微信读书”想要打开“未知应用”",
+            ),
+        )
+        rtB.emitArrival(
+            arrival(
+                taskId = 602,
+                pkg = SYSTEM_GUARD_PKG,
+                originUid = WEREAD_UID,
+                originPkg = WEREAD_PKG,
+                managedDisplay = VD_ID,
+                at = 200_050L,
+            ),
+        )
+        custodianB.drainAndTakeLatestSpill()
+        assertEquals(listOf(602 to VD_ID, 602 to Display.DEFAULT_DISPLAY), rtB.moveCalls.toList())
+        assertEquals(Display.DEFAULT_DISPLAY, custodianB.interstitialState.value?.displayId)
+        assertEquals(false, custodianB.interstitialState.value?.onVirtualDisplay)
+        custodianB.close()
+
+        // Case C：开关开启 + 未知目标 + allowUserInteraction=false -> 留在 VD 不移回主屏
+        val rtC = FakeRuntime().apply { taskPackages[20] = WEREAD_PKG }
+        val custodianC = DisplayCustodian(
+            runtime = rtC,
+            classifier = classifier(),
+            selfPackage = SELF_PKG,
+            launcherPackages = setOf(LAUNCHER_PKG),
+            appAccess = AppAccessPolicy.ALLOW,
+            hostingEnabled = { true },
+            isDeviceCircuitBroken = { false },
+            onCircuitBreak = {},
+            allowUserInteraction = false,
+            targetAppProvider = { WEREAD_PKG to 20 },
+            clock = { 210_000L + testScheduler.currentTime },
+            parentScope = backgroundScope,
+        )
+        custodianC.start()
+        custodianC.onTargetObserved(WEREAD_PKG, taskId = 20)
+        custodianC.onAgentActionStarting(expectedTargetPkg = null, beforePkg = WEREAD_PKG)
+        runCurrent()
+
+        rtC.windowsByDisplay[Display.DEFAULT_DISPLAY] = listOf(
+            jumpConfirmWindow(
+                taskId = 603,
+                titleText = "“微信读书”想要打开“未知应用”",
+            ),
+        )
+        rtC.emitArrival(
+            arrival(
+                taskId = 603,
+                pkg = SYSTEM_GUARD_PKG,
+                originUid = WEREAD_UID,
+                originPkg = WEREAD_PKG,
+                managedDisplay = VD_ID,
+                at = 210_050L,
+            ),
+        )
+        custodianC.drainAndTakeLatestSpill()
+        assertEquals(listOf(603 to VD_ID), rtC.moveCalls.toList())
+        custodianC.close()
+    }
+
+    @Test
+    fun wxBizEntryTranslucentBridgeIsPulledToVdEvenWhenExcludeFromRecentsAndUnreadable() = runTest {
+        val rt = FakeRuntime().apply {
+            taskPackages[20] = WEREAD_PKG
+            taskDisplays[701] = Display.DEFAULT_DISPLAY
+            taskPackages[701] = INITIATOR_PKG
+            topTaskByDisplay[Display.DEFAULT_DISPLAY] = 1
+        }
+        val custodian = DisplayCustodian(
+            runtime = rt,
+            classifier = classifier(),
+            selfPackage = SELF_PKG,
+            launcherPackages = setOf(LAUNCHER_PKG),
+            appAccess = AppAccessPolicy.ALLOW,
+            hostingEnabled = { true },
+            isDeviceCircuitBroken = { false },
+            onCircuitBreak = {},
+            targetAppProvider = { WEREAD_PKG to 20 },
+            clock = { 220_000L + testScheduler.currentTime },
+            parentScope = backgroundScope,
+        )
+        custodian.start()
+        custodian.onTargetObserved(WEREAD_PKG, taskId = 20)
+        custodian.onAgentActionStarting(expectedTargetPkg = null, beforePkg = WEREAD_PKG)
+        runCurrent()
+
+        rt.windowsByDisplay[Display.DEFAULT_DISPLAY] = listOf(
+            DisplayCustodian.InspectedWindow(
+                InterstitialClassifier.WindowInspection(
+                    displayId = Display.DEFAULT_DISPLAY,
+                    taskId = 701,
+                    windowId = 7010,
+                    packageName = INITIATOR_PKG,
+                    componentName = "com.tencent.mm/.plugin.base.stub.WXBizEntryActivity",
+                    isDialogWindow = false,
+                    isExcludeFromRecents = true,
+                    readable = false,
+                    texts = emptyList(),
+                ),
+            ) { false },
+        )
+        rt.emitArrival(
+            arrival(
+                taskId = 701,
+                pkg = INITIATOR_PKG,
+                displayId = Display.DEFAULT_DISPLAY,
+                originUid = INITIATOR_UID,
+                originPkg = INITIATOR_PKG,
+                sameTask = false,
+                fromDisplay = Display.DEFAULT_DISPLAY,
+                managedDisplay = CustodyArrival.NO_MANAGED_DISPLAY,
+                at = 220_050L,
+            ),
+        )
+        val spill = custodian.drainAndTakeLatestSpill()
+        assertNull("Unreadable EXCLUDE_FROM_RECENTS bridge must not park NeedsUser", custodian.interstitialState.value)
+        assertTrue("Bridge task must be pulled back to VD", spill?.opened?.pulledBack == true)
+        assertEquals(listOf(701 to VD_ID), rt.moveCalls.toList())
+        custodian.close()
+    }
+
+    @Test
+    fun vanishedBridgeTaskAfterFocusingExistingVdTaskStillReportsPulledBackTrue() = runTest {
+        val baseRt = FakeRuntime().apply {
+            taskPackages[20] = WEREAD_PKG
+            taskPackages[49389] = INITIATOR_PKG
+            taskDisplays[49389] = VD_ID
+            topTaskByDisplay[VD_ID] = 49389
+            topTaskByDisplay[Display.DEFAULT_DISPLAY] = 1
+        }
+        val rt = object : DisplayCustodian.Runtime by baseRt {
+            override suspend fun inspectDisplayWindows(
+                displayId: Int,
+                componentHint: String?,
+                checkSecureOnUnreadable: Boolean,
+            ): List<DisplayCustodian.InspectedWindow> {
+                if (displayId == Display.DEFAULT_DISPLAY) {
+                    baseRt.taskDisplays.remove(49390)
+                    baseRt.topTaskByDisplay[Display.DEFAULT_DISPLAY] = 1
+                }
+                return baseRt.inspectDisplayWindows(displayId, componentHint, checkSecureOnUnreadable)
+            }
+        }
+        val custodian = DisplayCustodian(
+            runtime = rt,
+            classifier = classifier(),
+            selfPackage = SELF_PKG,
+            launcherPackages = setOf(LAUNCHER_PKG),
+            appAccess = AppAccessPolicy.ALLOW,
+            hostingEnabled = { true },
+            isDeviceCircuitBroken = { false },
+            onCircuitBreak = {},
+            targetAppProvider = { WEREAD_PKG to 20 },
+            clock = { 230_000L + testScheduler.currentTime },
+            parentScope = backgroundScope,
+        )
+        custodian.start()
+        custodian.onTargetObserved(WEREAD_PKG, taskId = 20)
+        custodian.onTargetObserved(INITIATOR_PKG, taskId = 49389)
+        custodian.onAgentActionStarting(expectedTargetPkg = null, beforePkg = WEREAD_PKG)
+        runCurrent()
+
+        baseRt.emitArrival(
+            arrival(
+                taskId = 49390,
+                pkg = INITIATOR_PKG,
+                displayId = Display.DEFAULT_DISPLAY,
+                originUid = INITIATOR_UID,
+                originPkg = INITIATOR_PKG,
+                managedDisplay = VD_ID,
+                at = 230_050L,
+            ),
+        )
+        val spill = custodian.drainAndTakeLatestSpill()
+        assertEquals(INITIATOR_PKG, spill?.opened?.packageName)
+        assertTrue("Vanished bridge task with target already on VD must report pulledBack=true", spill?.opened?.pulledBack == true)
+        assertFalse("Must not report onUserScreen=true when VD already holds target", spill?.opened?.onUserScreen == true)
+        assertFalse("Should not invoke moveTask on vanished task 49390", baseRt.moveCalls.contains(49390 to VD_ID))
+        custodian.close()
     }
 }
