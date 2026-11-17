@@ -354,6 +354,9 @@ internal class Interfaces(
     /** 上一次调用是写操作时,它的目标元素(没有或认不出为 null)与动作前锚点;否则为 null。 */
     fun lastActionTarget(): Pair<Selector?, Anchors>? = gateView.capture?.let { it.target to it.before }
 
+    /** 上一次写操作前的那一屏快照(没有为 null)。 */
+    fun lastActionSnapshot(): ScreenSnapshot? = gateView.capture?.snapshot
+
     /** 上一次写操作前的那一屏受系统防截屏保护。 */
     fun lastActionProtected(): Boolean = gateView.capture?.snapshot?.protected == true
 
@@ -368,6 +371,10 @@ internal class Interfaces(
 
     /** 此刻重新读最近操作的那块屏,不登记编号、不改模型手里的读屏;读不到为 null。 */
     suspend fun peek(): ScreenSnapshot? = session.peek()
+
+    /** 获取指定能力屏（默认为最近操作屏）最近一次读到的界面快照（不产生新 IPC 调用）。 */
+    fun observedSnapshot(surfaceId: String? = null): ScreenSnapshot? =
+        (surfaceId?.let(sessions::get) ?: session).let { it.lastObservedSnapshot ?: it.lastSnapshot }
 
     /** 等最近操作的那块屏稳定,最多 [timeoutMs];读不到状态也照常返回。 */
     override suspend fun settle(timeoutMs: Long) {

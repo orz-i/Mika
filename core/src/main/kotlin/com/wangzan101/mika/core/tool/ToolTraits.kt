@@ -163,7 +163,7 @@ data class ToolTraits(
         )
         private val MAIN_MODEL_ONLY_VERBS = setOf(
             Verb.EndNotDone, Verb.RequestConfirmation, Verb.HandToUser, Verb.AskUser, Verb.HandleObstacle,
-            Verb.PhoneRun, Verb.Collect, Verb.PhoneFind, Verb.PhoneDialog, Verb.PhoneGesture, Verb.PhoneCommand,
+            Verb.PhoneRun, Verb.RunShortcut, Verb.NavigateTo, Verb.Collect, Verb.PhoneFind, Verb.PhoneDialog, Verb.PhoneGesture, Verb.PhoneCommand,
             Verb.RunCommand, Verb.RunBundledScript, Verb.ReadFile, Verb.WriteFile, Verb.SearchFiles, Verb.ShareFile,
         )
         private val WORKSPACE_WRITE_VERBS = setOf(
@@ -178,7 +178,7 @@ data class ToolTraits(
             Verb.LaunchApp, Verb.OpenLink, Verb.ShareText, Verb.AppAfterTask,
             Verb.SetAlarm, Verb.SetTimer, Verb.ShowAlarms, Verb.AddCalendarEvent, Verb.BulkAddCalendarEvents, Verb.SetWheel,
             Verb.Navigate, Verb.SiteCommand, Verb.Tabs, Verb.Upload, Verb.SiteMode, Verb.Script, Verb.Interact, Verb.KeepOpen,
-            Verb.PhoneRun, Verb.PhoneDialog, Verb.PhoneGesture, Verb.PhoneCommand,
+            Verb.PhoneRun, Verb.RunShortcut, Verb.NavigateTo, Verb.PhoneDialog, Verb.PhoneGesture, Verb.PhoneCommand,
         )
         private val PARALLEL_SAFE_VERBS = setOf(
             Verb.ReadFile, Verb.SearchFiles, Verb.Downloads, Verb.WebSearch,

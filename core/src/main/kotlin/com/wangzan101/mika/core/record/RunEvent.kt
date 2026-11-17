@@ -2,6 +2,7 @@ package com.wangzan101.mika.core.record
 
 import com.wangzan101.mika.core.replay.Anchors
 import com.wangzan101.mika.core.replay.Selector
+import com.wangzan101.mika.core.uistate.ScreenSig
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -123,6 +124,12 @@ sealed interface RunEvent {
         val source: String = "model",
         /** 取不到这一步的目标和锚点(批里的子步);路线不能缺步,整条不记。 */
         val incomplete: Boolean = false,
+        /** 动作前屏幕 Activity 与结构签名（向后兼容旧记录，默认 null）。 */
+        val beforeActivity: String? = null,
+        val beforeSig: ScreenSig? = null,
+        /** 动作后屏幕 Activity 与结构签名（向后兼容旧记录，默认 null）。 */
+        val afterActivity: String? = null,
+        val afterSig: ScreenSig? = null,
     ) : RunEvent
 
     /**

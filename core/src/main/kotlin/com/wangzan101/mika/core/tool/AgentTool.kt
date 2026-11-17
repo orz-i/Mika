@@ -24,7 +24,7 @@ enum class Concurrency { Serial, ParallelSafe }
  * 屏幕上的动作与读屏在几种界面上各有一个同动词的工具。
  */
 enum class Verb {
-    Observe, ListElements, Query, Collect, PhoneRun, PhoneFind, PhoneExtract, PhoneDialog, PhoneEvent, PhoneGesture, PhoneCommand,
+    Observe, ListElements, Query, Collect, PhoneRun, RunShortcut, NavigateTo, PhoneFind, PhoneExtract, PhoneDialog, PhoneEvent, PhoneGesture, PhoneCommand,
     PhoneWaitNetwork, PhoneGetNetworkResponse, PhoneInspectNetwork, PhoneProbeEbpf,
     Screenshot, ViewPastScreens, ViewUserScreen, Describe, FindVisually, Diagnose,
     Tap, TypeText, ClearText, Scroll, Swipe, Back, PressKey,
@@ -109,6 +109,8 @@ internal interface AgentTool : ToolInfo {
     val gateTarget: GateTarget? get() = null
     /** 自己不动界面,里面的动作一个个经执行入口回来(页面脚本):不过锁屏关卡,也不能作为只读调用。 */
     val composite: Boolean get() = false
+    /** 组合工具内部子动作是否按 `Origin.Replay`（受守卫与不可逆拦停约束）经执行入口执行。 */
+    val replaySubActions: Boolean get() = false
     /**
      * 能力那一组收着时也提供的入口(见 [ToolGroups]):收着时用短说明(prompts/entries/<工具名>.md),展开后换回全文。
      * 不是入口为 null。

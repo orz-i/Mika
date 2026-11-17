@@ -87,6 +87,9 @@ internal class ScreenSession(
     /** 模型此刻还看得到的读屏 snapshotId;null 表示循环还没告诉过(都看得到)。 */
     var visible: Set<String>? = null
     var lastSnapshot: ScreenSnapshot? = null
+    /** 最近一次任意读屏（包含效果核实时的 peek）获取到的原始界面快照，供 L1 页面提示匹配。 */
+    var lastObservedSnapshot: ScreenSnapshot? = null
+        private set
     val recentSnapshots = ArrayDeque<ScreenSnapshot>()
     val readAt = mutableMapOf<String, Long>()
     /** 这块屏发出过的 snapshotId(比 [RECENT_SNAPSHOTS] 长:模型可能拿很早的编号来用)。 */
@@ -147,6 +150,7 @@ internal class ScreenSession(
         reads++
         if (!internal) stale = false
         lastSnapshot = it
+        lastObservedSnapshot = it
         recentSnapshots.addLast(it)
         readAt[it.snapshotId] = System.currentTimeMillis()
         issued[it.snapshotId] = Unit
@@ -409,13 +413,13 @@ internal class ScreenSession(
         var limit: String? = null
         withTimeoutOrNull(EffectTuning.BUDGET_MS) {
             if (!fresh && !portWaited) settle(EffectTuning.SETTLE_MS)
-            val after = if (fresh) lastSnapshot else peek()
+            val after = if (fresh) lastSnapshot else peek()?.also { lastObservedSnapshot = it }
             limit = LimitNotice.find(probe.before, after)
             effect = judge(after, grid())
             if (effect?.kind == EffectKind.NoEffect) {
                 // 界面可能是异步更新的:再等一会儿重看一次,仍没变才算没效果
                 delay(EffectTuning.RECHECK_MS)
-                val again = peek()
+                val again = peek()?.also { lastObservedSnapshot = it }
                 limit = limit ?: LimitNotice.find(probe.before, again)
                 effect = judge(again, grid())
             }

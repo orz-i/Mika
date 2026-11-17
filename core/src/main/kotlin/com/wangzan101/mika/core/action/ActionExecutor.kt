@@ -303,10 +303,12 @@ class ActionExecutor(
         // 页面脚本里的每个动作经这里回来,同样走完整个入口;脚本里的读只在这一次调用里计数
         val subVerdicts = mutableListOf<GuardVerdict>()
         val sub = if (tools.composite(call.name)) {
-            val script = Origin.Script(n)
-            val window = if (script.policy.isolatedReads) GuardScope(canStop = false) else null
+            val replayOrigin = tools.replaySubActions(call.name)
+            val subOrigin = if (replayOrigin) Origin.Replay else Origin.Script(n)
+            val window = if (!replayOrigin && subOrigin.policy.isolatedReads) GuardScope(canStop = false) else null
             SubActions { c ->
-                val o = run(c, script, FollowUp.NONE, window)
+                if (replayOrigin && tools.verb(c.name) == Verb.ListElements) gate()
+                val o = run(c, subOrigin, FollowUp.NONE, window)
                 subVerdicts += o.before
                 if (o is ActionOutcome.Ran) subVerdicts += o.after
                 o.execution()
@@ -404,10 +406,18 @@ class ActionExecutor(
                 callId = call.id, source = source, incomplete = true))
             return null
         }
+        val beforeSnap = ui.lastActionSnapshot()
+        val beforeProtected = ui.lastActionProtected()
         val seen = if (effective) ui.peek() else null
         val after = seen?.let(ui::anchorsAfter) ?: none
+        val beforeActivity = if (beforeProtected) null else beforeSnap?.let { it.activity ?: it.screenSig?.activity }
+        val beforeSig = if (beforeProtected) null else beforeSnap?.resolvedScreenSig()
+        val afterProtected = seen?.protected == true
+        val afterActivity = if (afterProtected) null else seen?.let { it.activity ?: it.screenSig?.activity }
+        val afterSig = if (afterProtected) null else seen?.resolvedScreenSig()
         recorder.event(RunEvent.ActionTarget(recorder.now(), origin.step, call.name, args, captured.first, captured.second, after, effective,
-            callId = call.id, protected = ui.lastActionProtected(), source = source))
+            callId = call.id, protected = beforeProtected, source = source,
+            beforeActivity = beforeActivity, beforeSig = beforeSig, afterActivity = afterActivity, afterSig = afterSig))
         return seen
     }
 

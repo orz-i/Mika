@@ -323,6 +323,9 @@ class ToolDispatcher internal constructor(
     /** 自己不动界面、里面的动作一个个经执行入口回来(页面脚本)。 */
     fun composite(name: String): Boolean = registry.declared(name)?.composite == true
 
+    /** 组合工具内部子动作是否走 `Origin.Replay`（严格不可逆/守卫拦截语义）。 */
+    fun replaySubActions(name: String): Boolean = registry.declared(name)?.replaySubActions == true
+
     /** 不可逆判定按什么看这个工具的目标;只有声明为 External 的工具有。 */
     fun gateTarget(name: String): GateTarget? = registry.declared(name)?.takeIf { it.risk == Risk.External }?.gateTarget
 

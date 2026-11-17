@@ -97,7 +97,22 @@ data class ScreenSnapshot(
     val opened: OpenedElsewhere? = null,
     /** 画面不可用但不是已证实的防截屏;见上方 [captureError] 说明。 */
     val captureError: String? = null,
-)
+    /** 当前前台 Activity 名（如 `com.pkg/.MainActivity`）；网页或取不到时为 null。 */
+    val activity: String? = null,
+    /** 页面结构签名（用于离线建图与页面匹配）；网页、受保护屏或未提取时为 null。 */
+    val screenSig: ScreenSig? = null,
+) {
+    /** 补齐包名与 Activity 元信息后的有效页面签名；空白或受保护屏返回 null。 */
+    fun resolvedScreenSig(): ScreenSig? {
+        if (protected) return null
+        val sig = screenSig?.takeUnless { it.isBlank } ?: return null
+        val act = sig.activity ?: activity
+        val pkg = sig.packageName ?: packageName
+        val shortAct = sig.shortActivity ?: ScreenSig.shortActivityName(pkg, act)
+        return if (act == sig.activity && pkg == sig.packageName && shortAct == sig.shortActivity) sig
+        else sig.copy(activity = act, packageName = pkg, shortActivity = shortAct)
+    }
+}
 
 /**
  * 动作让一个 App 开到了 Mika 的屏以外、用户的主屏上(App 不是从自己在 Mika 屏上的页面里打开它,系统就放到了主屏)。

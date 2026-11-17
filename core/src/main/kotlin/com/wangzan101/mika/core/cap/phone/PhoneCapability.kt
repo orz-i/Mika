@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.cap.phone
 
+import com.wangzan101.mika.core.atlas.AtlasStore
 import com.wangzan101.mika.core.capability.Capability
 import com.wangzan101.mika.core.capability.CapabilityKey
 import com.wangzan101.mika.core.capability.CapabilityStatus
@@ -37,6 +38,8 @@ internal class PhoneCapability(
     pacing: AppPacing = AppPacing.Off,
     appPace: (String) -> PlacePace = { PlacePace.NORMAL },
     idle: IdleScroll? = null,
+    /** 离线 AppAtlas 存储（非空时向模型开放 `phone_run_shortcut` 与 `phone_navigate_to` 工具）。 */
+    val atlas: AtlasStore? = null,
 ) : Capability {
     val dwell = AppDwell(pacing, appPace, idle)
 

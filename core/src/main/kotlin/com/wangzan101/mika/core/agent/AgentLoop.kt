@@ -69,9 +69,14 @@ import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.replay.RouteMatcher
+import com.wangzan101.mika.core.atlas.AtlasHintPolicy
+import com.wangzan101.mika.core.atlas.AtlasStore
+import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.wangzan101.mika.core.uistate.interfaces
 import com.wangzan101.mika.core.verify.Verifier
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -194,11 +199,14 @@ class AgentLoop(
     private val confirmEscalator: (suspend (ConfirmationRequest) -> ConfirmChoice)? = null,
     /** 无条件检查并等待系统中间页/跳转确认弹窗解决的门禁；挂起期间对外显示等待原因，结束后恢复状态并报告是否等待过。 */
     private val interstitialGate: suspend (setWaiting: (TaskState?) -> Unit) -> Boolean = { false },
+    /** 离线页面图谱存储（非空时在 Zone 3 注入 L1 历史页面提示，默认 null 不注入）。 */
+    private val atlas: AtlasStore? = null,
+    private val atlasPolicy: AtlasHintPolicy = AtlasHintPolicy.Default,
 ) {
     init {
         require(maxSteps > 0) { "maxSteps must be positive" }
-        // 只有开着回放才在写操作前取目标元素与锚点
-        tools.captureTargets = flags.replay
+        // 开着回放或启用页面图谱时在写操作前取目标元素与前后屏幕签名/锚点
+        tools.captureTargets = flags.replay || atlas != null
     }
 
     /** 运行记录:按因果先后写(见 [RecordOrder])。 */
@@ -532,6 +540,8 @@ class AgentLoop(
         if (flags.deepLinks) start.knowledge.forEach { if (it.links.isNotEmpty()) tools.allowLinks(it.links) }
         // 网页上每个站点只在第一次进入时按域名找一次知识
         val visitedSites = mutableSetOf<String>()
+        // 本次任务已注入过 L1 页面提示的页面（"$packageName|$sigId"），避免同页重复提示
+        val seenAtlasScreens = linkedSetOf<String>()
 
         // 任务此刻在哪(App、站点……);由能力一侧按每次调用的结果给出
         var place: Place? = null
@@ -579,7 +589,13 @@ class AgentLoop(
             val reviewRoute = flags.strictIntentGate && provenance.origin == RunOrigin.Ui && intentGate != null && routeMatcher?.candidates(task)?.isNotEmpty() == true
             if (reviewRoute) intent = assessIntent()
             if (!reviewRoute || intent == IntentGate.Intent.Read || intent == IntentGate.Intent.Act) {
-                replay.run(task, history, executor, ctx, track)?.let { place = it; acted = true }
+                replay.run(task, history, executor, ctx, track)?.let {
+                    place = it
+                    acted = true
+                    if (it.kind == PlaceKind.App) {
+                        injectAtlasHint(history, seenAtlasScreens, safeObservedPhoneSnapshot())
+                    }
+                }
             }
         }
 
@@ -731,6 +747,8 @@ class AgentLoop(
             var hitNoNewData = false
             var pendingStop: Triple<TaskState, Outcome?, GuardVerdict?>? = null
             val changedSurfaces = mutableSetOf<String>()
+            var sawPhoneScreen = false
+            var latestScreenSeen: ScreenSnapshot? = null
 
             if (flags.serialToolCallsOnly) {
                 for (i in 1 until calls.size) {
@@ -916,6 +934,8 @@ class AgentLoop(
                                 pendingStop = Triple(res.end, null, guards.stop)
                                 break@waveLoop
                             }
+                            sawPhoneScreen = true
+                            latestScreenSeen = null
                         }
                         is SingleCallResult.Ran -> {
                             val exec = res.ran.exec
@@ -925,6 +945,10 @@ class AgentLoop(
                             val isError = (exec.content["ok"] as? JsonPrimitive)?.booleanOrNull == false
                             noteResultEvents(callTraits, exec.content)
                             exec.place?.let { place = it }
+                            if (!res.offScreen && exec.place?.kind != PlaceKind.Site) {
+                                sawPhoneScreen = true
+                                latestScreenSeen = res.ran.seen ?: latestScreenSeen
+                            }
                             track.after(callTraits ?: ToolTraits(), !isError, res.ran.verdicts.isNotEmpty() || res.advice != null, exec.changed, false, exec.place?.name)
                             if (!isError && wave is ToolWave.Serial) {
                                 val surface = uiSurfaceFor(res.call.name, res.args)
@@ -988,6 +1012,9 @@ class AgentLoop(
                 }
                 return end
             }
+            if (sawPhoneScreen && atlas != null && place?.kind != PlaceKind.Site) {
+                injectAtlasHint(history, seenAtlasScreens, latestScreenSeen ?: safeObservedPhoneSnapshot())
+            }
 
             if (hitNoNewData) {
                 emit(RunEvent.State(now(), "no_new_data", NewDataTracker.LIMIT.toString()))
@@ -1022,6 +1049,32 @@ class AgentLoop(
             history += m
             if (e?.trial == true) emit(RunEvent.State(now(), "knowledge_trial_used", e.name))
         }
+    }
+
+    /** 读取手机端最近一次观察到的界面快照（无手机接口时安全返回 null）。 */
+    private fun safeObservedPhoneSnapshot(): ScreenSnapshot? = try {
+        tools.interfaces.observedSnapshot("phone")
+    } catch (_: Exception) {
+        null
+    }
+
+    /** 仅向 Zone 3（本步末尾非固定 Notice）注入 L1 历史页面提示，保持 Zone 0/1/2 前缀不变。 */
+    private suspend fun injectAtlasHint(
+        history: MutableList<Message>,
+        seenScreens: MutableSet<String>,
+        snapshot: ScreenSnapshot?,
+    ) {
+        val store = atlas ?: return
+        if (snapshot == null) return
+        val hint = try {
+            withContext(Dispatchers.IO) { atlasPolicy.hintFor(snapshot, store, seenScreens) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        } ?: return
+        history += ctx.notice("atlas_hint", hint.text)
+        emit(RunEvent.State(now(), "atlas_hint", "${hint.packageName}/${hint.screenSigId}"))
     }
 
     /**
