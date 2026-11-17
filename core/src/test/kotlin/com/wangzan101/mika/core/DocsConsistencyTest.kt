@@ -17,10 +17,10 @@ import java.io.File
  *  - 路径:带 / 的,只有第一段是仓库根下真有的目录或文件才查(`files/sandbox/rootfs`、`read/system` 这类是运行时产物或分类名);
  *    不带 / 的,只有代码类扩展名(kt、py、xml 等)才查,json、md、txt 这类常是运行时产物;
  *    查的时候:根目录下直接存在,或「模块/包路径/文件」的简写(`app/task/X.kt`),或中间用 ... 省略(`core/.../X.kt`),或短文件名在仓库任意位置;
- *  - 类名:大驼峰且至少两个大写字母(`Mika` 这样的单词不当类名);在 core、app 的源码(含测试)里有 class/object/interface/typealias
- *    声明或同名文件;源码里从本仓库以外的包导入过的(安卓、JDK、库的类)不归本仓库管;
+ *  - 类名:大驼峰且至少两个大写字母(`Mika` 这样的单词不当类名);在 core、app、aau 的源码(含测试)里有 class/object/interface/typealias
+ *    声明或同名文件;源码里从本仓库以外的包导入过的(安卓、JDK、库的类)不归本仓库管,`java.lang` 里不用 import 的几个异常单独认;
  *  - 工具名:只查「第一段是现有工具名的第一段」的 snake_case(`max_seconds` 这样的参数名不查),对照 [knownToolNames],
- *    那是工具注册处的名单,不是金样快照。
+ *    那是工具注册处的名单,不是金样快照;源码里以字符串出现过的(运行记录、协议里的标记,如 `tool_result`)不算工具名。
  */
 class DocsConsistencyTest {
     private val root = File("..").canonicalFile
@@ -35,9 +35,13 @@ class DocsConsistencyTest {
             .map { it.relativeTo(root).invariantSeparatorsPath }.toList()
     }
 
+    /** 本仓库自己的源码:core、app,以及 aau 子模块(AAU 契约的实现,文档里也会提到它的类)。 */
     private val sourceFiles: List<File> by lazy {
-        listOf("core/src", "app/src").map { File(root, it) }.filter { it.isDirectory }
-            .flatMap { d -> d.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "java") }.toList() }
+        listOf("core/src", "app/src", "aau").map { File(root, it) }.filter { it.isDirectory }
+            .flatMap { d ->
+                d.walkTopDown().onEnter { it.name !in setOf("build", ".gradle") }
+                    .filter { it.isFile && (it.extension == "kt" || it.extension == "java") }.toList()
+            }
     }
     private val sourceText: String by lazy { sourceFiles.joinToString("\n") { it.readText() } }
     private val sourceNames: Set<String> by lazy { sourceFiles.map { it.nameWithoutExtension }.toSet() }
@@ -108,15 +112,28 @@ class DocsConsistencyTest {
     private fun importedFromOutside(name: String): Boolean =
         Regex("""(?m)^import\s+(?!com\.wangzan101\.mika\.)[\w.]+\.$name\b""").containsMatchIn(sourceText)
 
+    /** `java.lang` 隐含导入,源码里看不到 import;文档提到这几个异常不算脱节。 */
+    private val javaLang = setOf(
+        "Exception", "RuntimeException", "IllegalStateException", "IllegalArgumentException",
+        "IndexOutOfBoundsException", "SecurityException", "Throwable", "Error",
+    )
+
+    /** 源码里以字符串字面量出现过的名字是运行记录、协议里的标记(如 `tool_result`),不是工具名。 */
+    private fun usedAsLiteral(name: String): Boolean =
+        sourceText.contains("\"$name\"") || sourceText.contains("'$name'")
+
     private fun problems(doc: File): List<String> {
         val rel = doc.relativeTo(root).invariantSeparatorsPath
         return spans(doc.readText()).distinct().mapNotNull { s ->
             if (notIdentifier.containsMatchIn(s)) return@mapNotNull null
             when {
                 isPath(s) -> if (pathExists(s)) null else "$rel: 路径 `$s` 在仓库里找不到"
-                tool.matches(s) -> if (s.substringBefore('_') !in toolPrefixes || s in toolNames) null else "$rel: 工具名 `$s` 不在现有工具里"
+                tool.matches(s) ->
+                    if (s.substringBefore('_') !in toolPrefixes || s in toolNames || usedAsLiteral(s)) null
+                    else "$rel: 工具名 `$s` 不在现有工具里"
                 classLike.matches(s) && s.count { it.isUpperCase() } >= 2 && s.any { it.isLowerCase() } ->
-                    if (classExists(s) || importedFromOutside(s)) null else "$rel: 类名 `$s` 在 core/app 的源码里找不到"
+                    if (classExists(s) || importedFromOutside(s) || s in javaLang) null
+                    else "$rel: 类名 `$s` 在 core/app/aau 的源码里找不到"
                 else -> null
             }
         }
