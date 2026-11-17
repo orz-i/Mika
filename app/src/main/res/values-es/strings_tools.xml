@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">Obtener respuesta de red</string>
     <string name="tool_inspect_network">Inspeccionar solicitudes de red</string>
     <string name="tool_probe_ebpf">Detectar desplazamientos de captura</string>
+    <string name="tool_run_shortcut">Ejecutar atajo</string>
+    <string name="tool_navigate_to">Navegación automática</string>
 </resources>

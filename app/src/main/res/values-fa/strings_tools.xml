@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">دریافت پاسخ شبکه</string>
     <string name="tool_inspect_network">بررسی درخواست‌های شبکه</string>
     <string name="tool_probe_ebpf">تشخیص آفست‌های ضبط</string>
+    <string name="tool_run_shortcut">اجرای میان‌بُر</string>
+    <string name="tool_navigate_to">ناوبری خودکار</string>
 </resources>

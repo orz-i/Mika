@@ -62,10 +62,14 @@ import com.wangzan101.mika.chat.CurrentChat
 import com.wangzan101.mika.chat.SharedDraft
 import com.wangzan101.mika.chat.SharedDraftImporter
 import com.wangzan101.mika.chat.SharedDraftStore
+import com.wangzan101.mika.atlas.AtlasRuntime
+import com.wangzan101.mika.atlas.FileAtlasStore
+import com.wangzan101.mika.core.assembly.knownTools
 import com.wangzan101.mika.record.RunStore
-import com.wangzan101.mika.replay.FileRouteStore
 import com.wangzan101.mika.task.TaskService
 import com.wangzan101.mika.core.knowledge.GuideCatalog
+import com.wangzan101.mika.core.knowledge.KnowledgeStore
+import com.wangzan101.mika.core.knowledge.Surface
 import com.wangzan101.mika.settings.Prerequisites
 import com.wangzan101.mika.settings.ProviderStore
 import com.wangzan101.mika.settings.SystemStatusMonitor
@@ -595,15 +599,15 @@ private fun MikaRoot(
                 onLogout = { WebSites.login(context).logout(it) },
                 onLogoutAll = { WebSites.logoutAll(context) },
             )
-            val routeStore = remember { FileRouteStore.shared(context) }
-            var routeCount by remember { mutableStateOf<Int?>(null) }
             // 第一次取记忆要读盘解密,放到后台线程;页面的协程跟着这一屏走
             val vmScope = rememberCoroutineScope()
-            LaunchedEffect(Unit) { routeCount = withContext(Dispatchers.IO) { runCatching { routeStore.count() }.getOrNull() } }
-            val vm by produceState<MemoryViewModel?>(null) {
+            val vms by produceState<Pair<MemoryViewModel, AppExperienceViewModel>?>(null) {
                 value = withContext(Dispatchers.IO) {
                     val bundled = GuideCatalog.loadBundled()
-                    MemoryViewModel(
+                    val atlasRuntime = AtlasRuntime.shared(context)
+                    val atlasStore = FileAtlasStore.shared(context)
+                    val labels = ToolLabels(knownTools())
+                    val memoryVm = MemoryViewModel(
                         memoryRuntime.store(), memoryRuntime.settings(), memoryRuntime.skills(),
                         vmScope, memoryRuntime.file().brokenNotice,
                         wipe = { memoryRuntime.scope.launch(Dispatchers.IO) { memoryRuntime.wipeAll() } },
@@ -613,19 +617,27 @@ private fun MikaRoot(
                         builtinSkillNames = bundled.items.map { it.name }.toSet(),
                         onSkillRetired = { app.teach.forget(it) },
                     )
+                    val appExperienceVm = AppExperienceViewModel(
+                        runtime = atlasRuntime,
+                        skills = memoryRuntime.skills(),
+                        appDrafts = memoryRuntime.appKnowledge(),
+                        bundledApps = KnowledgeStore.loadBundled().filter { it.surface == Surface.Android },
+                        toolLabels = labels::label,
+                        brokenNotice = atlasStore.brokenNotice,
+                        scope = vmScope,
+                    )
+                    memoryVm to appExperienceVm
                 }
             }
-            vm?.let { m ->
+            vms?.let { (m, appExpVm) ->
                 // 从结果卡片的「看看」进来:直接看技能分段
                 LaunchedEffect(m) {
                     val open = memoryRuntime.openRequest.value
                     if (open != null) m.select(if (open.draftId != null) Segment.Pending else Segment.Skills)
                 }
                 MemoryDataScreen(
-                    m, webSites, routeCount,
-                    onClearRoutes = {
-                        vmScope.launch { routeCount = withContext(Dispatchers.IO) { routeStore.clear(); routeStore.count() } }
-                    },
+                    m, webSites, appExpVm,
+                    onPrepareShareUri = { pkg -> AtlasRuntime.shared(context).createShareUri(context, pkg) },
                     onBack = { memoryRuntime.requestOpen(null); nav.back() },
                 )
             }

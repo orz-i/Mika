@@ -25,7 +25,7 @@
     <string name="settings_notif_sub">When they pop up, change in system settings</string>
     <string name="settings_privacy">My data</string>
     <string name="settings_memory_data">Memory &amp; data</string>
-    <string name="settings_memory_sub">Memories, skills, saved routes &amp; website sign-ins</string>
+    <string name="settings_memory_sub">Memories, skills, app experience &amp; website sign-ins</string>
     <string name="settings_saved_data">Saved data</string>
     <string name="settings_web_logins">Website sign-ins</string>
     <plurals name="settings_count_sites">
@@ -304,4 +304,97 @@
     <string name="network_capture_plugins_scan_open_editor">Load into editor to tweak</string>
     <string name="network_capture_plugins_scan_apply_save">Apply &amp; save rule</string>
     <string name="network_capture_plugins_scan_empty_hint">No standard BoringSSL/Cronet offsets matched. If the app packs libs inside APK (extractNativeLibs=false), open the app first and retry, or run Mika Python+Root analysis.</string>
+    <string name="settings_app_experience">App experience</string>
+    <plurals name="app_exp_apps_count">
+        <item quantity="one">%1$d app</item>
+        <item quantity="other">%1$d apps</item>
+    </plurals>
+    <plurals name="app_exp_pages_count">
+        <item quantity="one">%1$d page</item>
+        <item quantity="other">%1$d pages</item>
+    </plurals>
+    <plurals name="app_exp_routes_count">
+        <item quantity="one">%1$d route</item>
+        <item quantity="other">%1$d routes</item>
+    </plurals>
+    <plurals name="app_exp_knowledge_count">
+        <item quantity="one">%1$d skill/note</item>
+        <item quantity="other">%1$d skills/notes</item>
+    </plurals>
+    <string name="app_exp_title">App experience</string>
+    <string name="app_exp_search_hint">Search app name or package</string>
+    <string name="app_exp_import">Import</string>
+    <string name="app_exp_clear_all">Clear all</string>
+    <string name="app_exp_empty">No learned app experience yet</string>
+    <string name="app_exp_empty_sub">Mika learns page maps and routes as it operates apps for you, or you can import a shared bundle.</string>
+    <string name="app_exp_last_used">Last used %1$s</string>
+    <string name="app_exp_clear_all_title">Clear all app experience?</string>
+    <string name="app_exp_clear_all_body">All learned app page maps and saved routes will be deleted. Memory and personal skills are not affected.</string>
+    <string name="app_exp_broken_notice">Some earlier app map data couldn’t be read and was set aside.</string>
+    <string name="app_exp_import_title">Import app experience</string>
+    <string name="app_exp_import_hint">Paste a shared JSON bundle or pick a .json file. Sensitive fields are filtered on import.</string>
+    <string name="app_exp_import_paste">Paste clipboard</string>
+    <string name="app_exp_import_file">Choose file</string>
+    <string name="app_exp_import_json_label">Experience bundle JSON</string>
+    <string name="app_exp_import_confirm">Import</string>
+    <string name="app_exp_import_conflict_merge">Merge</string>
+    <string name="app_exp_import_conflict_replace">Replace</string>
+    <string name="app_exp_import_conflict_hint">This app already has experience on this device:</string>
+    <string name="app_exp_import_preview">Ready: %1$s (%2$s) · %3$s · %4$s</string>
+    <string name="app_exp_import_success">Imported “%1$s” (%2$s, %3$s).</string>
+    <string name="app_exp_import_failed">Import failed: %1$s</string>
+    <string name="app_exp_import_file_too_large">File exceeds the maximum allowed size.</string>
+    <string name="app_exp_import_read_failed">Unable to read the selected file.</string>
+    <string name="app_exp_clipboard_empty">Clipboard is empty.</string>
+    <string name="app_exp_versions">Versions seen: %1$s</string>
+    <string name="app_exp_share">Share</string>
+    <string name="app_exp_export">Export file</string>
+    <string name="app_exp_clear_app">Clear this app</string>
+    <string name="app_exp_clear_app_title">Clear experience for %1$s?</string>
+    <string name="app_exp_clear_app_body">Deletes this app’s learned page map and routes. Personal skills and memory are not affected.</string>
+    <string name="app_exp_export_ok">Exported to file.</string>
+    <string name="app_exp_export_failed">Export failed: %1$s</string>
+    <string name="app_exp_share_nothing">No page map or enabled routes to share yet.</string>
+    <string name="app_exp_no_share_app">No app found to share this file.</string>
+    <string name="app_exp_section_pages">Pages &amp; transitions</string>
+    <string name="app_exp_pages_empty">No pages learned for this app yet</string>
+    <string name="app_exp_unverified">Unverified</string>
+    <string name="app_exp_hits">%1$d hits</string>
+    <string name="app_exp_controls">Key controls</string>
+    <string name="app_exp_controls_empty">No key controls recorded</string>
+    <string name="app_exp_control_stats">used %1$d</string>
+    <string name="app_exp_control_no_effect">no effect %1$d</string>
+    <string name="app_exp_edges">Outgoing transitions</string>
+    <string name="app_exp_edges_empty">No outgoing transitions recorded</string>
+    <string name="app_exp_edge_counts">ok %1$d · miss %2$d</string>
+    <string name="app_exp_section_routes">Saved routes</string>
+    <string name="app_exp_routes_empty">No saved routes for this app</string>
+    <string name="app_exp_route_steps_ok">%1$d steps · %2$d ok</string>
+    <string name="app_exp_route_misses">consecutive misses %1$d</string>
+    <string name="app_exp_route_miss_step">step %1$d</string>
+    <string name="app_exp_route_disabled">Paused</string>
+    <string name="app_exp_route_delete_title">Delete this route?</string>
+    <string name="app_exp_route_delete_body">“%1$s” will be removed. Mika will step through this task manually next time.</string>
+    <string name="app_exp_section_knowledge">Knowledge &amp; skills</string>
+    <string name="app_exp_knowledge_empty">No linked skills or app knowledge</string>
+    <string name="app_exp_kind_skill">Personal skill</string>
+    <string name="app_exp_kind_knowledge">App knowledge</string>
+    <string name="app_exp_stage_active">Active</string>
+    <string name="app_exp_stage_verified">Verified</string>
+    <string name="app_exp_stage_trial">On trial</string>
+    <string name="app_exp_stage_draft">To review</string>
+    <string name="app_exp_stage_paused">Paused</string>
+    <plurals name="app_exp_shortcuts_count">
+        <item quantity="one">%1$d shortcut</item>
+        <item quantity="other">%1$d shortcuts</item>
+    </plurals>
+    <plurals name="app_exp_shortcut_slots_count">
+        <item quantity="one">%1$d slot</item>
+        <item quantity="other">%1$d slots</item>
+    </plurals>
+    <string name="app_exp_section_shortcuts">Sub-flow shortcuts</string>
+    <string name="app_exp_shortcuts_empty">No sub-flow shortcuts learned for this app</string>
+    <string name="app_exp_shortcut_entry">From: %1$s</string>
+    <string name="app_exp_shortcut_delete_title">Delete this shortcut?</string>
+    <string name="app_exp_shortcut_delete_body">“%1$s” will be removed. Pages and routes remain unaffected.</string>
 </resources>

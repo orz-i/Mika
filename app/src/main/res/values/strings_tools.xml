@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">Get network response</string>
     <string name="tool_inspect_network">Inspect network requests</string>
     <string name="tool_probe_ebpf">Probe capture offsets</string>
+    <string name="tool_run_shortcut">Run shortcut</string>
+    <string name="tool_navigate_to">Auto-navigate</string>
 </resources>

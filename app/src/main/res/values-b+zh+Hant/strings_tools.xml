@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">取得網路回應內容</string>
     <string name="tool_inspect_network">檢視近期網路請求</string>
     <string name="tool_probe_ebpf">探測擷取偏移</string>
+    <string name="tool_run_shortcut">執行快捷流程</string>
+    <string name="tool_navigate_to">自動尋路導覽</string>
 </resources>

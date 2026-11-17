@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">Получить сетевой ответ</string>
     <string name="tool_inspect_network">Просмотреть сетевые запросы</string>
     <string name="tool_probe_ebpf">Поиск смещений перехвата</string>
+    <string name="tool_run_shortcut">Выполнить быстрый сценарий</string>
+    <string name="tool_navigate_to">Автонавигация</string>
 </resources>

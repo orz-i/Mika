@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">获取网络响应体</string>
     <string name="tool_inspect_network">查看近期网络请求</string>
     <string name="tool_probe_ebpf">探测抓包偏移</string>
+    <string name="tool_run_shortcut">执行快捷流程</string>
+    <string name="tool_navigate_to">自动寻路导航</string>
 </resources>

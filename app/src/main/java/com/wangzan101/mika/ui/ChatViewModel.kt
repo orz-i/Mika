@@ -2155,6 +2155,8 @@ class ToolLabels(private val tools: ToolIndex, private val legacy: LegacyNames =
             "获取网络响应体" to R.string.tool_get_network_response,
             "查看近期网络请求" to R.string.tool_inspect_network,
             "探测抓包偏移" to R.string.tool_probe_ebpf,
+            "执行快捷流程" to R.string.tool_run_shortcut,
+            "自动寻路导航" to R.string.tool_navigate_to,
         )
     }
 }

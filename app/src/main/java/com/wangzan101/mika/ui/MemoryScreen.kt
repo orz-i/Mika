@@ -1,5 +1,6 @@
 package com.wangzan101.mika.ui
 
+import android.net.Uri
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
@@ -63,28 +64,33 @@ private val SEGMENT_TAGS = Segment.entries.map { "segment-${it.name}" }
 private val KIND_GROUPS get() = listOf(MemoryKind.fact to tr(R.string.memory_about_you), MemoryKind.preference to tr(R.string.memory_preferences), MemoryKind.procedure to tr(R.string.memory_procedures))
 private val KIND_NAMES get() = listOf(tr(R.string.memory_fact), tr(R.string.memory_preferences), tr(R.string.memory_procedures))
 
-private enum class MemoryDataPage { Home, WebSites, Routes }
+private enum class MemoryDataPage { Home, WebSites, AppExperience }
 
-/** 记忆与数据:保留原来的记忆 / 技能 / 待确认主页,网站登录和操作路线从这里各进一层。 */
+/** 记忆与数据:保留原来的记忆 / 技能 / 待确认主页,网站登录和 App 经验从这里各进一层。 */
 @Composable
 fun MemoryDataScreen(
     vm: MemoryViewModel,
     webSites: WebSitesState,
-    routes: Int?,
-    onClearRoutes: () -> Unit,
+    appExperience: AppExperienceViewModel,
+    onPrepareShareUri: suspend (String) -> Uri?,
     onBack: () -> Unit,
 ) {
     var page by rememberSaveable { mutableStateOf(MemoryDataPage.Home) }
+    val appExpUi by appExperience.ui.collectAsState()
     val toHome = { page = MemoryDataPage.Home }
     if (page != MemoryDataPage.Home) BackHandler(onBack = toHome)
     when (page) {
         MemoryDataPage.Home -> MemoryScreen(
             vm, onBack,
             webSitesCount = webSites.sites.size, onOpenWebSites = { page = MemoryDataPage.WebSites },
-            routes = routes, onOpenRoutes = { page = MemoryDataPage.Routes },
+            appExperience = appExpUi.overview,
+            onOpenAppExperience = {
+                appExperience.refresh()
+                page = MemoryDataPage.AppExperience
+            },
         )
         MemoryDataPage.WebSites -> WebSitesScreen(webSites, onBack = toHome)
-        MemoryDataPage.Routes -> RoutesScreen(routes, onClear = onClearRoutes, onBack = toHome)
+        MemoryDataPage.AppExperience -> AppExperienceScreen(appExperience, onPrepareShareUri = onPrepareShareUri, onBack = toHome)
     }
 }
 
@@ -97,6 +103,8 @@ fun MemoryScreen(
     onOpenWebSites: () -> Unit = {},
     routes: Int? = null,
     onOpenRoutes: () -> Unit = {},
+    appExperience: AppExperienceOverview? = null,
+    onOpenAppExperience: () -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     val ui by vm.ui.collectAsState()
@@ -188,7 +196,7 @@ fun MemoryScreen(
             SwitchRow(stringResource(R.string.memory_auto), stringResource(R.string.memory_auto_sub), ui.switches.autoRemember) { on -> vm.setSwitches { it.copy(autoRemember = on) } }
             SwitchRow(stringResource(R.string.memory_learn), stringResource(R.string.memory_learn_sub), ui.switches.learnSkills) { on -> vm.setSwitches { it.copy(learnSkills = on) } }
         }
-        if (webSitesCount != null || routes != null) {
+        if (webSitesCount != null || appExperience != null || routes != null) {
             GroupLabel(stringResource(R.string.settings_saved_data))
             GroupCard {
                 var first = true
@@ -199,10 +207,31 @@ fun MemoryScreen(
                         RowChevron()
                     }
                 }
-                routes?.let {
-                    ListRow(MikaIcons.Route, stringResource(R.string.settings_routes), first = take(), onClick = onOpenRoutes) {
-                        RowValue(trPlural(R.plurals.settings_count_routes, it))
+                if (appExperience != null) {
+                    val subtitle = if (appExperience.loading) {
+                        stringResource(R.string.loading)
+                    } else {
+                        buildList {
+                            add(trPlural(R.plurals.app_exp_pages_count, appExperience.screenCount))
+                            add(trPlural(R.plurals.app_exp_routes_count, appExperience.routeCount))
+                            if (appExperience.shortcutCount > 0) {
+                                add(trPlural(R.plurals.app_exp_shortcuts_count, appExperience.shortcutCount))
+                            }
+                        }.joinToString(" · ")
+                    }
+                    ListRow(MikaIcons.Apps, stringResource(R.string.settings_app_experience), subtitle = subtitle, first = take(), onClick = onOpenAppExperience) {
+                        RowValue(
+                            if (appExperience.loading) stringResource(R.string.loading)
+                            else trPlural(R.plurals.app_exp_apps_count, appExperience.appCount),
+                        )
                         RowChevron()
+                    }
+                } else {
+                    routes?.let {
+                        ListRow(MikaIcons.Route, stringResource(R.string.settings_routes), first = take(), onClick = onOpenRoutes) {
+                            RowValue(trPlural(R.plurals.settings_count_routes, it))
+                            RowChevron()
+                        }
                     }
                 }
             }

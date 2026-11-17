@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">ネットワーク応答を取得</string>
     <string name="tool_inspect_network">最近の通信を確認</string>
     <string name="tool_probe_ebpf">キャプチャオフセット検出</string>
+    <string name="tool_run_shortcut">ショートカットを実行</string>
+    <string name="tool_navigate_to">自動ナビゲート</string>
 </resources>

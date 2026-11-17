@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">جلب استجابة الشبكة</string>
     <string name="tool_inspect_network">فحص طلبات الشبكة</string>
     <string name="tool_probe_ebpf">فحص إزاحات الالتقاط</string>
+    <string name="tool_run_shortcut">تشغيل اختصار</string>
+    <string name="tool_navigate_to">تنقل تلقائي</string>
 </resources>

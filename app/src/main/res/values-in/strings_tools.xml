@@ -66,4 +66,6 @@
     <string name="tool_get_network_response">Ambil respons jaringan</string>
     <string name="tool_inspect_network">Periksa permintaan jaringan</string>
     <string name="tool_probe_ebpf">Deteksi offset tangkapan</string>
+    <string name="tool_run_shortcut">Jalankan pintasan</string>
+    <string name="tool_navigate_to">Navigasi otomatis</string>
 </resources>
