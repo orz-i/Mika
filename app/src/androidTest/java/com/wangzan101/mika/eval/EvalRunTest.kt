@@ -5,6 +5,8 @@ import android.content.Context
 import android.os.Bundle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.wangzan101.mika.atlas.AtlasRuntime
+import com.wangzan101.mika.atlas.FileAtlasStore
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport
 import com.wangzan101.mika.confirm.ConfirmationCopy
 import com.wangzan101.mika.core.risk.IrrevAction
@@ -29,6 +31,7 @@ import com.wangzan101.mika.core.model.ModelRole
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.memory.MemoryRuntime
 import com.wangzan101.mika.record.RunStore
+import com.wangzan101.mika.replay.FileRouteStore
 import com.wangzan101.mika.settings.FeatureFlags
 import com.wangzan101.mika.settings.ProviderStore
 import com.wangzan101.mika.task.TaskRun
@@ -55,6 +58,7 @@ import com.wangzan101.mika.core.cap.phone.OperatingPace
  *
  * `-e evalRun <名字> [-e evalSet <assets 目录或 id 前缀>] [-e evalPriceIn <每百万输入 token 单价> -e evalPriceOut <输出单价>
  *  [-e evalPriceCached <缓存单价>]] [-e evalOnTakeover cancel|wait] [-e evalAllowIrreversible true] [-e evalFlags none|<键=on,…>]
+ *  [-e evalAtlasHints true|false] [-e evalAtlasMode keep|isolated|cold-keep|warm|warm-restore]
  *  [-e evalChannel web|app] [-e evalSplit tune|holdout]`
  *
  * 题目来自测试包 assets 的类别目录(仓库 eval/tasks/<类别>/)、网页题目录 web 与冒烟题目录 eval-smoke;不传 evalSet 时跑除冒烟题以外的全部。
@@ -82,12 +86,44 @@ class EvalRunTest {
     private val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
     private val args: Bundle = InstrumentationRegistry.getArguments()
 
+    private enum class AtlasEvalMode {
+        Keep,
+        Isolated,
+        ColdKeep,
+        Warm,
+        WarmRestore;
+
+        companion object {
+            fun parse(raw: String?): AtlasEvalMode = when (raw?.trim()?.lowercase()) {
+                null, "", "keep", "preserve" -> Keep
+                "isolated" -> Isolated
+                "cold-keep" -> ColdKeep
+                "warm" -> Warm
+                "warm-restore" -> WarmRestore
+                else -> throw IllegalArgumentException(
+                    "evalAtlasMode must be keep|isolated|cold-keep|warm|warm-restore, got $raw",
+                )
+            }
+        }
+    }
+
     private var savedFlags: SpeedFlags? = null
+    private var atlasMode: AtlasEvalMode = AtlasEvalMode.Keep
+    private var awaitAtlasLearning: Boolean = false
 
     @After
     fun tearDown() {
         testTasks.evalHooks.reset()
         savedFlags?.let { FeatureFlags.get(context).setSpeed(it) }
+        if (atlasMode == AtlasEvalMode.Isolated || atlasMode == AtlasEvalMode.WarmRestore) {
+            restoreUserAtlasAndRoutes()
+        }
+    }
+
+    @Test
+    fun restoreAtlasBackup() {
+        assumeTrue(args.getString("evalRestoreAtlas") == "true")
+        restoreUserAtlasAndRoutes()
     }
 
     @Test
@@ -104,6 +140,12 @@ class EvalRunTest {
         testTasks.evalHooks.learnSkills = args.getString("learnSkills") == "on"
         testTasks.evalHooks.rememberMemory = args.getString("memory") == "on"
         testTasks.evalHooks.autoApproveSkillDrafts = args.getString("autoApproveSkills") == "true"
+        testTasks.evalHooks.atlasHints = when (val raw = args.getString("evalAtlasHints")?.trim()?.lowercase()) {
+            null, "" -> null
+            "true" -> true
+            "false" -> false
+            else -> throw IllegalArgumentException("evalAtlasHints must be true or false, got $raw")
+        }
         testTasks.evalHooks.operatingPace = OperatingPace.parse(args.getString("evalPace")) ?: OperatingPace.FAST
         val allowIrreversible = args.getString("evalAllowIrreversible") == "true"
         val prices = prices()
@@ -111,6 +153,13 @@ class EvalRunTest {
         val featureFlags = FeatureFlags.get(context)
         savedFlags = featureFlags.speedFlags()
         featureFlags.setSpeed(flags)
+
+        atlasMode = AtlasEvalMode.parse(args.getString("evalAtlasMode"))
+        awaitAtlasLearning = atlasMode != AtlasEvalMode.Keep || args.getString("evalAwaitAtlas") == "true"
+        if (atlasMode == AtlasEvalMode.Isolated || atlasMode == AtlasEvalMode.ColdKeep) {
+            backupUserAtlasAndRoutesIfNeeded()
+            clearAtlasAndRoutesWithoutDeletingKey()
+        }
 
         // 学技能、记忆的状态:默认清空,第③轮(带着②学到的技能跑)传 keepState=true 保留
         if (args.getString("keepState") != "true") MemoryRuntime.of(context).wipeAll()
@@ -308,6 +357,7 @@ class EvalRunTest {
         testTasks.evalHooks.maxSteps = task.maxSteps
 
         if (!waitFor(BUSY_WAIT_MS) { !DeviceTaskState.busy.value }) return task to harness("上一个任务一直没有收尾")
+        val atlasRevBefore = FileAtlasStore.shared(context).changes.value
         val prevConversation = DeviceTaskState.conversationId.value
         val t0 = System.currentTimeMillis()
         TaskService.start(context, task.goal, conversation)
@@ -343,6 +393,11 @@ class EvalRunTest {
         }
         val record = runs.list().firstOrNull { it.startedAtMs >= t0 }
         val events = record?.let { runs.events(it.id) }.orEmpty()
+        if (awaitAtlasLearning && end is TaskState.Succeeded &&
+            events.any { it is RunEvent.ActionTarget && !it.incomplete && !it.protected }
+        ) {
+            awaitAtlasSettled(atlasRevBefore)
+        }
         record?.let { runs.copyTo(it.id, File(dir, "run")) }
         val resolved = resolveApps(task, events, probes)
         return resolved to observe(resolved, end, events, record != null, timedOut, tookOver, wallMs, probes, record?.id.orEmpty())
@@ -502,6 +557,54 @@ class EvalRunTest {
         o.metrics?.let { put("metrics", RunMetricsStore.JSON.encodeToJsonElement(RunMetrics.serializer(), it)) }
     })
 
+    private fun awaitAtlasSettled(atlasRevBefore: Long) {
+        val store = FileAtlasStore.shared(context)
+        val runtime = AtlasRuntime.shared(context)
+        waitFor(3_000L) {
+            store.changes.value > atlasRevBefore || runtime.activeLearnCount.value > 0
+        }
+        runBlocking { runtime.awaitLearningIdle(15_000L) }
+    }
+
+    private fun backupDir(): File = File(context.filesDir, ATLAS_BACKUP_DIR)
+
+    /** 在私有目录加密原样备份用户现有的页面地图与操作路线（绝不覆盖未恢复的原备份）。 */
+    private fun backupUserAtlasAndRoutesIfNeeded() {
+        val finalDir = backupDir()
+        if (finalDir.isDirectory && File(finalDir, BACKUP_MARKER).isFile) return
+        val tmpDir = File(context.filesDir, "$ATLAS_BACKUP_DIR.tmp").apply { deleteRecursively(); mkdirs() }
+        val atlasDir = File(context.filesDir, FileAtlasStore.DIR)
+        if (atlasDir.isDirectory) atlasDir.copyRecursively(File(tmpDir, FileAtlasStore.DIR), overwrite = true)
+        val routesDir = File(context.filesDir, FileRouteStore.DIR)
+        if (routesDir.isDirectory) routesDir.copyRecursively(File(tmpDir, FileRouteStore.DIR), overwrite = true)
+        File(tmpDir, BACKUP_MARKER).writeText("ok")
+        finalDir.deleteRecursively()
+        check(tmpDir.renameTo(finalDir)) { "failed to finalize eval atlas backup" }
+    }
+
+    /** 清空图谱与路线文件但不删除 AndroidKeyStore 密钥别名，确保后续仍可解密用户备份。 */
+    private fun clearAtlasAndRoutesWithoutDeletingKey() {
+        FileAtlasStore.shared(context).clear()
+        FileRouteStore.shared(context).clear()
+    }
+
+    /** 从私有备份恢复用户原有的页面地图与操作路线并失效内存缓存。 */
+    private fun restoreUserAtlasAndRoutes() {
+        val backup = backupDir()
+        if (!backup.isDirectory || !File(backup, BACKUP_MARKER).isFile) return
+        clearAtlasAndRoutesWithoutDeletingKey()
+        val backedAtlas = File(backup, FileAtlasStore.DIR)
+        if (backedAtlas.isDirectory) {
+            backedAtlas.copyRecursively(File(context.filesDir, FileAtlasStore.DIR), overwrite = true)
+        }
+        val backedRoutes = File(backup, FileRouteStore.DIR)
+        if (backedRoutes.isDirectory) {
+            backedRoutes.copyRecursively(File(context.filesDir, FileRouteStore.DIR), overwrite = true)
+        }
+        FileAtlasStore.shared(context).invalidateCache()
+        backup.deleteRecursively()
+    }
+
     private fun waitFor(timeoutMs: Long, test: () -> Boolean): Boolean {
         val end = System.currentTimeMillis() + timeoutMs
         while (!test()) {
@@ -513,6 +616,8 @@ class EvalRunTest {
 
     companion object {
         private val RUN_NAME = Regex("^[A-Za-z0-9_-]+$")
+        private const val ATLAS_BACKUP_DIR = "eval-atlas-backup"
+        private const val BACKUP_MARKER = ".complete"
         private const val SMOKE_DIR = "eval-smoke"
         /** 专项题集:配对题(三轮跑)、记忆题。不传 evalSet 时不跑,要显式选。 */
         private val SUITE_DIRS = listOf("skills", "memory")

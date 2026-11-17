@@ -18,6 +18,14 @@
              所以用 Java 写;类名必须和源文件里的一致(ManifestProvidersTest 会查) -->
         <activity android:name="com.wangzan101.mika.cap.phone.a11y.SecureTestActivity" android:exported="true" />
         <activity android:name="com.wangzan101.mika.cap.phone.a11y.PlainTestActivity" android:exported="true" />
+        <activity android:name="com.wangzan101.mika.atlas.AtlasHomeTestActivity"
+            android:exported="true"
+            android:taskAffinity="com.wangzan101.mika.atlas.test"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+        <activity android:name="com.wangzan101.mika.atlas.AtlasDetailTestActivity"
+            android:exported="true"
+            android:taskAffinity="com.wangzan101.mika.atlas.test"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
         <activity android:name="com.wangzan101.mika.cap.phone.a11y.GestureTapTestActivity" android:exported="true" />
         <activity android:name="com.wangzan101.mika.a11y.WebEditorTestActivity" android:exported="true" />
         <activity android:name="com.wangzan101.mika.cap.phone.a11y.FieldsTestActivity" android:exported="true" />

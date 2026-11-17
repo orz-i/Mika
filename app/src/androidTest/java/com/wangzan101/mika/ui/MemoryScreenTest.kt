@@ -1,6 +1,7 @@
 package com.wangzan101.mika.ui
 
 import com.wangzan101.mika.ChineseUi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -47,7 +48,8 @@ class MemoryScreenTest {
             MemoryScreen(
                 vm, onBack = {},
                 webSitesCount = opened?.let { 3 }, onOpenWebSites = { opened?.add("web") },
-                routes = opened?.let { 8 }, onOpenRoutes = { opened?.add("routes") },
+                appExperience = opened?.let { AppExperienceOverview(appCount = 2, screenCount = 5, routeCount = 8, shortcutCount = 1) },
+                onOpenAppExperience = { opened?.add("app_exp") },
             )
         }
     }
@@ -84,12 +86,14 @@ class MemoryScreenTest {
         assertEquals(1, compose.onAllNodesWithTag("memory-row").fetchSemanticsNodes().size)
     }
 
-    @Test fun savedDataRowsOpenWebsiteSignInsAndRoutes() {
+    @Test fun savedDataRowsOpenWebsiteSignInsAndAppExperience() {
         val opened = mutableListOf<String>()
         show(opened)
         compose.onNodeWithText("记忆与数据").assertExists()
         compose.onNodeWithText("网站登录").performScrollTo().performClick()
-        compose.onNodeWithText("记住的操作路线").performScrollTo().performClick()
-        assertEquals(listOf("web", "routes"), opened)
+        compose.onNodeWithText("5 个页面 · 8 条路线 · 1 个快捷").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("2 个 App").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("App 经验").performScrollTo().performClick()
+        assertEquals(listOf("web", "app_exp"), opened)
     }
 }
