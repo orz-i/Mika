@@ -66,6 +66,8 @@ import com.wangzan101.mika.core.model.ModelRole
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.replay.RouteMatcher
 import com.wangzan101.mika.core.replay.RouteRecorder
+import com.wangzan101.mika.atlas.AtlasRuntime
+import com.wangzan101.mika.atlas.FileAtlasStore
 import com.wangzan101.mika.replay.FileRouteStore
 import com.wangzan101.mika.core.agent.JudgedOutcome
 import com.wangzan101.mika.core.agent.LearnGate
@@ -205,6 +207,8 @@ class TaskRun(
     private val phoneServices = PhoneServices.of(service)
     private val memoryRuntime = MemoryRuntime.of(service)
     private val routeStore = FileRouteStore.shared(service)
+    private val atlasStore = FileAtlasStore.shared(service)
+    private val atlasRuntime = AtlasRuntime.shared(service)
     private val recovery = TaskRecovery.of(service)
 
     private inner class Mirrored<T>(initial: T, private val shown: MutableStateFlow<T>) {
@@ -741,7 +745,9 @@ class TaskRun(
             }
             // 装了哪些 App:每个任务读一次,读不到就当没有;参考资料用
             val apps = try { phoneScreen.listApps() } catch (e: CancellationException) { throw e } catch (e: Exception) { emptyList() }
-            val speed = FeatureFlags.get(service).speedFlags()
+            val featureFlags = FeatureFlags.get(service)
+            val speed = featureFlags.speedFlags()
+            val atlasHintsOn = featureFlags.effectiveAtlasHints(env.evalHooks.atlasHints)
             // 记忆与个人技能:进程内同一份;总开关关着就不给记忆(不检索、不注入、不提取、没有记忆工具)
             val switches = memoryRuntime.settings().switches.value.let { sw ->
                 sw.copy(learnSkills = env.evalHooks.learnSkills ?: sw.learnSkills, autoRemember = env.evalHooks.rememberMemory ?: sw.autoRemember)
@@ -928,7 +934,9 @@ class TaskRun(
                 webSearch = com.wangzan101.mika.settings.WebSearchSettings.get(service).service(),
                 // 已 root 的手机上用户打开了「允许 Mika 执行 root 命令」才登记 root 工具(子任务、条件检查不给)
                 root = phoneServices.shellManager.root.takeIf { !conditionCheck && it.commandsAllowed() }
-                    ?.let { r -> RootCommands(RootShell::su, r::commandsAllowed) { a -> if (a == null) r.suGone() else r.commandsDenied(a) } })
+                    ?.let { r -> RootCommands(RootShell::su, r::commandsAllowed) { a -> if (a == null) r.suGone() else r.commandsDenied(a) } },
+                // L2 快捷流程与 L3 自动寻路工具跟着页面地图开关走；条件检查只读运行不开放
+                atlas = if (!conditionCheck && atlasHintsOn) atlasStore else null)
             dispatcher = tools
             val agent = AgentLoop(
                 model, tools,
@@ -984,6 +992,7 @@ class TaskRun(
                         false
                     }
                 },
+                atlas = if (!conditionCheck && atlasHintsOn) atlasStore else null,
             )
             loop = agent
             liveFeed = agent.events.subscribe(liveEvents)
@@ -1359,9 +1368,14 @@ class TaskRun(
      */
     suspend fun settleOutcome(end: TaskState, conversations: ConversationStore): JudgedOutcome? {
         val k = kit ?: return null
-        if (end !is TaskState.Succeeded) return null
-        val judged = OutcomeJudge(k.light ?: k.model, k.model).judge(k.agent.taskText ?: goal, end.answer, k.priorTurns)
         val runId = _runId.value
+        if (end !is TaskState.Succeeded) {
+            if (provenance.origin != RunOrigin.Ui && runId != null) {
+                launchNonUiAtlasLearning(runId, end, RunOutcome.Unknown, k)
+            }
+            return null
+        }
+        val judged = OutcomeJudge(k.light ?: k.model, k.model).judge(k.agent.taskText ?: goal, end.answer, k.priorTurns)
         if (runId != null) withContext(Dispatchers.IO) {
             k.runStore?.append(runId, judged.event(System.currentTimeMillis()))
             if (BuildConfig.DEBUG) k.runStore?.mirrorToExternal(runId)
@@ -1373,11 +1387,15 @@ class TaskRun(
         if (runId != null && LearnGate.shouldSaveRoute(k.routesOn, end, judged.outcome, runId, goal)) k.runStore?.let { s ->
             saveRoute(goal, withContext(Dispatchers.IO) { s.events(runId) }, k.dispatcher.index)
         }
+        if (provenance.origin != RunOrigin.Ui && runId != null) {
+            launchNonUiAtlasLearning(runId, end, judged.outcome, k)
+        }
         return judged
     }
 
     /**
-     * 结果通知发出之后调用:记下用到的个人技能的结果、提取记忆、起草技能,提示挂到这一轮的结果卡片上并存进对话。
+     * 结果通知发出之后调用:记下用到的个人技能的结果、提取记忆、起草技能,提示挂到这一轮的结果卡片上并存进对话;
+     * 随后在后台根据本次落盘事件离线更新 App 页面地图（不拖慢前台任务）。
      * 在进程级的作用域里跑,服务退出也不中断。
      */
     suspend fun learnAfter(end: TaskState, outcome: RunOutcome?, conversations: ConversationStore) {
@@ -1401,13 +1419,49 @@ class TaskRun(
             knowledge = k.knowledge,
             outcome = outcome ?: RunOutcome.Unknown,
         ))
-        if (runId == null || notes.memoryNotes.isEmpty() && notes.usedMemory.isEmpty() && notes.skillNotes.isEmpty()) return
-        memoryRuntime.publish(notes)
-        withContext(Dispatchers.IO) {
-            runCatching {
-                conversations.updateTurn(conversationId, runId) { it.copy(memoryNotes = notes.memoryNotes, usedMemory = notes.usedMemory, skillNotes = notes.skillNotes) }
-            }.onFailure { Log.w(TAG, "could not save memory notes", it) }
+        if (runId != null && !(notes.memoryNotes.isEmpty() && notes.usedMemory.isEmpty() && notes.skillNotes.isEmpty())) {
+            memoryRuntime.publish(notes)
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    conversations.updateTurn(conversationId, runId) { it.copy(memoryNotes = notes.memoryNotes, usedMemory = notes.usedMemory, skillNotes = notes.skillNotes) }
+                }.onFailure { Log.w(TAG, "could not save memory notes", it) }
+            }
         }
+        if (runId != null) {
+            learnAtlas(runId, end, outcome ?: RunOutcome.Unknown, k)
+        }
+    }
+
+    private suspend fun learnAtlas(runId: String, end: TaskState, outcome: RunOutcome, k: LearnKit) {
+        val runStore = k.runStore ?: return
+        try {
+            withContext(Dispatchers.IO) {
+                atlasRuntime.learnRun(
+                    runId = runId,
+                    eventsProvider = { runStore.events(it) },
+                    end = end,
+                    outcome = outcome,
+                    lightModel = k.light ?: k.model,
+                    goal = k.agent.taskText ?: goal,
+                )
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "atlas learning failed", e)
+        }
+    }
+
+    private fun launchNonUiAtlasLearning(runId: String, end: TaskState, outcome: RunOutcome, k: LearnKit) {
+        val runStore = k.runStore ?: return
+        atlasRuntime.launchLearnAfterRun(
+            runId = runId,
+            eventsProvider = { withContext(Dispatchers.IO) { runStore.events(it) } },
+            end = end,
+            outcome = outcome,
+            lightModel = k.light ?: k.model,
+            goal = k.agent.taskText ?: goal,
+        )
     }
 
     /** 办成的运行记成路线;记不成(不该记、写盘失败)不影响任务结局。 */

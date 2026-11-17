@@ -33,6 +33,9 @@ class EvalHooks {
     /** 覆盖「自动记住我说过的事」开关;null 用设置里的。评测默认关,只有记忆题集打开。 */
     @Volatile var rememberMemory: Boolean? = null
 
+    /** 覆盖「页面地图提示与 L2/L3 快捷工具」开关;null 用设置与提速开关的默认规则。 */
+    @Volatile var atlasHints: Boolean? = null
+
     /** 覆盖设置里的操作节奏;null 用设置里的。评测和真机验收默认用「快」,按参数才换成别的。 */
     @Volatile var operatingPace: OperatingPace? = null
 
@@ -41,6 +44,7 @@ class EvalHooks {
         autoApproveSkillDrafts = false
         learnSkills = null
         rememberMemory = null
+        atlasHints = null
         autoAnswer = null
         onTakeover = "cancel"
         maxSteps = null

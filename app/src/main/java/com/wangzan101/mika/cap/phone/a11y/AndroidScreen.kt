@@ -188,7 +188,8 @@ class AndroidScreen(
         packages.ifEmpty { listOfNotNull(foregroundTaskPackage()) }
     }
 
-    private fun read() = ScreenReader.read(windows(), screenWidth, screenHeight)
+    private fun read(collectSignature: Boolean = false) =
+        ScreenReader.read(windows(), screenWidth, screenHeight, collectSignature = collectSignature)
     private fun treeHash() = ScreenReader.hash(windows())
 
     /** 显式使用系统命令或事件工具时按需建屏;普通任务等到第一次打开 App 才建。 */
@@ -208,9 +209,17 @@ class AndroidScreen(
         if (!hasDisplay) return@withContext ScreenSnapshot(snapshotId(), null, emptyList(), screenWidth, screenHeight, hasWindow = false)
         // 上一个动作过了一会儿才开到用户主屏上的:先消费常驻托管事件再读(只在模型要读的这一屏上做,不在判效果的那一眼里做)
         val late = if (register) settledSpill.getAndSet(null) ?: custodian.drainAndTakeLatestSpill()?.opened else null
-        val r = read()
+        val r = read(collectSignature = true)
         val after = treeHash()
         val foreground = if (r.topPackage == null) foregroundTaskPackage() else null
+        val currentPkg = r.topPackage ?: foreground
+        val screenProtected = isProtected()
+        val activity = if (!screenProtected && currentPkg != null) {
+            ScreenReader.normalizeTopActivity(currentPkg, runCatching { shell.topActivity(displayId) }.getOrNull())
+        } else null
+        val screenSig = if (!screenProtected) {
+            ScreenReader.extractSignature(r, activityName = activity, protected = false)
+        } else null
         val snap = NodeSnapshot(snapshotId(), r.entries)
         if (register) ids.put(snap)
         ScreenSnapshot(
@@ -220,6 +229,7 @@ class AndroidScreen(
             width = screenWidth,
             height = screenHeight,
             changedDuringRead = after != r.hash,
+            protected = screenProtected,
             hasWindow = r.anyAppWindow,
             unreadableApp = foreground,
             windows = r.windows,
@@ -228,6 +238,8 @@ class AndroidScreen(
             // 黑帧只说明画面不可用,不能据此声称窗口防截屏;读屏元素仍可作为降级路径。
             captureError = if ((r.anyAppWindow || foreground != null) && frameServable() && frameBlack() == true)
                 ScreenDiagnosis.DISPLAY_CAPTURE_UNAVAILABLE else null,
+            activity = activity,
+            screenSig = screenSig,
         )
     }
 

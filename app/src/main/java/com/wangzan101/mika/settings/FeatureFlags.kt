@@ -101,6 +101,17 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(NETWORK_CAPTURE_ENABLED, on).commit()
     }
 
+    /** 页面地图历史线索提示与 L2/L3 快捷工具（配合回放开关默认开启）。 */
+    fun atlasHintsEnabled(): Boolean = prefs.getBoolean(ATLAS_HINTS_ENABLED, true)
+
+    fun setAtlasHintsEnabled(on: Boolean) {
+        prefs.edit().putBoolean(ATLAS_HINTS_ENABLED, on).commit()
+    }
+
+    /** 结合评测覆盖项与回放总开关计算本次运行是否启用页面地图提示与快捷/寻路工具。 */
+    fun effectiveAtlasHints(override: Boolean? = null): Boolean =
+        override ?: (atlasHintsEnabled() && speedFlags().replay)
+
     /** 端侧网络抓包模式（默认 [CaptureMode.AUTO] 优先 Root eBPF，非 Root 自动回退 VpnService）。 */
     fun networkCaptureMode(): CaptureMode = prefs.getString(NETWORK_CAPTURE_MODE, null)
         ?.let { raw -> CaptureMode.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } }
@@ -258,6 +269,7 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val CAPSULE_CARD_HEIGHT = "capsule_card_height"
         private const val NETWORK_CAPTURE_ENABLED = "network_capture_enabled"
         private const val NETWORK_CAPTURE_MODE = "network_capture_mode"
+        private const val ATLAS_HINTS_ENABLED = "atlas_hints_enabled"
 
         fun get(context: Context) = FeatureFlags(context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE))
     }

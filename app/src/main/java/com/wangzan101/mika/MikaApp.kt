@@ -33,6 +33,8 @@ import com.wangzan101.mika.settings.ApprovalControl
 import com.wangzan101.mika.settings.ApprovalStore
 import com.wangzan101.mika.settings.FeatureFlags
 import com.wangzan101.mika.cap.phone.PhoneServices
+import com.wangzan101.mika.atlas.AtlasRuntime
+import com.wangzan101.mika.atlas.FileAtlasStore
 import com.wangzan101.mika.replay.FileRouteStore
 import com.wangzan101.mika.settings.ProviderStore
 import com.wangzan101.mika.core.run.Outbox
@@ -74,7 +76,8 @@ import com.wangzan101.mika.task.TriggerRuntime
  * 其余代码经构造参数拿到。助手进程(HelperMain、ShellService)没有这个对象,不用这里的任何服务。
  */
 class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, PhoneServices.Owner,
-    MemoryRuntime.Owner, ProviderStore.Owner, FileRouteStore.Owner, TaskRecovery.Owner {
+    MemoryRuntime.Owner, ProviderStore.Owner, FileRouteStore.Owner, FileAtlasStore.Owner,
+    AtlasRuntime.Owner, TaskRecovery.Owner {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** 手机能力的服务:内置助手、共用的 shell 连接、配对、「去设置」提示。 */
@@ -177,6 +180,19 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
 
     /** 经验路线。 */
     override val routes: FileRouteStore by lazy { FileRouteStore.create(this) }
+
+    /** App 页面地图（按包名加密分存）。 */
+    override val atlas: FileAtlasStore by lazy { FileAtlasStore.create(this) }
+
+    /** App 页面地图离线学习与经验包协调器。 */
+    override val atlasRuntime: AtlasRuntime by lazy {
+        AtlasRuntime.create(
+            context = this,
+            atlasStore = atlas,
+            routeStore = routes,
+            yieldToForeground = { taskState.busy.first { !it } },
+        )
+    }
 
     /** 异常退出后留下的系统改动的恢复;在跑的任务登记在这里。 */
     override val taskRecovery: TaskRecovery by lazy { TaskRecovery(this, phone.sharedShell) }

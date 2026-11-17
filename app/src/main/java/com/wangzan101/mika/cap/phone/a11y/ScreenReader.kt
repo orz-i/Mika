@@ -4,8 +4,13 @@ import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import com.agent.use.a11y.DisplayWindowInspector
+import com.agent.use.a11y.ScreenBounds
+import com.agent.use.a11y.ScreenNodeDescriptor
+import com.agent.use.a11y.ScreenSignature
+import com.agent.use.a11y.ScreenSignatureExtractor
 import com.wangzan101.mika.core.cap.phone.WheelMath
 import com.wangzan101.mika.core.uistate.ElementLocator
+import com.wangzan101.mika.core.uistate.ScreenSig
 import com.wangzan101.mika.core.uistate.UiElement
 import com.wangzan101.mika.core.uistate.UiStates
 import com.wangzan101.mika.core.uistate.UiTreeNode
@@ -27,12 +32,16 @@ internal class ScreenRead(
     val windows: List<UiWindowTree> = emptyList(),
     /** 有应用窗口(不管根节点读不读得到)。 */
     val anyAppWindow: Boolean = hasAppWindow,
+    /** 用于提取页面结构签名的轻量节点树（仅在按需采集时填充，归一化坐标 0–999）。 */
+    val signatureNodes: List<ScreenNodeDescriptor> = emptyList(),
 )
 
 /** 从某块屏的窗口里读出元素列表、界面指纹和诊断用的文字。通用窗口过滤、标签提取与界面指纹委托给 [DisplayWindowInspector]。 */
 internal object ScreenReader {
     private const val MIN_SIZE = 5
     private const val MAX_DEPTH = 80
+    private const val NORMALIZED_SCALE = 1000
+    private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
 
     /** 从上到下排好的、属于界面内容的窗口。 */
     fun contentWindows(windows: List<AccessibilityWindowInfo>): List<AccessibilityWindowInfo> =
@@ -42,7 +51,13 @@ internal object ScreenReader {
     fun topPackage(windows: List<AccessibilityWindowInfo>): String? =
         DisplayWindowInspector.topPackage(windows)
 
-    fun read(windows: List<AccessibilityWindowInfo>, width: Int, height: Int): ScreenRead {
+    @Suppress("DEPRECATION")
+    fun read(
+        windows: List<AccessibilityWindowInfo>,
+        width: Int,
+        height: Int,
+        collectSignature: Boolean = false,
+    ): ScreenRead {
         val content = contentWindows(windows)
         val entries = mutableListOf<NodeEntry>()
         val texts = mutableListOf<String>()
@@ -52,76 +67,125 @@ internal object ScreenReader {
         var lastLabel: String? = null
         val rect = Rect()
 
-        fun visit(n: AccessibilityNodeInfo, depth: Int, inList: Boolean): List<UiTreeNode> {
+        fun visit(
+            n: AccessibilityNodeInfo,
+            depth: Int,
+            inList: Boolean,
+            sigOut: MutableList<ScreenNodeDescriptor>?,
+        ): List<UiTreeNode> {
             if (depth > MAX_DEPTH) return emptyList()
             val visible = n.isVisibleToUser
             val editable = visible && canSetText(n)
             var ref: String? = null
             var clippedBounds = listOf(0, 0, 0, 0)
+            var nodeRole = "View"
+            var nodeRid: String? = null
+            var nodeSecret = false
+            var nodeHintFlag = false
+            var nodeText: String? = null
+            var nodeDesc: String? = null
+            var nodeHint: String? = null
             if (visible) {
                 n.getBoundsInScreen(rect)
-                hash = mix(hash, n.className, n.text, n.contentDescription, rect.flattenToString(),
-                    states(n))
-                if (n.isPassword) password = true
-                val own = if (n.isPassword) n.hintText?.toString()?.trim()?.ifEmpty { null } else ownLabel(n)
+                val rawClass = n.className
+                val rawText = n.text
+                val rawDesc = n.contentDescription
+                hash = mix(hash, rawClass, rawText, rawDesc, rect.flattenToString(), states(n))
+                nodeSecret = n.isPassword
+                if (nodeSecret) password = true
+                nodeRole = roleOf(n)
+                nodeRid = n.viewIdResourceName
+                nodeText = rawText?.toString()?.takeUnless { nodeSecret || it.isBlank() }
+                nodeDesc = rawDesc?.toString()?.takeUnless { nodeSecret || it.isBlank() }
+                nodeHint = n.hintText?.toString()?.takeUnless { it.isBlank() }
+                val own = if (nodeSecret) nodeHint?.trim()?.ifEmpty { null } else ownLabel(n)
                 own?.let(texts::add)
                 clip(rect, width, height)
                 clippedBounds = listOf(normalize(rect.left, width), normalize(rect.top, height),
                     normalize(rect.right, width), normalize(rect.bottom, height))
                 val usable = rect.width() >= MIN_SIZE && rect.height() >= MIN_SIZE
                 val interactive = n.isClickable || editable || n.isScrollable
+                nodeHintFlag = (usable && (own != null || interactive) || (sigOut != null && editable)) && showingHint(n)
                 if (usable && (own != null || interactive)) {
                     val label = labelOf(n, own)
-                    val role = roleOf(n)
-                    if (seen.add("$role|$label|${rect.flattenToString()}")) {
+                    if (seen.add("$nodeRole|$label|${rect.flattenToString()}")) {
                         val id = "@e${entries.size + 1}"
                         ref = id
-                        val rid = n.viewIdResourceName
                         val element = UiElement(
-                            ref = id, role = role, name = label,
+                            ref = id, role = nodeRole, name = label,
                             centerX = rect.centerX(), centerY = rect.centerY(),
-                            bounds = listOf(
-                                normalize(rect.left, width), normalize(rect.top, height),
-                                normalize(rect.right, width), normalize(rect.bottom, height),
-                            ),
+                            bounds = clippedBounds,
                             // 输入框总带上资源 ID:回车前要靠它认出搜索框(名字常常只是推荐词)
-                            resourceId = if (label.isEmpty() || editable) readableResourceId(rid) else null,
+                            resourceId = if (label.isEmpty() || editable) readableResourceId(nodeRid) else null,
                             clickable = n.isClickable, editable = editable, scrollable = n.isScrollable,
-                            hint = own != null && showingHint(n),
+                            hint = own != null && nodeHintFlag,
                             focused = n.isFocused,
-                            secret = n.isPassword,
-                            placeholder = if (editable) n.hintText?.toString()?.trim()?.ifEmpty { null } else null,
+                            secret = nodeSecret,
+                            placeholder = if (editable) nodeHint?.trim()?.ifEmpty { null } else null,
                             // 安卓的搜索框控件(SearchView 里的输入框)按类名认
-                            searchField = editable && n.className?.toString()?.contains("Search", ignoreCase = true) == true,
+                            searchField = editable && rawClass?.toString()?.contains("Search", ignoreCase = true) == true,
                             states = uiStates(n),
                         )
-                        val locator = ElementLocator(role, label, rid, rect.centerX(), rect.centerY(), lastLabel, element.hint, inList)
+                        val locator = ElementLocator(nodeRole, label, nodeRid, rect.centerX(), rect.centerY(), lastLabel, element.hint, inList)
                         entries += NodeEntry(element, locator, n)
                         if (label.isNotEmpty()) lastLabel = label
                     }
                 }
             }
-            val childrenInList = inList || isList(n)
+            val nodeIsList = isList(n)
+            val childrenInList = inList || nodeIsList
+            val childSigs = if (sigOut != null) mutableListOf<ScreenNodeDescriptor>() else null
             val children = buildList {
-                for (i in 0 until n.childCount) n.getChild(i)?.let { addAll(visit(it, depth + 1, childrenInList)) }
+                for (i in 0 until n.childCount) n.getChild(i)?.let { addAll(visit(it, depth + 1, childrenInList, childSigs)) }
             }
-            if (!visible) return children
+            if (!visible) {
+                if (sigOut != null && childSigs != null) sigOut += childSigs
+                return children
+            }
+            if (sigOut != null && childSigs != null) {
+                sigOut += ScreenNodeDescriptor(
+                    role = nodeRole,
+                    text = nodeText,
+                    resourceId = nodeRid,
+                    bounds = ScreenBounds.fromList(clippedBounds),
+                    clickable = n.isClickable,
+                    editable = editable,
+                    scrollable = n.isScrollable,
+                    children = childSigs,
+                    contentDescription = nodeDesc,
+                    hintText = nodeHint,
+                    isHint = editable && nodeHintFlag,
+                    checkable = n.isCheckable,
+                    checked = n.isChecked,
+                    selected = n.isSelected,
+                    enabled = n.isEnabled,
+                    password = nodeSecret,
+                    visible = true,
+                    isListContainer = nodeIsList,
+                )
+            }
             return listOf(UiTreeNode(
-                role = roleOf(n), bounds = clippedBounds, ref = ref,
-                text = n.text?.toString()?.takeUnless { n.isPassword || it.isBlank() },
-                description = n.contentDescription?.toString()?.takeUnless { n.isPassword || it.isBlank() },
-                hintText = n.hintText?.toString()?.takeUnless { it.isBlank() },
-                resourceId = n.viewIdResourceName,
+                role = nodeRole, bounds = clippedBounds, ref = ref,
+                text = nodeText,
+                description = nodeDesc,
+                hintText = nodeHint,
+                resourceId = nodeRid,
                 clickable = n.isClickable, editable = editable, scrollable = n.isScrollable,
                 checkable = n.isCheckable, checked = n.isChecked, selected = n.isSelected,
-                enabled = n.isEnabled, focused = n.isFocused, secret = n.isPassword,
+                enabled = n.isEnabled, focused = n.isFocused, secret = nodeSecret,
                 wheel = isWheel(n),
                 children = children,
             ))
         }
 
+        val signatureNodes = if (collectSignature) mutableListOf<ScreenNodeDescriptor>() else null
         val trees = content.map { w ->
             val root = w.root
+            val rootPkg = root?.packageName?.toString()?.takeIf { it.isNotBlank() }
+            // 跳过未聚焦的 SystemUI（状态栏/导航栏），保留应用与聚焦弹窗窗口用于结构签名
+            val skipForSig = (w.type == AccessibilityWindowInfo.TYPE_SYSTEM || rootPkg == SYSTEM_UI_PACKAGE) &&
+                !w.isFocused && !w.isActive
+            val winSigOut = if (signatureNodes != null && !skipForSig && root != null) signatureNodes else null
             UiWindowTree(
                 id = w.id,
                 type = when (w.type) {
@@ -131,7 +195,7 @@ internal object ScreenReader {
                 },
                 layer = w.layer, title = w.title?.toString(), packageName = root?.packageName?.toString(),
                 active = w.isActive, focused = w.isFocused,
-                nodes = root?.let { visit(it, 0, false) }.orEmpty(),
+                nodes = root?.let { visit(it, 0, false, winSigOut) }.orEmpty(),
             )
         }
         return ScreenRead(
@@ -143,6 +207,59 @@ internal object ScreenReader {
             anyAppWindow = content.any { it.type == AccessibilityWindowInfo.TYPE_APPLICATION },
             topPackage = topPackage(windows),
             windows = trees,
+            signatureNodes = signatureNodes.orEmpty(),
+        )
+    }
+
+    /** 将 shell 返回的裸类名或简写组件名安全规范化为 `packageName/fullClassName`。 */
+    fun normalizeTopActivity(packageName: String?, rawActivity: String?): String? =
+        ScreenSig.normalizeActivityName(packageName, rawActivity)
+
+    /** 从一次读屏结果提取页面结构签名；受保护页面、无应用窗口或空白页面返回 null。 */
+    fun extractSignature(
+        read: ScreenRead,
+        activityName: String? = null,
+        protected: Boolean = false,
+    ): ScreenSig? {
+        if (protected || !read.hasAppWindow || read.topPackage.isNullOrBlank()) return null
+        return extractSignature(
+            nodes = read.signatureNodes,
+            packageName = read.topPackage,
+            activityName = activityName,
+            protected = false,
+        )
+    }
+
+    /** 从轻量节点列表提取页面结构签名（坐标默认为 0–999 归一化尺度）；受保护或空白时返回 null。 */
+    fun extractSignature(
+        nodes: List<ScreenNodeDescriptor>,
+        packageName: String?,
+        activityName: String? = null,
+        protected: Boolean = false,
+    ): ScreenSig? {
+        if (protected || nodes.isEmpty()) return null
+        val sig = ScreenSignatureExtractor.extract(
+            nodes = nodes,
+            packageName = packageName,
+            activityName = activityName,
+            screenWidth = NORMALIZED_SCALE,
+            screenHeight = NORMALIZED_SCALE,
+        )
+        return toScreenSig(sig)
+    }
+
+    /** 将 `aau-a11y` 的 [ScreenSignature] 转为核心层纯 JVM [ScreenSig]；空白签名返回 null。 */
+    fun toScreenSig(sig: ScreenSignature): ScreenSig? {
+        if (sig.isBlank) return null
+        return ScreenSig(
+            sigId = sig.sigId,
+            activity = sig.activity,
+            fingerprint = sig.fingerprint,
+            anchors = sig.anchors,
+            resourceIds = sig.resourceIds,
+            packageName = sig.packageName,
+            shortActivity = sig.shortActivity,
+            isBlank = sig.isBlank,
         )
     }
 
