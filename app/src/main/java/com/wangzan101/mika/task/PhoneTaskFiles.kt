@@ -11,7 +11,7 @@ import com.wangzan101.mika.chat.SharedFile
 import com.wangzan101.mika.core.agent.AttachmentLines
 import com.wangzan101.mika.core.remote.PendingUploads
 import com.wangzan101.mika.core.remote.RemoteTask
-import com.wangzan101.mika.core.remote.RemoteTaskError
+import com.agent.use.remote.spi.RemoteTaskError
 import com.wangzan101.mika.core.remote.RemoteTaskFiles
 import com.wangzan101.mika.core.remote.TaskFile
 import com.wangzan101.mika.core.remote.Upload

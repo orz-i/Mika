@@ -10,13 +10,16 @@ import com.wangzan101.mika.core.mcp.McpTaskHost
 import com.wangzan101.mika.core.mcp.McpTaskLink
 import com.wangzan101.mika.core.remote.RemoteSteer
 import com.wangzan101.mika.core.remote.RemoteTask
-import com.wangzan101.mika.core.remote.RemoteTaskError
+import com.agent.use.remote.spi.RemoteTaskError
 import com.wangzan101.mika.core.remote.RemoteTaskFiles
 import com.wangzan101.mika.core.remote.RemoteTaskPage
 import com.wangzan101.mika.core.remote.RemoteTaskService
 import com.wangzan101.mika.core.remote.RemoteTasks
+import com.wangzan101.mika.core.remote.RemoteTaskState
+import com.wangzan101.mika.core.remote.toRemoteDetail
+import com.wangzan101.mika.core.remote.toRemoteState
 import com.wangzan101.mika.core.remote.RunRecordExport
-import com.wangzan101.mika.core.remote.StartOutcome
+import com.agent.use.remote.spi.StartOutcome
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.run.Attendance
 import com.wangzan101.mika.core.run.RunEventBus
@@ -147,13 +150,13 @@ class RemoteTaskHub(
 
     override fun cancel(id: String): Boolean {
         val task = get(id) ?: return false
-        if (task.state is TaskState.Terminal || live(id) == null) return false
+        if (task.state?.finished == true || live(id) == null) return false
         TaskService.cancelMcp(context, id)
         return true
     }
 
     override fun steer(id: String, text: String): String? {
-        if (get(id)?.state !is TaskState.Running) return null
+        if (get(id)?.state != RemoteTaskState.Running) return null
         return live(id)?.steerRemote(text)
     }
 
@@ -196,11 +199,17 @@ class RemoteTaskHub(
         if (task.state != null) return withLive
         if (run == null && clock() - task.createdAtMs > LOST_MS) {
             val end = TaskState.Failed("The task never started on the phone.", FailKind.Environment)
-            if (receipts.finish(task.id, end, emptyList(), onlyUnclaimed = true)) return withLive.copy(state = end)
+            if (receipts.finish(task.id, end, emptyList(), onlyUnclaimed = true))
+                return withLive.copy(state = end.toRemoteState(), detail = end.toRemoteDetail())
         }
         val state = run?.state?.value
-        return withLive.copy(state = if (state is TaskState.Terminal) TaskState.Running(0, "Finishing the task.") else state,
-            steers = run?.let { remoteSteers(it.steers.value) }.orEmpty())
+        // 收尾的那一瞬间对外仍算「在跑」,所以先把 Terminal 折成 Running,再映射成协议状态
+        val effective = if (state is TaskState.Terminal) TaskState.Running(0, "Finishing the task.") else state
+        return withLive.copy(
+            state = effective.toRemoteState(),
+            detail = effective.toRemoteDetail(),
+            steers = run?.let { remoteSteers(it.steers.value) }.orEmpty(),
+        )
     }
 
     @Synchronized fun attach(id: String, source: RunEventBus): AutoCloseable? =

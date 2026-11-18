@@ -11,8 +11,10 @@ import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.remote.RemoteSteer
 import com.wangzan101.mika.core.remote.RemoteOwnership
 import com.wangzan101.mika.core.remote.RemoteTask
-import com.wangzan101.mika.core.remote.RemoteTaskError
+import com.agent.use.remote.spi.RemoteTaskError
 import com.wangzan101.mika.core.remote.RemoteTaskPage
+import com.wangzan101.mika.core.remote.toRemoteDetail
+import com.wangzan101.mika.core.remote.toRemoteState
 import kotlinx.serialization.json.Json
 
 /** 唯一一版远程收件迁移:v1 一次升级到同时包含附件、运行编号和令牌归属的 v2。 */
@@ -49,9 +51,10 @@ internal class RemoteTaskReceipts(
         val result = getString(4)?.let(RemoteTaskRecord::decode)
         val task = RemoteTask(
             id = getString(0), conversation = getString(1), goal = getString(2), createdAtMs = getLong(3),
-            state = result?.state, steers = getString(5)?.let(RemoteTaskRecord::decodeSteers).orEmpty(),
+            state = result?.state.toRemoteState(), steers = getString(5)?.let(RemoteTaskRecord::decodeSteers).orEmpty(),
             runId = getString(7) ?: result?.runId,
             files = decodeFiles(getString(8)).map { it.remoteFile() }, owner = getString(9),
+            detail = result?.state.toRemoteDetail(),
         )
         return Entry(task, getInt(6) != 0, getString(11), getLong(10))
     }
