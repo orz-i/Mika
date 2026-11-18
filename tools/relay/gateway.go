@@ -18,7 +18,9 @@ import (
 const maxBody = 1 << 20
 
 // Both ends must speak the same tunnel protocol; a phone offering another version is refused before upgrade.
-const subprotocol = "mika-relay.v2"
+// aau-relay.v1 replaced mika-relay.v2: the framing is identical, the name is now vendor-neutral so any
+// AAU-based client (not just Mika) can pair with a self-hosted gateway.
+const subprotocol = "aau-relay.v1"
 
 type frame struct {
 	Type    string            `json:"type"`

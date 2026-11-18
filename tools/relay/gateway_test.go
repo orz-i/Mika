@@ -355,7 +355,7 @@ func TestCliMethodsQueryAndClientMetadataAreTransparent(t *testing.T) {
 func TestOtherPhoneProtocolIsRejectedBeforeUpgrade(t *testing.T) {
 	f := newFixture(t)
 	f.pair(t)
-	c, r, err := websocket.Dial(context.Background(), strings.Replace(f.server.URL, "http:", "ws:", 1)+"/device", &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer " + f.device}}, Subprotocols: []string{"mika-relay.v1"}})
+	c, r, err := websocket.Dial(context.Background(), strings.Replace(f.server.URL, "http:", "ws:", 1)+"/device", &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": []string{"Bearer " + f.device}}, Subprotocols: []string{"aau-relay.v0"}})
 	if c != nil {
 		c.CloseNow()
 	}
