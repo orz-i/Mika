@@ -1,4 +1,8 @@
 package com.wangzan101.mika.core.remote
+import com.agent.use.remote.spi.ExportLookup
+
+import com.agent.use.remote.spi.RemoteTaskError
+
 
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.mcp.FakeRemoteTasks
@@ -16,6 +20,10 @@ import org.junit.Test
 import java.net.InetAddress
 
 class RemoteTaskApiTest {
+    /** 记录在 Mika 侧渲染成协议形状；AAU 只收渲染好的 json / jsonl。 */
+    private fun runExport(record: RunExportRecord) =
+        RunRecordExport.of(record).let { ExportLookup.Found(it.json, it.jsonl) }
+
     private val tasks = FakeRemoteTasks()
     private val records = FakeExports()
     private val host = RemoteHost(tasks, { TOKEN }, 0, false, "test", records = records)
@@ -188,10 +196,10 @@ class RemoteTaskApiTest {
         val all = mapOf("$owner:t1" to record, "$owner:$runId" to record)
         val source = object : RunExportSource {
             override fun scope(owner: String) = object : RunExportSource {
-                override fun load(id: String): RunExportLookup = all["$owner:$id"]?.let { RunExportLookup.Found(it) }
-                    ?: RunExportLookup.Missing
+                override fun load(id: String): ExportLookup = all["$owner:$id"]?.let(::runExport)
+                    ?: ExportLookup.Missing
             }
-            override fun load(id: String) = RunExportLookup.Missing
+            override fun load(id: String) = ExportLookup.Missing
         }
         val scoped = RemoteHost(FakeRemoteTasks(), { token }, 0, false, "test", records = source)
         fun export(id: String) = scoped.handle(HttpRequest("GET", "/api/v1/tasks/$id/export",
@@ -223,8 +231,8 @@ class RemoteTaskApiTest {
             RunSummary(runId, "goal $key", startedAtMs = 10, origin = "mcp"),
             listOf(RunEvent.Observed(11, 1, "screen $key"), RunEvent.Media(12, 4, 1, "设置")),
         )
-        records.items["t1"] = RunExportLookup.Found(record)
-        records.items[runId] = RunExportLookup.Found(record)
+        records.items["t1"] = runExport(record)
+        records.items[runId] = runExport(record)
         val (code, body) = request("/api/v1/tasks/t1/export")
         assertEquals(200, code)
         assertEquals(true, body["partial"]!!.jsonPrimitive.boolean)
@@ -238,7 +246,7 @@ class RemoteTaskApiTest {
         assertTrue(ndjson.third, ndjson.third.startsWith("application/x-ndjson"))
         assertTrue(ndjson.second.lineSequence().first().contains("\"partial\":true"))
         assertFalse(ndjson.second.contains(key))
-        records.items["t1"] = RunExportLookup.Gone("t1", runId)
+        records.items["t1"] = ExportLookup.Gone("t1", runId)
         val gone = request("/api/v1/tasks/t1/export").second["error"]!!.jsonObject["message"]!!.jsonPrimitive.content
         assertTrue(gone, gone.contains("no longer available") && gone.contains(runId))
     }
@@ -252,8 +260,8 @@ class RemoteTaskApiTest {
     }
 
     private class FakeExports : RunExportSource {
-        val items = HashMap<String, RunExportLookup>()
-        override fun load(id: String) = items[id] ?: RunExportLookup.Missing
+        val items = HashMap<String, ExportLookup>()
+        override fun load(id: String) = items[id] ?: ExportLookup.Missing
     }
 
     private companion object { const val TOKEN = "test-api-token" }

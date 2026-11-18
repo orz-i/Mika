@@ -3,7 +3,9 @@ package com.wangzan101.mika.core.mcp
 import com.wangzan101.mika.core.remote.RemoteHost
 import com.wangzan101.mika.core.remote.HttpResponse
 import com.wangzan101.mika.core.remote.HttpRequest
+import com.agent.use.remote.mcp.ToolCatalog
 import com.wangzan101.mika.core.device.*
+import com.wangzan101.mika.core.remote.toRemoteDevicePort
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -27,7 +29,7 @@ class McpDeviceToolsTest {
         override suspend fun credentialReady(kind: CredentialKind) = false
         override suspend fun enter(credential: DeviceCredential): Boolean { writes++; return false }
     }
-    private val tools = McpTaskTools(FakeRemoteTasks(), device = DeviceAccess(port, store))
+    private val tools = McpTaskTools(FakeRemoteTasks(), device = DeviceAccess(port, store).toRemoteDevicePort())
 
     @Test fun productionToolSetAddsOnlyThreeCredentialFreeDeviceTools() = runTest {
         assertEquals(McpTaskTools(FakeRemoteTasks()).tools.size + 3, tools.tools.size)
@@ -45,13 +47,13 @@ class McpDeviceToolsTest {
             try {
                 tools.call(name, JsonObject(mapOf("pin" to JsonPrimitive("123456"))))
                 fail("unexpected argument accepted")
-            } catch (e: McpTaskTools.ToolError) { assertFalse(e.message!!.contains("123456")) }
+            } catch (e: ToolCatalog.ToolError) { assertFalse(e.message!!.contains("123456")) }
         }
         assertEquals(0, writes)
     }
 
     @Test fun deviceToolsUseTheExistingTokenAndBrowserGuards() {
-        val host = RemoteHost(FakeRemoteTasks(), { "test-token" }, 0, false, "test", device = DeviceAccess(port, store))
+        val host = RemoteHost(FakeRemoteTasks(), { "test-token" }, 0, false, "test", device = DeviceAccess(port, store).toRemoteDevicePort())
         val body = """{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"mika_unlock_device","arguments":{}}}""".toByteArray()
         fun call(token: String?, origin: String? = null): HttpResponse {
             val headers = mutableMapOf("content-type" to "application/json")
@@ -67,7 +69,7 @@ class McpDeviceToolsTest {
     }
 
     @Test fun requestsWithoutDeviceAccessNeverSeeOrReachScreenTools() {
-        val endpoints = com.wangzan101.mika.core.remote.RemoteEndpoints(FakeRemoteTasks(), "test", device = DeviceAccess(port, store))
+        val endpoints = com.wangzan101.mika.core.remote.RemoteEndpoints(FakeRemoteTasks(), "test", device = DeviceAccess(port, store).toRemoteDevicePort())
         fun post(json: String, deviceAccess: Boolean) = endpoints.handle(HttpRequest("POST", "/mcp",
             mapOf("content-type" to "application/json"), json.toByteArray(), java.net.InetAddress.getByAddress(byteArrayOf(0, 0, 0, 0))),
             deviceAccess).body.toString(Charsets.UTF_8)

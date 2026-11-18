@@ -1,4 +1,6 @@
 package com.wangzan101.mika.core.remote
+import com.agent.use.remote.spi.RemoteTaskError
+
 
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.mcp.FakeRemoteTasks

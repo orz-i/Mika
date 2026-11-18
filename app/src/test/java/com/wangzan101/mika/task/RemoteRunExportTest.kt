@@ -3,9 +3,9 @@ package com.wangzan101.mika.task
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSummary
+import com.agent.use.remote.spi.ExportLookup
 import com.wangzan101.mika.core.remote.RemoteTask
-import com.wangzan101.mika.core.remote.RunExportLookup
-import com.wangzan101.mika.core.remote.RunRecordExport
+import com.wangzan101.mika.core.remote.RemoteTaskState
 import com.wangzan101.mika.record.RunStore
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonPrimitive
@@ -42,43 +42,45 @@ class RemoteRunExportTest {
         writeRun(ended = false, origin = "mcp")
         File(tmp.root, "files/runs/$runId/screens").mkdirs()
         File(tmp.root, "files/runs/$runId/screens/0001.jpg").writeBytes(marker.toByteArray())
-        val task = RemoteTask("t1", conversation, "打开设置", 10L, TaskState.Running(1, "working"))
+        val task = RemoteTask("t1", conversation, "打开设置", 10L, RemoteTaskState.Running)
         index.tasks["t1"] = task
         index.runs["t1"] = runId
         val byTask = found(export.load("t1"))
         val byRun = found(export.load(runId))
-        assertEquals(byTask.runId, byRun.runId)
-        val payload = RunRecordExport.of(byTask)
-        val text = payload.json.toString()
-        assertEquals(true, payload.json["partial"]!!.jsonPrimitive.boolean)
-        assertEquals("t1", payload.json["task_id"]!!.jsonPrimitive.content)
-        assertEquals(conversation, payload.json["conversation_id"]!!.jsonPrimitive.content)
-        assertEquals(runId, payload.json["run_id"]!!.jsonPrimitive.content)
-        assertEquals(false, payload.json["includesScreenshots"]!!.jsonPrimitive.boolean)
+        assertEquals(byTask.json["run_id"], byRun.json["run_id"])
+        // 导出端口给的就是渲染好的 json / jsonl，AAU 不再二次加工
+        val payload = byTask.json
+        val text = payload.toString()
+        assertEquals(true, payload["partial"]!!.jsonPrimitive.boolean)
+        assertEquals("t1", payload["task_id"]!!.jsonPrimitive.content)
+        assertEquals(conversation, payload["conversation_id"]!!.jsonPrimitive.content)
+        assertEquals(runId, payload["run_id"]!!.jsonPrimitive.content)
+        assertEquals(false, payload["includesScreenshots"]!!.jsonPrimitive.boolean)
+        assertTrue(byTask.jsonl.lineSequence().first().contains("\"task_id\":\"t1\""))
         assertFalse(text, text.contains(key))
         assertFalse(text, text.contains(marker))
         assertTrue(File(tmp.root, "files/runs/$runId/screens/0001.jpg").isFile)
     }
 
     @Test fun unknownPhoneLocalAndUnindexedRemoteRunsAreRejected() {
-        assertTrue(export.load("missing") is RunExportLookup.Missing)
+        assertTrue(export.load("missing") is ExportLookup.Missing)
         writeRun(ended = true, origin = null, id = "20261102-033701-phone1")
-        assertTrue(export.load("20261102-033701-phone1") is RunExportLookup.Missing)
+        assertTrue(export.load("20261102-033701-phone1") is ExportLookup.Missing)
         writeRun(ended = false, origin = "mcp", id = "20261102-033702-remote")
-        assertTrue(export.load("20261102-033702-remote") is RunExportLookup.Missing)
+        assertTrue(export.load("20261102-033702-remote") is ExportLookup.Missing)
     }
 
     @Test fun taskWithoutARunIsPartialAndAPrunedRunSaysItIsGone() {
         index.tasks["t1"] = RemoteTask("t1", conversation, "打开设置", 10L, null)
         val waiting = found(export.load("t1"))
-        assertEquals(null, waiting.runId)
-        assertEquals(true, RunRecordExport.of(waiting).json["partial"]!!.jsonPrimitive.boolean)
+        assertEquals(kotlinx.serialization.json.JsonNull, waiting.json["run_id"])
+        assertEquals(true, waiting.json["partial"]!!.jsonPrimitive.boolean)
         index.runs["t1"] = runId
         val gone = export.load("t1")
-        assertEquals(RunExportLookup.Gone("t1", runId), gone)
+        assertEquals(ExportLookup.Gone("t1", runId), gone)
     }
 
-    private fun found(lookup: RunExportLookup) = (lookup as RunExportLookup.Found).record
+    private fun found(lookup: ExportLookup) = lookup as ExportLookup.Found
 
     private fun writeRun(ended: Boolean, origin: String?, id: String = runId) {
         val dir = tmp.root.resolve("files/runs/$id").also { it.mkdirs() }

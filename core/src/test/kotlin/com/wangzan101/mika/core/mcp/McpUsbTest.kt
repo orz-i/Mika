@@ -1,7 +1,7 @@
 package com.wangzan101.mika.core.mcp
 
 import com.wangzan101.mika.core.remote.RemoteHost
-import com.wangzan101.mika.core.remote.RemoteAccess
+import com.agent.use.remote.http.AccessGate
 import com.wangzan101.mika.core.remote.HttpRequest
 import com.wangzan101.mika.core.remote.HttpResponse
 import kotlinx.serialization.json.Json
@@ -24,7 +24,7 @@ class McpUsbTest {
         "POST", "/mcp", token?.let { mapOf("authorization" to "Bearer $it") }.orEmpty(), ByteArray(0), InetAddress.getByName(from),
     )
 
-    private fun status(v: RemoteAccess.Verdict) = (v as? RemoteAccess.Verdict.Reject)?.status ?: 200
+    private fun status(v: AccessGate.Verdict) = (v as? AccessGate.Verdict.Reject)?.status ?: 200
 
     @Test fun usbModeBindsIpv4LoopbackOnly() {
         val a = RemoteHost.bindAddress(allowAllInterfaces = false, port = 8765)
@@ -36,7 +36,7 @@ class McpUsbTest {
     }
 
     @Test fun usbTokenIsOnlyAcceptedFromLoopback() {
-        val access = RemoteAccess({ null }, loopbackToken = { USB })
+        val access = AccessGate({ null }, loopbackToken = { USB })
         assertEquals(200, status(access.check(req(USB, "127.0.0.1"))))
         assertEquals(401, status(access.check(req(USB, "192.168.1.20"))))
         assertEquals(401, status(access.check(req("wrong", "127.0.0.1"))))
@@ -44,18 +44,18 @@ class McpUsbTest {
     }
 
     @Test fun bothTokensWorkWhenBothModesAreOn() {
-        val access = RemoteAccess({ NET }, loopbackToken = { USB })
+        val access = AccessGate({ NET }, loopbackToken = { USB })
         assertEquals(200, status(access.check(req(NET, "192.168.1.20"))))
         assertEquals(200, status(access.check(req(NET, "127.0.0.1"))))
         assertEquals(200, status(access.check(req(USB, "127.0.0.1"))))
         // USB 关了:令牌当场作废
-        val off = RemoteAccess({ NET }, loopbackToken = { null })
+        val off = AccessGate({ NET }, loopbackToken = { null })
         assertEquals(401, status(off.check(req(USB, "127.0.0.1"))))
     }
 
     @Test fun usbTaskOwnerSurvivesTokenRotation() {
         var usb = USB
-        val access = RemoteAccess({ NET }, loopbackToken = { usb })
+        val access = AccessGate({ NET }, loopbackToken = { usb })
         fun owner(token: String, address: String): Pair<Int, String?> {
             var owner: String? = null
             val response = access.handle(req(token, address)) {

@@ -23,6 +23,7 @@ import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import com.agent.use.remote.relay.RelayFrame
 
 class RelayClientTest {
     private val server = MockWebServer()

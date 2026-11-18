@@ -4,7 +4,11 @@ import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.remote.RemoteTask
 import com.wangzan101.mika.core.remote.RemoteTaskPage
 import com.wangzan101.mika.core.remote.RemoteTasks
-import com.wangzan101.mika.core.remote.StartOutcome
+import com.agent.use.remote.spi.RemoteTaskError
+import com.agent.use.remote.spi.StartOutcome
+import com.wangzan101.mika.core.remote.RemoteTaskState
+import com.wangzan101.mika.core.remote.toRemoteDetail
+import com.wangzan101.mika.core.remote.toRemoteState
 
 /** 测试用任务出入口;和生产实现一样,HTTP/MCP 的归属视图不能互看任务。 */
 class FakeRemoteTasks : RemoteTasks {
@@ -40,8 +44,7 @@ class FakeRemoteTasks : RemoteTasks {
         if (owner != null && conversation != null) {
             tasks.keys.toList().forEach { owned(owner, it) }
             if (tasks.values.any { it.conversation == conversation && it.owner != owner })
-                throw com.wangzan101.mika.core.remote.RemoteTaskError.General(
-                    com.wangzan101.mika.core.remote.RemoteTaskError.Code.NOT_FOUND, "Conversation not found")
+                throw RemoteTaskError.General(RemoteTaskError.Code.NOT_FOUND, "Conversation not found")
         }
         val n = ++next
         val t = RemoteTask(requestId ?: "t$n", conversation ?: com.wangzan101.mika.core.remote.RemoteTaskService.newConversation(), goal, 1000L * n, null, owner = owner)
@@ -74,7 +77,7 @@ class FakeRemoteTasks : RemoteTasks {
     }
 
     override fun steer(id: String, text: String): String? {
-        val task = tasks[id]?.takeIf { it.state is TaskState.Running } ?: return null
+        val task = tasks[id]?.takeIf { it.state == RemoteTaskState.Running } ?: return null
         steered += id to text
         val messageId = "s${steered.size}"
         tasks[id] = task.copy(steers = task.steers + com.wangzan101.mika.core.remote.RemoteSteer(messageId, "received"))
@@ -82,6 +85,6 @@ class FakeRemoteTasks : RemoteTasks {
     }
 
     fun set(id: String, state: TaskState?) {
-        tasks[id] = tasks.getValue(id).copy(state = state)
+        tasks[id] = tasks.getValue(id).copy(state = state.toRemoteState(), detail = state.toRemoteDetail())
     }
 }

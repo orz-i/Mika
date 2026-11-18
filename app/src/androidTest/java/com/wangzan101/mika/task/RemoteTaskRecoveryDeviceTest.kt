@@ -11,8 +11,11 @@ import com.wangzan101.mika.core.mcp.McpTaskTools
 import com.wangzan101.mika.core.remote.RemoteSteer
 import com.wangzan101.mika.core.remote.RemoteOwnership
 import com.wangzan101.mika.core.remote.RemoteTask
-import com.wangzan101.mika.core.remote.RemoteTaskError
+import com.agent.use.remote.spi.RemoteTaskError
 import com.wangzan101.mika.core.remote.RemoteTaskService
+import com.wangzan101.mika.core.remote.RemoteTaskState
+import com.wangzan101.mika.core.remote.toRemoteDetail
+import com.wangzan101.mika.core.remote.toRemoteState
 import com.wangzan101.mika.mcp.McpServerState
 import com.wangzan101.mika.settings.McpUsbSettings
 import com.wangzan101.mika.ui.MainActivity
@@ -71,7 +74,7 @@ class RemoteTaskRecoveryDeviceTest {
                 db.version = 1
             }
             RemoteTaskReceipts(app, name).use { store ->
-                assertEquals(TaskState.Cancelled, store.find("legacy", owner = "one")!!.state)
+                assertEquals(RemoteTaskState.Cancelled, store.find("legacy", owner = "one")!!.state)
                 assertNull(store.find("legacy", owner = "two"))
                 store.insert(task.copy(owner = "one"), true, fileRequest = "original files")
                 store.finish(task.id, TaskState.Cancelled, emptyList(), runId = "saved-run")
@@ -128,9 +131,9 @@ class RemoteTaskRecoveryDeviceTest {
                 repeat(105) { store.insert(done.copy(id = "queued-$it", conversation = "another"), false) }
             }
             RemoteTaskReceipts(app, db).use { store ->
-                assertEquals(done.copy(state = result, steers = notes, runId = "saved-run"), store.find(done.id))
-                assertEquals(TaskState.Cancelled, store.find("cancelled")!!.state)
-                assertEquals(FailKind.Interrupted, (store.find("queued-0")!!.state as TaskState.Failed).kind)
+                assertEquals(done.copy(state = result.toRemoteState(), detail = result.toRemoteDetail(), steers = notes, runId = "saved-run"), store.find(done.id))
+                assertEquals(RemoteTaskState.Cancelled, store.find("cancelled")!!.state)
+                assertEquals(RemoteTaskState.Failed, store.find("queued-0")!!.state)
                 assertFalse(store.claimStart("queued-0"))
                 assertEquals("queued-104", store.recent(1).single().id)
                 store.forget(done.conversation)
@@ -196,7 +199,8 @@ class RemoteTaskRecoveryDeviceTest {
             val conversation = tasks.first().conversation
             chat = conversation
             assertTrue(tasks.all { it.id == id && it.conversation == conversation })
-            val mcp = runBlocking { McpTaskTools(service).call(McpTaskTools.RUN, buildJsonObject {
+            val toolCatalog = McpTaskTools(service)
+            val mcp = runBlocking { toolCatalog.call(toolCatalog.RUN, buildJsonObject {
                 put("goal", goal); put("request_id", id)
             }) }
             assertEquals(id, mcp.getValue("task_id").jsonPrimitive.content)
@@ -219,8 +223,8 @@ class RemoteTaskRecoveryDeviceTest {
                     } finally { db.execSQL("DROP TRIGGER reject_test_result") }
                 }
             } else model.answer("Recovered answer")
-            ui.waitUntil(30_000) { service.get(id).state is TaskState.Succeeded }
-            assertEquals("Recovered answer", (service.start(goal, null, id).state as TaskState.Succeeded).answer)
+            ui.waitUntil(30_000) { service.get(id).state == RemoteTaskState.Done }
+            assertEquals("Recovered answer", service.start(goal, null, id).detail?.answer)
             ui.waitUntil(20_000) { app.conversations.turns(conversation).count { it.userText == goal } == 1 }
             if (driver != null) {
                 val interrupted = requireNotNull(InstrumentationRegistry.getArguments().getString("interruptId"))

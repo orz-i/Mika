@@ -1,4 +1,8 @@
 package com.wangzan101.mika.core.remote
+import com.agent.use.remote.spi.ExportLookup
+
+import com.agent.use.remote.spi.RemoteTaskError
+
 
 import com.wangzan101.mika.core.mcp.FakeRemoteTasks
 import com.wangzan101.mika.core.record.RunEvent
@@ -80,13 +84,13 @@ class RunRecordExportTest {
 
     @Test fun unknownIdAndMissingSourceAreClearErrors() {
         val source = object : RunExportSource {
-            override fun load(id: String) = RunExportLookup.Missing
+            override fun load(id: String) = ExportLookup.Missing
         }
         val missing = runCatching { RemoteTaskService(FakeRemoteTasks(), records = source).export("missing") }.exceptionOrNull() as RemoteTaskError
         assertEquals(RemoteTaskError.Code.NOT_FOUND, missing.code)
         assertEquals("No remote task or run record with id missing", missing.message)
         val gone = object : RunExportSource {
-            override fun load(id: String) = RunExportLookup.Gone("t1", runId)
+            override fun load(id: String) = ExportLookup.Gone("t1", runId)
         }
         val dropped = runCatching { RemoteTaskService(FakeRemoteTasks(), records = gone).export("t1") }.exceptionOrNull() as RemoteTaskError
         assertTrue(dropped.message.orEmpty(), dropped.message!!.contains(runId) && dropped.message!!.contains("t1"))

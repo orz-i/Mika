@@ -1,5 +1,6 @@
 package com.wangzan101.mika.task
 
+import com.wangzan101.mika.core.remote.RemoteTaskState
 import com.wangzan101.mika.chat.ConversationStore
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.agent.Turn
@@ -44,7 +45,7 @@ class PhoneHistoryTest {
         for (id in listOf("one", "two")) store.append("chat", Turn("repeat", "cancelled", "cancelled", remoteTaskId = id))
         // The second task can still be present in the task center while its cancellation is published.
         val reader = PhoneHistory(conversations(), runs(), traces(), { true }) {
-            listOf(RemoteTask("two", "chat", "repeat", 0, TaskState.Cancelled))
+            listOf(RemoteTask("two", "chat", "repeat", 0, RemoteTaskState.Cancelled))
         }
         val turns = reader.turns("chat", 0, 20)!!.getValue("turns").jsonArray
         assertEquals(listOf("one", "two"), turns.map { it.jsonObject.getValue("source_task_id").jsonPrimitive.content })
@@ -163,7 +164,7 @@ class PhoneHistoryTest {
     @Test fun livePhoneRunIsVisibleBeforeItsFirstTurnIsSavedAndTraceFinishes() {
         val traceStore = traces()
         val trace = traceStore.start("live-run")!!
-        val task = RemoteTask("live", "phone", "first turn", 0, TaskState.Running(1, "reading"), runId = "live-run")
+        val task = RemoteTask("live", "phone", "first turn", 0, RemoteTaskState.Running, runId = "live-run")
         val reader = PhoneHistory(conversations(), runs(), traceStore, { true }, { listOf(task) })
         assertEquals(1, reader.conversations(0, 20).getValue("conversations").jsonArray.size)
         val turns = reader.turns("phone", 0, 20)!!.getValue("turns").jsonArray

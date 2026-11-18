@@ -163,7 +163,7 @@ class SteerEditingDeviceTest {
     // 电脑追加的插话只归当前任务:手机上长按只有复制、引用、选择文字,撤回也被拒,照常交给模型
     @Test fun remoteSteersOfferNoWithdrawOrEdit() {
         val started = app.remoteTasks.start("请核对今天的资料", conversation)
-        val task = (started as com.wangzan101.mika.core.remote.StartOutcome.Started).task
+        val task = (started as com.agent.use.remote.spi.StartOutcome.Started).task
         script.awaitCall()
         val id = checkNotNull(app.remoteTasks.steer(task.id, "电脑追加的要求"))
         compose.waitUntil(5_000) { vm.ui.value.exchanges.lastOrNull()?.steers?.any { it.id == id && it.state == SteerState.Received } == true }
