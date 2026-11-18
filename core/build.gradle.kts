@@ -29,6 +29,8 @@ protobuf {
 }
 
 dependencies {
+    // 连接电脑的协议骨架（HTTP/MCP/任务 API/USB 引导/出站网关）在 aau-remote，Mika 只提供端口实现
+    api(project(":aau-remote"))
     implementation(libs.protobuf.lite)
     traceSchemas(libs.otel.proto)
     implementation(libs.okhttp)

@@ -30,4 +30,7 @@ project(":aau-a11y").projectDir = file("aau/aau-a11y")
 include(":aau-setup")
 project(":aau-setup").projectDir = file("aau/aau-setup")
 
+include(":aau-remote")
+project(":aau-remote").projectDir = file("aau/aau-remote")
+
 
