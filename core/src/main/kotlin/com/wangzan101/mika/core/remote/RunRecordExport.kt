@@ -73,25 +73,17 @@ object RunRecordExport {
 
 /**
  * 按任务编号或运行记录编号取可导出的记录。手机上发起的运行不在此列。
- * 实现方只读已经落盘的记录,不附带截图字节。
+ * 实现方只读已经落盘的记录，不附带截图字节。
+ *
+ * 端口本身在 `aau-remote`：AAU 不关心运行记录长什么样，只把宿主渲染好的 json/jsonl 交出去。
+ * Mika 的实现是 `RemoteRunExport`，它用 [RunRecordExport] 把记录变成协议要的形状。
  */
-interface RunExportSource {
-    fun scope(owner: String): RunExportSource = this
-    fun load(id: String): RunExportLookup
-}
+typealias RunExportSource = com.agent.use.remote.spi.RemoteExportPort
 
-sealed interface RunExportLookup {
-    /** 没有这个电脑任务,也没有可导出的运行记录。 */
-    data object Missing : RunExportLookup
-
-    /** 任务还记着运行编号,记录文件已经不在了。 */
-    data class Gone(val taskId: String, val runId: String) : RunExportLookup
-
-    data class Found(val record: RunExportRecord) : RunExportLookup
-}
+typealias RunExportLookup = com.agent.use.remote.spi.ExportLookup
 
 /**
- * [runId] 与 [summary] 同有同无:任务已经交出去、运行记录还没开,两者都空,导出标 partial。
+ * [runId] 与 [summary] 同有同无：任务已经交出去、运行记录还没开，两者都空，导出标 partial。
  */
 data class RunExportRecord(
     val taskId: String?,
