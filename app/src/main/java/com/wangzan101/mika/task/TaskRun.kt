@@ -209,6 +209,11 @@ class TaskRun(
     private val routeStore = FileRouteStore.shared(service)
     private val atlasStore = FileAtlasStore.shared(service)
     private val atlasRuntime = AtlasRuntime.shared(service)
+    /**
+     * 这次运行是否把页面与跳转记进页面地图。任务开始时按设置定下，和「使用页面经验」分开：
+     * 关掉提示仍然可以继续积累，关掉记录也不会影响已经学到的经验被使用。
+     */
+    @Volatile private var atlasLearning = false
     private val recovery = TaskRecovery.of(service)
 
     private inner class Mirrored<T>(initial: T, private val shown: MutableStateFlow<T>) {
@@ -748,6 +753,8 @@ class TaskRun(
             val featureFlags = FeatureFlags.get(service)
             val speed = featureFlags.speedFlags()
             val atlasHintsOn = featureFlags.effectiveAtlasHints(env.evalHooks.atlasHints)
+            val atlasLearnOn = featureFlags.effectiveAtlasLearn(env.evalHooks.atlasLearn)
+            atlasLearning = !conditionCheck && atlasLearnOn
             // 记忆与个人技能:进程内同一份;总开关关着就不给记忆(不检索、不注入、不提取、没有记忆工具)
             val switches = memoryRuntime.settings().switches.value.let { sw ->
                 sw.copy(learnSkills = env.evalHooks.learnSkills ?: sw.learnSkills, autoRemember = env.evalHooks.rememberMemory ?: sw.autoRemember)
@@ -993,6 +1000,7 @@ class TaskRun(
                     }
                 },
                 atlas = if (!conditionCheck && atlasHintsOn) atlasStore else null,
+                atlasLearn = !conditionCheck && atlasLearnOn,
             )
             loop = agent
             liveFeed = agent.events.subscribe(liveEvents)
@@ -1399,6 +1407,7 @@ class TaskRun(
      * 在进程级的作用域里跑,服务退出也不中断。
      */
     suspend fun learnAfter(end: TaskState, outcome: RunOutcome?, conversations: ConversationStore) {
+        runCatching { Log.i(TAG, "learnAfter start runId=${_runId.value} atlasLearning=$atlasLearning kit=${kit != null}") }
         val k = kit ?: return
         val runId = _runId.value
         val learning = RunLearning(
@@ -1433,10 +1442,18 @@ class TaskRun(
     }
 
     private suspend fun learnAtlas(runId: String, end: TaskState, outcome: RunOutcome, k: LearnKit) {
-        val runStore = k.runStore ?: return
+        if (!atlasLearning) {
+            runCatching { Log.i(TAG, "atlas learn skipped: switch off (runId=$runId)") }
+            return
+        }
+        val runStore = k.runStore ?: run {
+            runCatching { Log.w(TAG, "atlas learn skipped: no run store (runId=$runId)") }
+            return
+        }
         try {
+            runCatching { Log.i(TAG, "atlas learn start runId=$runId end=${end::class.simpleName} outcome=$outcome") }
             withContext(Dispatchers.IO) {
-                atlasRuntime.learnRun(
+                val res = atlasRuntime.learnRun(
                     runId = runId,
                     eventsProvider = { runStore.events(it) },
                     end = end,
@@ -1444,6 +1461,15 @@ class TaskRun(
                     lightModel = k.light ?: k.model,
                     goal = k.agent.taskText ?: goal,
                 )
+                runCatching {
+                    Log.i(
+                        TAG,
+                        "atlas learn done runId=$runId pkgs=${res.updatedByPackage.keys} screens=" +
+                            res.updatedByPackage.values.sumOf { it.screens.size } +
+                            " edges=" + res.updatedByPackage.values.sumOf { it.edges.size } +
+                            " unnamed=${res.unnamedScreenIds.size}",
+                    )
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -1453,6 +1479,7 @@ class TaskRun(
     }
 
     private fun launchNonUiAtlasLearning(runId: String, end: TaskState, outcome: RunOutcome, k: LearnKit) {
+        if (!atlasLearning) return
         val runStore = k.runStore ?: return
         atlasRuntime.launchLearnAfterRun(
             runId = runId,

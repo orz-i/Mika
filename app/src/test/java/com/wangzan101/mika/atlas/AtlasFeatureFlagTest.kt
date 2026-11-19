@@ -10,34 +10,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AtlasFeatureFlagTest {
-    @Test fun atlasHintsDefaultsOnWithReplayAndRespectsOverrides() {
+    @Test fun hintsAndLearningSwitchIndependently() {
         val prefs = FeatureFlagsCapsuleTest.MemoryPrefs()
         val flags = FeatureFlags(prefs)
 
+        // 两个开关默认都开，且都不再受「照着上次的做法做」影响
         assertTrue(flags.atlasHintsEnabled())
+        assertTrue(flags.atlasLearnEnabled())
         assertTrue(flags.effectiveAtlasHints())
-
-        // 关闭 replay 时默认一起关闭；显式覆盖仍可开启
+        assertTrue(flags.effectiveAtlasLearn())
         flags.setSpeed(SpeedFlags.OFF)
-        assertFalse(flags.effectiveAtlasHints())
-        assertTrue(flags.effectiveAtlasHints(override = true))
+        assertTrue(flags.effectiveAtlasHints())
+        assertTrue(flags.effectiveAtlasLearn())
 
-        // 恢复 replay 后，可单独关闭 atlasHintsEnabled
-        flags.setSpeed(SpeedFlags(replay = true))
+        // 只关提示：仍然记录
         flags.setAtlasHintsEnabled(false)
-        assertFalse(flags.atlasHintsEnabled())
         assertFalse(flags.effectiveAtlasHints())
-        assertTrue(flags.effectiveAtlasHints(override = true))
+        assertTrue(flags.effectiveAtlasLearn())
 
+        // 提示关、记录开，各自独立
         flags.setAtlasHintsEnabled(true)
+        flags.setAtlasLearnEnabled(false)
+        assertTrue(flags.effectiveAtlasHints())
+        assertFalse(flags.effectiveAtlasLearn())
+
+        // 评测覆盖优先于设置
+        assertTrue(flags.effectiveAtlasLearn(override = true))
         assertFalse(flags.effectiveAtlasHints(override = false))
     }
 
-    @Test fun evalHooksResetsAtlasHintsOverride() {
+    @Test fun evalHooksResetAtlasOverrides() {
         val hooks = EvalHooks()
         assertNull(hooks.atlasHints)
+        assertNull(hooks.atlasLearn)
         hooks.atlasHints = true
+        hooks.atlasLearn = true
         hooks.reset()
         assertNull(hooks.atlasHints)
+        assertNull(hooks.atlasLearn)
     }
 }

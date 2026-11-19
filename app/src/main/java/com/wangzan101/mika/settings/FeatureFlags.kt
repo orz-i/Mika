@@ -101,16 +101,28 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         prefs.edit().putBoolean(NETWORK_CAPTURE_ENABLED, on).commit()
     }
 
-    /** 页面地图历史线索提示与 L2/L3 快捷工具（配合回放开关默认开启）。 */
+    /** 页面地图：把学到的历史线索提示给模型，并开放 L2/L3 快捷工具；默认开。 */
     fun atlasHintsEnabled(): Boolean = prefs.getBoolean(ATLAS_HINTS_ENABLED, true)
 
     fun setAtlasHintsEnabled(on: Boolean) {
         prefs.edit().putBoolean(ATLAS_HINTS_ENABLED, on).commit()
     }
 
-    /** 结合评测覆盖项与回放总开关计算本次运行是否启用页面地图提示与快捷/寻路工具。 */
-    fun effectiveAtlasHints(override: Boolean? = null): Boolean =
-        override ?: (atlasHintsEnabled() && speedFlags().replay)
+    /**
+     * 页面地图：从每次运行里记录页面与跳转（学习）；默认开。
+     * 与 [atlasHintsEnabled] 分开：不提示也可以继续记录，不记录也可以只用已学到的经验。
+     */
+    fun atlasLearnEnabled(): Boolean = prefs.getBoolean(ATLAS_LEARN_ENABLED, true)
+
+    fun setAtlasLearnEnabled(on: Boolean) {
+        prefs.edit().putBoolean(ATLAS_LEARN_ENABLED, on).commit()
+    }
+
+    /** 本次运行是否注入页面线索、提供快捷流程与自动寻路工具。 */
+    fun effectiveAtlasHints(override: Boolean? = null): Boolean = override ?: atlasHintsEnabled()
+
+    /** 本次运行是否记录页面经验；与提示开关无关。 */
+    fun effectiveAtlasLearn(override: Boolean? = null): Boolean = override ?: atlasLearnEnabled()
 
     /** 端侧网络抓包模式（默认 [CaptureMode.AUTO] 优先 Root eBPF，非 Root 自动回退 VpnService）。 */
     fun networkCaptureMode(): CaptureMode = prefs.getString(NETWORK_CAPTURE_MODE, null)
@@ -270,6 +282,7 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val NETWORK_CAPTURE_ENABLED = "network_capture_enabled"
         private const val NETWORK_CAPTURE_MODE = "network_capture_mode"
         private const val ATLAS_HINTS_ENABLED = "atlas_hints_enabled"
+        private const val ATLAS_LEARN_ENABLED = "atlas_learn_enabled"
 
         fun get(context: Context) = FeatureFlags(context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE))
     }
