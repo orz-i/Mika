@@ -1,6 +1,8 @@
 package com.wangzan101.mika.core.agent
 
 import com.wangzan101.mika.core.context.StepSummary
+import com.wangzan101.mika.core.context.TASK_CONTINUATION_REMINDER
+import com.wangzan101.mika.core.observation.Observation
 import com.wangzan101.mika.core.model.Author
 import com.wangzan101.mika.core.model.Message
 import com.wangzan101.mika.core.model.Part
@@ -13,6 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import com.wangzan101.mika.core.tool.ToolIndex
+import com.wangzan101.mika.core.tool.ContextRetention
 
 /** [estimate]:[messages] 的 token 粗估(未校准),发出后和真实用量比对用。[rewritten]:这次是否改写了请求前缀。 */
 data class Compressed(
@@ -44,6 +47,7 @@ class ContextCompressor(
     private val structured: Boolean = false,
     private val diffScreens: Boolean = false,
     private val triggerOverride: Int? = null,
+    private val retainedReads: (Set<Int>) -> List<Observation> = { emptyList() },
 ) {
     /** 「真实 / 粗估」比值:每次用量回来就平滑更新([TokenEstimate.calibrated]);只决定什么时候压缩、压到哪一级,不改发过的内容。 */
     private var observed: Double? = null
@@ -134,26 +138,33 @@ class ContextCompressor(
         val overhead = UsageMeter.estimate(fixedOverhead, scale)
         val target = limits.target - overhead
         val window = limits.usable - overhead
+        val dataBudget = (window / (4 * scale)).toInt().coerceIn(0, CompactedObservations.MAX_TOKENS)
         val ladder = sequence {
             if (!aggressive) {
                 val pruned = HistoryPruner.prune(history, tools, HistoryPruner.Cut(keepRecent))
                 yield(Compressed(pruned, 0))
-                yield(fold(pruned, keepRecent, false))
+                yield(fold(pruned, keepRecent, false, history, dataBudget))
             }
             val last = HistoryPruner.prune(history, tools, HistoryPruner.LAST)
-            for (keep in listOfNotNull(keepRecent.takeUnless { aggressive }, AGGRESSIVE_KEEP, 1).distinct()) yield(fold(last, keep, aggressive))
+            for (keep in listOfNotNull(keepRecent.takeUnless { aggressive }, AGGRESSIVE_KEEP, 1).distinct().sortedDescending()) {
+                yield(fold(last, keep, aggressive, history, dataBudget))
+            }
         }
         var chosen = Compressed(history, 0)
         for (c in ladder) {
             chosen = c
             if (tokens(c.messages) <= target) break
         }
+        // 额外节选不能挤掉原目标、用户增量或最新结果；实在放不下时回退为按来源重读。
+        if (tokens(chosen.messages) > window) chosen = chosen.copy(messages = chosen.messages.filterNot {
+            ContextBuilder.sourceOf(it) == CompactedObservations.SOURCE
+        })
         if (tokens(chosen.messages) > window) chosen = chosen.copy(messages = HistoryPruner.shrinkOversized(chosen.messages) { tokens(it) <= window })
         // 副本:什么都没裁时 chosen 可能就是调用方那份还会追加的历史
         return View(history.toList(), chosen.messages.toList(), chosen.foldedSteps, aggressive)
     }
 
-    private fun fold(pruned: List<Message>, keep: Int, aggressive: Boolean): Compressed {
+    private fun fold(pruned: List<Message>, keep: Int, aggressive: Boolean, full: List<Message>, dataBudget: Int): Compressed {
         // 一个往返 = 一条助手消息及其后到下一条助手消息之前的消息;之前的是开头(任务原话、标准等)
         val starts = pruned.indices.filter { pruned[it].role == Role.Assistant }
         if (starts.isEmpty()) return Compressed(pruned, 0)
@@ -176,6 +187,7 @@ class ContextCompressor(
         var folded = 0
         var steps: StepSummary? = null
         var stepsAt = 0
+        val retained = CompactedObservations(dataBudget, retainedReads)
         fun closeBlock() {
             if (!structured) block?.takeIf { it.isNotEmpty() }?.let { out.add(blockAt, summary(it)) }
             block = null
@@ -184,7 +196,8 @@ class ContextCompressor(
             val end = starts.getOrElse(k + 1) { pruned.size }
             val round = pruned.subList(start, end)
             val calls = round.first().parts.filterIsInstance<Part.ToolCall>()
-            if (calls.any { tools.traits(it.name)?.userInteraction == true } || (anchor >= 0 && k >= anchor && screenRounds[k] != ScreenKind.NONE)) {
+            if (calls.any { tools.traits(it.name)?.let { t -> t.userInteraction || t.retention == ContextRetention.PinReference } == true } ||
+                (anchor >= 0 && k >= anchor && screenRounds[k] != ScreenKind.NONE)) {
                 closeBlock()
                 out += round
                 return@forEachIndexed
@@ -196,6 +209,8 @@ class ContextCompressor(
                 val text = said(round)
                 calls.forEachIndexed { idx, call ->
                     lines += line(k + 1, call, round)
+                    val originalResult = full.subList(start, end).flatMap { it.parts }.filterIsInstance<Part.ToolResult>().firstOrNull { it.callId == call.id }
+                    retained.add(call, originalResult, tools.traits(call.name))
                     if (structured) {
                         if (steps == null) stepsAt = blockAt
                         steps = (steps ?: StepSummary(goal(pruned.subList(0, starts.first())))).next(
@@ -210,6 +225,7 @@ class ContextCompressor(
         }
         closeBlock()
         steps?.let { out.add(stepsAt, notice(it.render(HEADER))) }
+        retained.message()?.let(out::add)
         out += pruned.subList(cut, pruned.size)
         return Compressed(out, folded)
     }
@@ -321,7 +337,7 @@ class ContextCompressor(
 
     companion object {
         const val HEADER = "Earlier steps (compressed):"
-        const val SUMMARY_REMINDER = "Only the latest user message is the current task, and the tools are still available; earlier user messages are for reference only."
+        const val SUMMARY_REMINDER = TASK_CONTINUATION_REMINDER
         private const val SUMMARY_SOURCE = "earlier steps"
         const val AGGRESSIVE_KEEP = 6
         /**

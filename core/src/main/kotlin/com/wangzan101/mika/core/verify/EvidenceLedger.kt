@@ -94,6 +94,9 @@ class EvidenceLedger(private val capChars: Int = STORE_CHARS) {
         return (holds + latest + recent).distinct().sorted().map { cands[it] }
     }
 
+    /** 压缩时按结果携带的观察编号取历史节选；复用同一套输入回显过滤，不把原始工具结果当证据恢复。 */
+    fun byIds(ids: Set<Int>): List<Observation> = entries.filter { it.id in ids }.mapNotNull(::withoutEcho)
+
     /** 最近进账的那一条的编号(还没进账为 0);和 [readSince] 一起判断某个时刻之后有没有重新读过。 */
     val lastId: Int get() = seq
 

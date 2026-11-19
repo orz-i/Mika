@@ -74,7 +74,7 @@ tool:
 ## main #10
 … 1 messages unchanged
 user:
-  ctx:notice source="earlier steps" #9e45b348 | Earlier steps (compressed): ⏎…
+  ctx:notice source="earlier steps" #d163c73c | Earlier steps (compressed): ⏎…
 assistant:
   call main_3 wait {"seconds":1.3}
 tool:

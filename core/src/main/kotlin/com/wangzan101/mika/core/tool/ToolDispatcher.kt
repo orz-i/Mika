@@ -554,6 +554,9 @@ class ToolDispatcher internal constructor(
 
     fun readSince(mark: Int): Boolean = synchronized(evidenceLock) { evidenceLog.ledger.readSince(mark) }
 
+    /** 仅内存查询，供历史折叠承接已记录且去回显的观察，不额外读屏。 */
+    internal fun retainedReads(ids: Set<Int>): List<Observation> = synchronized(evidenceLock) { evidenceLog.ledger.byIds(ids) }
+
     /** 按名字找本任务登记的工具;不认识为 null。 */
     internal fun declared(name: String): AgentTool? = registry.declared(name)
 

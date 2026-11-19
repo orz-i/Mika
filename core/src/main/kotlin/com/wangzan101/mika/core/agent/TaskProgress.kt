@@ -2,6 +2,8 @@ package com.wangzan101.mika.core.agent
 
 import com.wangzan101.mika.core.observation.ObsKind
 import com.wangzan101.mika.core.observation.Observation
+import com.wangzan101.mika.core.observation.Untrusted
+import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.ToolTraits
@@ -11,6 +13,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** 数量或边界进度；总数未知时只报已确认的数量和最新边界。 */
 internal data class ProgressMetric(
@@ -54,6 +58,23 @@ internal data class CompletionPlan(
     }
 
     fun event(atMs: Long) = RunEvent.Criteria(atMs, criteria, emptyList(), progress = metric?.event(), complete = complete)
+
+    /** 只承接模型申报，不把 complete 或数量到达当成独立核验；每次作为新尾部状态追加。 */
+    fun contextText(): String? {
+        if (criteria.isEmpty() && metric == null && !allCriteriaMet) return null
+        val data = buildJsonObject {
+            put("criteria", JsonArray(criteria.map(::JsonPrimitive)))
+            metric?.let { value -> put("metric", buildJsonObject {
+                put("name", value.name)
+                value.done?.let { put("done", it) }
+                value.total?.let { put("total", it) }
+                value.boundary?.let { put("boundary", it) }
+            }) }
+            put("claimedComplete", allCriteriaMet)
+        }
+        return "Model-reported task progress, not independent verification; recheck against the goal and all user updates:\n" +
+            Untrusted.wrap(TokenEstimate.clip(Redactor.evidence(data.toString()), 240))
+    }
 }
 
 internal data class MetricUpdate(val name: String? = null, val done: Int? = null, val total: Int? = null, val boundary: String? = null)

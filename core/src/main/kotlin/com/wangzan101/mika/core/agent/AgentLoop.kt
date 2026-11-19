@@ -619,7 +619,7 @@ class AgentLoop(
         for (step in 1..maxSteps) {
             appendSteers(history, inbox)
             if (maxSteps != Int.MAX_VALUE) TurnPolicy.beforeStep(TurnSnapshot(step, maxSteps))?.let { history += ctx.notice(it.source, it.text) }
-            appendRuntimeState(history, place, labels, step)
+            appendRuntimeState(history, place, labels, step, completion)
             _state.value = TaskState.Running(step, note, progress = progressState())
             refreshOffer()
             if (awaitInterstitialGate()) history += interstitialResumeMessage()
@@ -1076,7 +1076,7 @@ class AgentLoop(
         }
         appendSteers(history, inbox)
         refreshOffer()
-        return finalTurn(task, history, specs, maxSteps + 1, labels, place, recorder, facts(), inbox)
+        return finalTurn(task, history, specs, maxSteps + 1, labels, place, recorder, facts(), inbox, completion = completion)
     }
 
     /** 运行记录里按结果另记的事:报告的障碍(供评测按 barrier 类归因;参数不对被拒的不算)、看过的个人技能、存下的记忆。 */
@@ -1131,9 +1131,9 @@ class AgentLoop(
      * 发过的消息一概不改,请求前缀逐步只增不变。最后一条是助手消息时(不会发生在正常流程里)单独追加一条。
      * 网页上的版本从浏览器当前标签实际用的版本读。
      */
-    private suspend fun appendRuntimeState(history: MutableList<Message>, place: Place?, labels: Map<String, String>, step: Int) {
+    private suspend fun appendRuntimeState(history: MutableList<Message>, place: Place?, labels: Map<String, String>, step: Int, completion: CompletionPlan? = null) {
         val mode = if (place?.kind == PlaceKind.Site) tools.placeMode() else null
-        val state = ctx.runtimeState(place, place?.name?.let(labels::get), mode, step, maxSteps, now(), latestWords)
+        val state = ctx.runtimeState(place, place?.name?.let(labels::get), mode, step, maxSteps, now(), latestWords, completion?.contextText())
         val last = history.lastOrNull()
         if (last == null || last.role == Role.Assistant) history += Message(Role.User, listOf(state), Author.Mika)
         else history[history.lastIndex] = last.copy(parts = last.parts + state)
@@ -1432,7 +1432,7 @@ class AgentLoop(
         TurnPolicy.closeout(closeout, completion?.metric?.state()).let { history += ctx.notice(it.source, it.text) }
         repeat(3) { attempt ->
             appendSteers(history, inbox)
-            appendRuntimeState(history, place, labels, step)
+            appendRuntimeState(history, place, labels, step, completion)
             _state.value = TaskState.Running(step, "")
             val asked = now()
             val reply = try {
