@@ -129,6 +129,17 @@ interface IMikaShell {
     // 方案 1：从系统侧多源核验跳转确认弹窗拦截的真实目标应用包名，未知返回 null
     String resolveJumpTarget(int taskId, String interstitialPackage, String initiatorPackage) = 55;
 
+    // 免授权抓一帧 PNG（displayId 为 0 时是主屏）。写入 shell 私有目录后打开 fd 并立即 unlink，
+    // 调用方从 fd 流式读；图像不进 Binder 事务，绕开 1 MB 上限。
+    // privilege：0=先 Shell 失败再 Root，1=仅 Shell，2=仅 Root；不可用返回 null
+    ParcelFileDescriptor capturePng(int displayId, int timeoutMs, int privilege) = 56;
+    // 滚动拼接长截图。同步执行（默认最多 12 屏，约 5~15 秒），调用方必须在工作线程调用。
+    // 参数：topInsetPercent / bottomInsetPercent 为 0~30 的百分比，用于排除固定标题栏与底栏。
+    // 返回 Bundle 字段见 AAU 的 LongScreenshotResult：png/width/height/frames/scrolls/stop/elapsedMs/mode/note
+    Bundle captureLongPng(int displayId, int maxScrolls, int maxHeightPx, int privilege, int topInsetPercent, int bottomInsetPercent) = 57;
+    // 本机截屏能力快照（screencap 路径与可用性、su 提权、input -d 滚动支持），字段见 AAU 的 ScreenCaptureCapability
+    Bundle captureCapability() = 58;
+
     // 沿用早先定下的销毁事务号;AIDL 要求要么全部方法编号要么都不编号
     void destroy() = 16777114;
 }

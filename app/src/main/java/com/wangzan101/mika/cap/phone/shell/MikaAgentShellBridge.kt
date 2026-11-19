@@ -2,10 +2,12 @@ package com.wangzan101.mika.cap.phone.shell
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.view.Surface
 import com.agent.use.common.DisplayConfig
 import com.agent.use.common.IAgentCustodyListener
 import com.agent.use.common.IAgentShell
+import com.agent.use.common.capture.LongScreenshotOptions
 import com.agent.use.common.network.INetworkCapture
 import com.wangzan101.mika.shell.IMikaShell
 
@@ -226,6 +228,32 @@ class MikaAgentShellBridge(private val mikaShell: IMikaShell) : IAgentShell {
     }
 
     override fun getNetworkCapture(): INetworkCapture? = null
+
+    // ==========================================
+    // 免授权截屏与长截图
+    // ==========================================
+
+    override fun capturePng(displayId: Int, timeoutMs: Int, privilege: Int): ParcelFileDescriptor? =
+        mikaShell.capturePng(displayId, timeoutMs, privilege)
+
+    /**
+     * AAU 侧的长截图参数比 Mika 的 AIDL 更丰富，这里只透传真正影响结果的几项：
+     * 滚动次数、高度上限、特权策略、顶部/底部固定区比例。
+     * 其余（稳定等待、滑动比例与时长）用引擎默认值，Mika 这一层不需要暴露。
+     */
+    override fun captureLongPng(displayId: Int, options: LongScreenshotOptions): Bundle {
+        val opts = options.clamped()
+        return mikaShell.captureLongPng(
+            displayId,
+            opts.maxScrolls,
+            opts.maxHeightPx,
+            opts.privilege,
+            (opts.topInsetRatio * 100).toInt(),
+            (opts.bottomInsetRatio * 100).toInt(),
+        )
+    }
+
+    override fun captureCapability(): Bundle = mikaShell.captureCapability()
 }
 
 /** 扩展方法：将 IMikaShell 转换为 IAgentShell */

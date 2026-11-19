@@ -8,6 +8,9 @@ import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import android.view.Surface
 import com.agent.use.common.IAgentCustodyListener
+import com.agent.use.common.capture.CaptureDelivery
+import com.agent.use.common.capture.CaptureFd
+import com.agent.use.common.capture.LongScreenshotOptions
 import com.agent.use.common.shell.AgentShellEngine
 import com.wangzan101.mika.shell.IMikaShell
 import java.io.File
@@ -18,7 +21,7 @@ import kotlin.system.exitProcess
  */
 class ShellService(
     private val allowedUid: Int,
-    stateDir: File = File("/data/local/tmp"),
+    private val stateDir: File = File("/data/local/tmp"),
 ) : IMikaShell.Stub() {
 
     private val engine = AgentShellEngine(
@@ -145,6 +148,40 @@ class ShellService(
         engine.runSystemCommand(displayId, command)
     override fun runCommand(command: String): Bundle = engine.runCommand(command)
     override fun openDevtoolsSocket(name: String): ParcelFileDescriptor? = engine.openDevtoolsSocket(name)
+
+    // ==========================================
+    // 免授权截屏与长截图
+    // ==========================================
+
+    override fun capturePng(displayId: Int, timeoutMs: Int, privilege: Int): ParcelFileDescriptor? {
+        val bytes = engine.capturePng(displayId, timeoutMs, privilege) ?: return null
+        return CaptureFd.publish(stateDir, bytes)
+    }
+
+    override fun captureLongPng(
+        displayId: Int,
+        maxScrolls: Int,
+        maxHeightPx: Int,
+        privilege: Int,
+        topInsetPercent: Int,
+        bottomInsetPercent: Int,
+    ): Bundle {
+        val options = LongScreenshotOptions(
+            maxScrolls = maxScrolls,
+            maxHeightPx = maxHeightPx,
+            privilege = privilege,
+            topInsetRatio = topInsetPercent / 100f,
+            bottomInsetRatio = bottomInsetPercent / 100f,
+        )
+        return CaptureDelivery.longResult(
+            output = engine.captureLong(displayId, options),
+            stateDir = stateDir,
+            mode = engine.screenCapture.lastMode,
+            failure = engine.screenCapture.failure,
+        )
+    }
+
+    override fun captureCapability(): Bundle = engine.captureCapability(false)
 
     override fun setRestoreWish(flags: Int) {
         onRestoreWish?.invoke(flags)
