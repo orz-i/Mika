@@ -55,6 +55,22 @@ class AgentLoopActionTargetTest {
         assertTrue(events(SpeedFlags.OFF, ActionResult.Ok(changed = true)).none { it is RunEvent.ActionTarget })
     }
 
+    /** 启动 App 不走元素闸门,也要记下前后屏幕:入口边和「先启动再操作」的路线都靠它。 */
+    @Test fun launchStepRecordsScreensInsteadOfIncomplete() {
+        val m = FakeModel(
+            reply(call("phone_launch_app", """{"package":"com.x"}""")),
+            com.wangzan101.mika.core.testing.answerReply("好了"),
+        )
+        val got = mutableListOf<RunEvent>()
+        val sink = object : RunSink { override fun event(e: RunEvent) { got += e }; override fun media(mediaId: Int, png: ByteArray) {} }
+        runBlocking { AgentLoop(m, toolDispatcher(FakeScreen()), "BASE", sink = sink, confirmations = null, flags = SpeedFlags(replay = true)).run("打开 X") }
+        val at = got.filterIsInstance<RunEvent.ActionTarget>().single()
+        assertEquals("phone_launch_app", at.tool)
+        assertFalse(at.incomplete)
+        assertEquals("com.x", at.before.packageName)
+        assertEquals("com.x", at.after.packageName)
+    }
+
     @Test fun batchSubStepsEmitActionTargetsAndFrames() {
         val m = FakeModel(
             reply(call("phone_observe")),

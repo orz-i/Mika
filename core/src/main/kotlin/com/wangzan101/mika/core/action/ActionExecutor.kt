@@ -28,6 +28,7 @@ import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.tool.parseArgs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -318,6 +319,16 @@ class ActionExecutor(
         // 只有改了可见 UI 屏幕的动作才记 unreadChange:offScreen 后台工具(如 schedule_task、沙箱等)不改屏幕,不触发重读提醒
         val changes = !s.offScreen && s.traits.effect != EffectKind.ReadOnly && s.traits.modifiesScreenState
         val mark = tools.ledgerMark()
+        // 启动 App 不走元素闸门,拿不到动作前的目标与屏幕;先读一屏,后面靠它补出入口边(桌面 → App)
+        val beforeScreen = if (policy.routeTargets && tools.captureTargets && call.name in SCREEN_CAPTURE_TOOLS) {
+            try {
+                tools.interfaces.peek()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+        } else null
         val raw = (s.preset ?: offScreen?.let { g -> synchronized(g) { g.exhausted(call.name) } }?.let { ToolExecution(it) } ?: execute(s, sub))
             .let { r -> s.note?.let { r.with(content = JsonObject(r.content + it)) } ?: r }
             .let { r -> if (s.pacedMs > 0) r.with(waitMs = r.waitMs + s.pacedMs) else r }
@@ -372,7 +383,7 @@ class ActionExecutor(
         recorder.result(n, call.name, s.verb, content, exec.record, exec.changed, shotId, durationMs, policy.source, call.id, exec.waitMs, traits = s.traits)
         ActivityRecord.of(tools, call.name, s.args, exec, n, policy.source, call.id, recorder.now(), s.outward)?.let(recorder::event)
         if (policy.frames == Frames.WhenChanged && shotId != null) recorder.event(RunEvent.Media(recorder.now(), shotId, n, RunEvent.placeLabel(exec.place)))
-        val seen = if (policy.routeTargets) routeTarget(call, s.verb, s.origin, exec) else null
+        val seen = if (policy.routeTargets) routeTarget(call, s.verb, s.origin, exec, beforeScreen) else null
         s.traced?.let { recorder.event(RunEvent.State(recorder.now(), "gate_unresolved", "${call.name} $it")) }
         return ActionOutcome.Ran(exec, s.before, after, content, durationMs, shotId.takeIf { picture != null }, picture, seen)
     }
@@ -390,8 +401,16 @@ class ActionExecutor(
     /**
      * 开着回放时记路线要的目标元素和前后锚点(动作后多读一屏,返回它)。
      * 取不到目标、动作却生效了:路线不能缺步,标 incomplete,整条路线不记。
+     * 启动 App 这类不经过元素闸门的动作没有目标,用执行前读的那一屏补前后签名;
+     * 前后都拿不到才标 incomplete。
      */
-    private suspend fun routeTarget(call: Part.ToolCall, verb: Verb?, origin: Origin, exec: ToolExecution): ScreenSnapshot? {
+    private suspend fun routeTarget(
+        call: Part.ToolCall,
+        verb: Verb?,
+        origin: Origin,
+        exec: ToolExecution,
+        beforeFallback: ScreenSnapshot? = null,
+    ): ScreenSnapshot? {
         if (!tools.captureTargets || tools.index[call.name]?.routable != true) return null
         // 只有端口明确说「不是密码框」才记原文
         val secret = (exec.content["secret"] as? JsonPrimitive)?.booleanOrNull != false
@@ -400,22 +419,23 @@ class ActionExecutor(
         val source = origin.policy.source
         val none = Anchors(null, emptyList())
         val ui = tools.interfaces
-        val captured = ui.lastActionTarget()
-        if (captured == null) {
+        // 启动 App 走自己的前后签名,不拿上一次写操作残留的目标与快照
+        val captured = if (beforeFallback != null) null else ui.lastActionTarget()
+        val beforeSnap = beforeFallback ?: ui.lastActionSnapshot()
+        if (captured == null && beforeSnap == null) {
             if (effective) recorder.event(RunEvent.ActionTarget(recorder.now(), origin.step, call.name, args, null, none, none, true,
                 callId = call.id, source = source, incomplete = true))
             return null
         }
-        val beforeSnap = ui.lastActionSnapshot()
-        val beforeProtected = ui.lastActionProtected()
+        val beforeProtected = beforeSnap?.protected == true
         val seen = if (effective) ui.peek() else null
-        val after = seen?.let(ui::anchorsAfter) ?: none
+        val after = seen?.let(ui::anchorsAfter) ?: seen?.let { Anchors(it.packageName, emptyList()) } ?: none
         val beforeActivity = if (beforeProtected) null else beforeSnap?.let { it.activity ?: it.screenSig?.activity }
         val beforeSig = if (beforeProtected) null else beforeSnap?.resolvedScreenSig()
         val afterProtected = seen?.protected == true
         val afterActivity = if (afterProtected) null else seen?.let { it.activity ?: it.screenSig?.activity }
         val afterSig = if (afterProtected) null else seen?.resolvedScreenSig()
-        recorder.event(RunEvent.ActionTarget(recorder.now(), origin.step, call.name, args, captured.first, captured.second, after, effective,
+        recorder.event(RunEvent.ActionTarget(recorder.now(), origin.step, call.name, args, captured?.first, captured?.second ?: beforeSnap?.let { Anchors(it.packageName, emptyList()) } ?: none, after, effective,
             callId = call.id, protected = beforeProtected, source = source,
             beforeActivity = beforeActivity, beforeSig = beforeSig, afterActivity = afterActivity, afterSig = afterSig))
         return seen
@@ -472,3 +492,6 @@ class ActionExecutor(
         return ActionOutcome.Refused(code, content, before, hit)
     }
 }
+
+/** 不经过元素闸门、却会换 App 的动作:执行前先读一屏,用它补入口边的前后签名。 */
+private val SCREEN_CAPTURE_TOOLS = setOf("phone_launch_app")
