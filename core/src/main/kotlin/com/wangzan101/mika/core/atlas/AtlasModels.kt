@@ -24,6 +24,15 @@ const val MAX_SHORTCUT_STEPS = 10
 const val MAX_SHORTCUT_CONSECUTIVE_MISSES = 3
 
 /**
+ * 虚拟入口节点 ID：表示「还没进入这个 App」的状态（桌面、另一个 App、或刚启动）。
+ * 学习时把跨包进入动作记成 `__entry__ --launch--> 首页`，让 L3 能从任意位置导航进目标 App。
+ */
+const val ENTRY_SIG_ID = "__entry__"
+
+/** 入口边固定使用的工具：从外部进入 App 只能靠启动，target 为空、执行时补包名。 */
+const val ATLAS_ENTRY_TOOL = "phone_launch_app"
+
+/**
  * 单个页面上的高频/关键控件统计与语义说明。
  * [selector] 不包含敏感原文；[meaning] 由轻量模型补充或留空。
  */
@@ -102,8 +111,9 @@ data class AtlasScreen(
 }
 
 /**
- * 页面之间的有向操作跳转边（同包内页面）。
- * [ok] 仅在任务通过 `LearnGate.done` 语义完成时累加；[miss] 在后续运行触发无效果/失败时累加。
+ * 页面之间的有向操作跳转边（同包内页面，或以 [ENTRY_SIG_ID] 为起点的入口边）。
+ * [ok] 仅在任务通过 `LearnGate.done` 语义完成时累加；[weakOk] 在任务整体成功（`TaskState.Succeeded`）
+ * 但未达到 Done 门禁时累加，用于让图谱在真实使用中能长出边；[miss] 在后续运行触发无效果/失败时累加。
  */
 @Serializable
 data class AtlasEdge(
@@ -112,11 +122,21 @@ data class AtlasEdge(
     val tool: String,
     val target: Selector? = null,
     val ok: Int = 0,
+    val weakOk: Int = 0,
     val miss: Int = 0,
     val lastOkMs: Long = 0L,
     val lastAttemptMs: Long = 0L,
     val appVersion: String? = null,
-)
+) {
+    /** 是否是从 App 外部进入首页的入口边。 */
+    fun isEntry(): Boolean = fromSigId == ENTRY_SIG_ID
+
+    /** 成功强度：强成功计 1，弱成功计 0.5；用于提示排序与寻路边权。 */
+    fun strength(): Double = ok + weakOk * 0.5
+
+    /** 可靠边：至少一次成功，且成功强度不低于失败次数。 */
+    fun isReliable(): Boolean = strength() > 0.0 && miss <= strength()
+}
 
 /**
  * L2 跨屏可复用子流程快捷（2–10 步，支持 `{1}`/`{2}` 槽位参数化）。
@@ -168,7 +188,29 @@ data class AppAtlas(
 
     fun outgoingEdges(sigId: String): List<AtlasEdge> = edges.filter { it.fromSigId == sigId }
 
+    /** 所有入口边（从 App 外部进入首页的边）。 */
+    fun entryEdges(): List<AtlasEdge> = edges.filter { it.isEntry() }
+
     fun findShortcut(id: String): AtlasShortcut? = shortcuts.firstOrNull { it.id == id }
+
+    /** 用户手动重命名页面；标题写入 [AtlasScreen.TITLE_USER]，后续模型命名不再覆盖。空标题或敏感文本不生效。 */
+    fun withScreenTitle(sigId: String, title: String, nowMs: Long = System.currentTimeMillis()): AppAtlas {
+        val clean = AtlasSanitizer.cleanSingleLine(title, AtlasSanitizer.MAX_TITLE_LEN) ?: return this
+        return copy(
+            screens = screens.map { s ->
+                if (s.sigId != sigId) s
+                else s.copy(title = clean, titleSource = AtlasScreen.TITLE_USER, lastSeenMs = maxOf(s.lastSeenMs, nowMs))
+            },
+        )
+    }
+
+    /** 删除一个页面节点，同时清掉与之相关的边、候选序列和以它为入口的快捷流程。 */
+    fun withoutScreen(sigId: String): AppAtlas = copy(
+        screens = screens.filterNot { it.sigId == sigId },
+        edges = edges.filterNot { it.fromSigId == sigId || it.toSigId == sigId },
+        shortcuts = shortcuts.filterNot { it.entrySigId == sigId },
+        candidatePatterns = candidatePatterns.filterNot { it.entrySigId == sigId },
+    )
 
     fun activeShortcutsFor(sigId: String): List<AtlasShortcut> =
         shortcuts.filter { !it.disabled && it.entrySigId == sigId && it.steps.isNotEmpty() }
@@ -255,13 +297,15 @@ data class AppAtlas(
             )
         }
         val keptIds = keptScreens.mapTo(HashSet(keptScreens.size)) { it.sigId }
-        val validEdges = edges.filter { it.fromSigId in keptIds && it.toSigId in keptIds }
+        val validEdges = edges.filter {
+            (it.fromSigId == ENTRY_SIG_ID || it.fromSigId in keptIds) && it.toSigId in keptIds
+        }
         val keptEdges = if (validEdges.size <= maxEdges) validEdges else {
             AtlasEviction.evict(
                 items = validEdges,
                 limit = maxEdges,
                 recencyOf = { maxOf(it.lastOkMs, it.lastAttemptMs) },
-                hitsOf = { it.ok },
+                hitsOf = { it.ok * 2 + it.weakOk },
                 tieKeyOf = { "${it.fromSigId}|${it.toSigId}|${it.tool}|${it.target?.name.orEmpty()}" },
             )
         }

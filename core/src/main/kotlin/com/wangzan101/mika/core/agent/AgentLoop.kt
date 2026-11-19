@@ -202,11 +202,16 @@ class AgentLoop(
     /** 离线页面图谱存储（非空时在 Zone 3 注入 L1 历史页面提示，默认 null 不注入）。 */
     private val atlas: AtlasStore? = null,
     private val atlasPolicy: AtlasHintPolicy = AtlasHintPolicy.Default,
+    /**
+     * 是否把动作目标与前后屏幕签名写进运行记录（页面图谱学习的原料）。
+     * 与 [atlas] 分开：关掉提示也可以继续记录；默认跟随 [atlas]，只传图谱时行为不变。
+     */
+    private val atlasLearn: Boolean = atlas != null,
 ) {
     init {
         require(maxSteps > 0) { "maxSteps must be positive" }
-        // 开着回放或启用页面图谱时在写操作前取目标元素与前后屏幕签名/锚点
-        tools.captureTargets = flags.replay || atlas != null
+        // 开着回放、要记路线，或要记页面经验时，在写操作前取目标元素与前后屏幕签名/锚点
+        tools.captureTargets = flags.replay || atlasLearn
     }
 
     /** 运行记录:按因果先后写(见 [RecordOrder])。 */
@@ -1075,6 +1080,8 @@ class AgentLoop(
         } ?: return
         history += ctx.notice("atlas_hint", hint.text)
         emit(RunEvent.State(now(), "atlas_hint", "${hint.packageName}/${hint.screenSigId}"))
+        // 提示原文单独记一条:事后要知道「模型当时看到了什么」才能判断提示有没有用、哪里写歪了
+        emit(RunEvent.State(now(), "atlas_hint_text", hint.text))
     }
 
     /**

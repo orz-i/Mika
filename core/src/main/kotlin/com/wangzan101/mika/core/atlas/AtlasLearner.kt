@@ -35,6 +35,12 @@ object AtlasLearner {
         val afterSig: ScreenSig?,
     )
 
+    /** 一次「从 App 外部进入这个 App」的观测，用于建立入口边。 */
+    private data class EntryObservation(
+        val atMs: Long,
+        val sig: ScreenSig,
+    )
+
     /** 按 [LearnGate.done] 语义从运行事件序列推断本次任务是否算「真正办成」。 */
     fun isLearnDone(events: List<RunEvent>): Boolean {
         val ended = events.lastOrNull { it is RunEvent.TaskEnded } as? RunEvent.TaskEnded ?: return false
@@ -62,6 +68,7 @@ object AtlasLearner {
         events = events,
         store = store,
         learnDone = LearnGate.done(end, outcome),
+        succeeded = end is TaskState.Succeeded,
         appVersions = appVersions,
         appLabels = appLabels,
         selfPackage = selfPackage,
@@ -77,6 +84,7 @@ object AtlasLearner {
         events: List<RunEvent>,
         store: AtlasStore,
         learnDone: Boolean = isLearnDone(events),
+        succeeded: Boolean = learnDone,
         appVersions: Map<String, String> = emptyMap(),
         appLabels: Map<String, String> = emptyMap(),
         selfPackage: String = DEFAULT_SELF_PACKAGE,
@@ -92,6 +100,7 @@ object AtlasLearner {
 
         val stepsByPkg = linkedMapOf<String, MutableList<StepObservation>>()
         val afterOnlyByPkg = linkedMapOf<String, MutableList<Pair<Long, ScreenSig>>>()
+        val entryByPkg = linkedMapOf<String, MutableList<EntryObservation>>()
 
         for (event in events) {
             if (event !is RunEvent.ActionTarget) continue
@@ -118,7 +127,7 @@ object AtlasLearner {
             } else null
 
             val cleanTarget = event.target?.let {
-                AtlasSanitizer.cleanSelector(it, isTypeAction = event.tool.endsWith("_type_text"))
+                AtlasSanitizer.cleanSelector(it, isTypeAction = AtlasSanitizer.isTextInputTool(event.tool))
             }
 
             if (beforeSig != null && beforePkg != null) {
@@ -136,9 +145,17 @@ object AtlasLearner {
             if (afterSig != null && afterPkg != null && (beforeSig == null || afterPkg != beforePkg)) {
                 afterOnlyByPkg.getOrPut(afterPkg) { mutableListOf() } += (event.atMs to afterSig)
             }
+            // 跨包进入（桌面/通知/另一个 App → 本 App）：记一条入口观测。
+            // 启动 App 时 Mika 在自己的屏上读不到桌面，没有前屏也算从外部进入。
+            val launchedFromOutside = event.tool == "phone_launch_app" && beforePkg == null
+            if (afterSig != null && afterPkg != null &&
+                (launchedFromOutside || (beforePkg != null && afterPkg != beforePkg))
+            ) {
+                entryByPkg.getOrPut(afterPkg) { mutableListOf() } += EntryObservation(event.atMs, afterSig)
+            }
         }
 
-        val allPackages = (stepsByPkg.keys + afterOnlyByPkg.keys).distinct()
+        val allPackages = (stepsByPkg.keys + afterOnlyByPkg.keys + entryByPkg.keys).distinct()
         if (allPackages.isEmpty()) return LearnResult(emptyMap(), emptyMap())
 
         val updated = linkedMapOf<String, AppAtlas>()
@@ -147,6 +164,7 @@ object AtlasLearner {
         for (pkg in allPackages) {
             val steps = stepsByPkg[pkg].orEmpty()
             val extraVisits = afterOnlyByPkg[pkg].orEmpty()
+            val entries = entryByPkg[pkg].orEmpty()
             val pkgUnnamed = linkedSetOf<String>()
             val version = appVersions[pkg]?.trim()?.takeIf { it.isNotEmpty() }
             val label = AtlasSanitizer.cleanSingleLine(appLabels[pkg], 48)
@@ -159,7 +177,9 @@ object AtlasLearner {
                     version = version,
                     steps = steps,
                     extraVisits = extraVisits,
+                    entries = entries,
                     learnDone = learnDone,
+                    succeeded = succeeded,
                     matchThreshold = matchThreshold,
                     nowMs = nowMs,
                     unnamedOut = pkgUnnamed,
@@ -199,7 +219,9 @@ object AtlasLearner {
         version: String?,
         steps: List<StepObservation>,
         extraVisits: List<Pair<Long, ScreenSig>>,
+        entries: List<EntryObservation>,
         learnDone: Boolean,
+        succeeded: Boolean,
         matchThreshold: Double,
         nowMs: Long,
         unnamedOut: MutableSet<String>,
@@ -210,7 +232,10 @@ object AtlasLearner {
         val screens = (existing?.screens ?: emptyList()).map { s ->
             if (versionChanged && s.appVersion != version) s.copy(unverifiedAfterUpgrade = true) else s
         }.toMutableList()
-        val edges = (existing?.edges ?: emptyList()).toMutableList()
+        // 老版本的图谱把输入框里的字当成了地标存进边里（搜索词、账号都可能这样留下来）。
+        // 这里顺手把已有的脏数据洗掉并合并：输入动作只关心「在这一页往哪个输入框写字」，
+        // 输入的字、输入框当时的坐标和序号都不是身份的一部分，按 (起点, 终点, 工具) 并成一条。
+        val edges = mergeTextInputEdges(existing?.edges.orEmpty()).toMutableList()
 
         var lastAfterSigId: String? = null
         var maxAtMs = existing?.lastUsedMs ?: 0L
@@ -280,7 +305,10 @@ object AtlasLearner {
                 val toScreen = upsertScreen(intraAfter, step.atMs, matchedIdx = afterIdx, countHit = candidateAfterId != fromScreen.sigId)
                 lastAfterSigId = toScreen.sigId
                 if (learnDone) {
-                    upsertEdgeOk(edges, fromScreen.sigId, toScreen.sigId, step.tool, step.target, step.atMs, version)
+                    upsertEdge(edges, fromScreen.sigId, toScreen.sigId, step.tool, step.target, step.atMs, version, strong = true)
+                } else if (succeeded) {
+                    // 任务整体成功但未达到 Done 门禁：记弱成功，图谱才能在真实使用中长出边
+                    upsertEdge(edges, fromScreen.sigId, toScreen.sigId, step.tool, step.target, step.atMs, version, strong = false)
                 }
             } else if (!step.effective) {
                 incrementMatchingEdgeMiss(edges, fromScreen.sigId, step.tool, step.target, step.atMs)
@@ -289,6 +317,16 @@ object AtlasLearner {
 
         for ((atMs, sig) in extraVisits) {
             upsertScreen(sig, atMs, countHit = true)
+        }
+
+        // 入口边：从 App 外部进入的首页。只记录启动这一种方式，执行时补包名，避免回放任意跨包动作。
+        for (entry in entries) {
+            val idx = AtlasEviction.findMatchingScreenIndex(screens, pkg, entry.sig, matchThreshold)
+            val home = upsertScreen(entry.sig, entry.atMs, matchedIdx = idx, countHit = false)
+            when {
+                learnDone -> upsertEdge(edges, ENTRY_SIG_ID, home.sigId, ATLAS_ENTRY_TOOL, null, entry.atMs, version, strong = true)
+                succeeded -> upsertEdge(edges, ENTRY_SIG_ID, home.sigId, ATLAS_ENTRY_TOOL, null, entry.atMs, version, strong = false)
+            }
         }
 
         val versionsSeen = buildList {
@@ -355,7 +393,38 @@ object AtlasLearner {
         return screen.copy(controls = list)
     }
 
-    private fun upsertEdgeOk(
+    /**
+     * 把已有的输入类边洗一遍：清掉元素上的输入文字，并把同一 (起点, 终点, 工具) 的几条并成一条。
+     * 只动输入类动作，其它边的身份仍然按目标元素区分。
+     */
+    private fun mergeTextInputEdges(edges: List<AtlasEdge>): List<AtlasEdge> {
+        val out = mutableListOf<AtlasEdge>()
+        for (edge in edges) {
+            if (!AtlasSanitizer.isTextInputTool(edge.tool)) {
+                out += edge
+                continue
+            }
+            val clean = if (!edge.target?.name.isNullOrEmpty()) edge.copy(target = edge.target?.copy(name = "")) else edge
+            val i = out.indexOfFirst {
+                it.fromSigId == clean.fromSigId && it.toSigId == clean.toSigId && it.tool == clean.tool
+            }
+            if (i < 0) {
+                out += clean
+            } else {
+                val old = out[i]
+                out[i] = old.copy(
+                    ok = old.ok + clean.ok,
+                    weakOk = old.weakOk + clean.weakOk,
+                    miss = old.miss + clean.miss,
+                    lastOkMs = maxOf(old.lastOkMs, clean.lastOkMs),
+                    lastAttemptMs = maxOf(old.lastAttemptMs, clean.lastAttemptMs),
+                )
+            }
+        }
+        return out
+    }
+
+    private fun upsertEdge(
         edges: MutableList<AtlasEdge>,
         fromSigId: String,
         toSigId: String,
@@ -363,17 +432,28 @@ object AtlasLearner {
         target: Selector?,
         atMs: Long,
         version: String?,
+        strong: Boolean,
     ) {
+        // 输入类动作按 (起点, 终点, 工具) 归并：同一页的输入框在不同轮次里坐标会差几个像素，
+        // 输入的字每次也不一样，这些都不该让同一条经验裂成好几条。
+        val textInput = AtlasSanitizer.isTextInputTool(tool)
         val idx = edges.indexOfFirst {
             it.fromSigId == fromSigId &&
                 it.toSigId == toSigId &&
                 it.tool == tool &&
-                AtlasEviction.sameOptionalTarget(it.target, target)
+                if (textInput) {
+                    val a = it.target?.resourceId
+                    val b = target?.resourceId
+                    a == null || b == null || a == b
+                } else {
+                    AtlasEviction.sameOptionalTarget(it.target, target)
+                }
         }
         if (idx >= 0) {
             val old = edges[idx]
             edges[idx] = old.copy(
-                ok = old.ok + 1,
+                ok = old.ok + if (strong) 1 else 0,
+                weakOk = old.weakOk + if (strong) 0 else 1,
                 lastOkMs = maxOf(old.lastOkMs, atMs),
                 lastAttemptMs = maxOf(old.lastAttemptMs, atMs),
                 appVersion = version ?: old.appVersion,
@@ -384,7 +464,8 @@ object AtlasLearner {
                 toSigId = toSigId,
                 tool = tool,
                 target = target,
-                ok = 1,
+                ok = if (strong) 1 else 0,
+                weakOk = if (strong) 0 else 1,
                 miss = 0,
                 lastOkMs = atMs,
                 lastAttemptMs = atMs,

@@ -141,10 +141,11 @@ data class AtlasShare(
                 }
             }
             for (e in a.edges) {
-                if (e.fromSigId !in screenIds || e.toSigId !in screenIds) {
+                val fromMapped = e.fromSigId == ENTRY_SIG_ID || e.fromSigId in screenIds
+                if (!fromMapped || e.toSigId !in screenIds) {
                     problems += "dangling edge ${e.fromSigId} -> ${e.toSigId}"
                 }
-                if (e.ok < 0 || e.miss < 0) problems += "negative edge stats ${e.fromSigId} -> ${e.toSigId}"
+                if (e.ok < 0 || e.weakOk < 0 || e.miss < 0) problems += "negative edge stats ${e.fromSigId} -> ${e.toSigId}"
                 if (e.target != null && !AtlasSanitizer.isSafeText(e.target.name)) {
                     problems += "sensitive content in edge target ${e.fromSigId} -> ${e.toSigId}"
                 }
@@ -322,6 +323,7 @@ data class AtlasShare(
                 e.copy(
                     target = e.target?.let { AtlasSanitizer.cleanSelector(it) },
                     ok = e.ok.coerceAtLeast(0),
+                    weakOk = e.weakOk.coerceAtLeast(0),
                     miss = e.miss.coerceAtLeast(0),
                     lastOkMs = 0L,
                     lastAttemptMs = 0L,
@@ -415,6 +417,7 @@ data class AtlasShare(
                     val cur = edges[idx]
                     edges[idx] = cur.copy(
                         ok = maxOf(cur.ok, impEdge.ok),
+                        weakOk = maxOf(cur.weakOk, impEdge.weakOk),
                         miss = maxOf(cur.miss, impEdge.miss),
                         lastOkMs = maxOf(cur.lastOkMs, impEdge.lastOkMs),
                         lastAttemptMs = maxOf(cur.lastAttemptMs, impEdge.lastAttemptMs),
