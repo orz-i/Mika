@@ -23,7 +23,12 @@ class HttpServerStopTest {
 
     @Test fun stoppingWhileClientsDisconnectDoesNotThrow() {
         // 客户端关闭后,连接线程移除登记与 stop 同时执行;重复实际连接以覆盖这个交错。
-        repeat(2_000) {
+        // 轮数按时间预算走:loopback 每轮建连的成本随平台差两个数量级(安卓 ~2ms,Windows 开发机 ~200ms),
+        // 写死 2000 轮在慢的平台上要跑十几分钟。跑满 [ATTEMPTS] 轮,或过了 [MIN_ATTEMPTS] 轮且用满
+        // [BUDGET_MS] 就停——快的平台照旧跑满。
+        val until = System.nanoTime() + BUDGET_MS * 1_000_000
+        var done = 0
+        while (done < ATTEMPTS && (done < MIN_ATTEMPTS || System.nanoTime() < until)) {
             val server = server()
             server.start()
             try {
@@ -31,6 +36,7 @@ class HttpServerStopTest {
             } finally {
                 server.stop()
             }
+            done++
         }
     }
 
@@ -56,5 +62,14 @@ class HttpServerStopTest {
             server.stop()
             clients.forEach { it.close() }
         }
+    }
+
+    private companion object {
+        /** 快平台上要跑满的轮数(覆盖那个交错)。 */
+        const val ATTEMPTS = 2_000
+        /** 不管平台多慢,至少跑这么多轮。 */
+        const val MIN_ATTEMPTS = 50
+        /** 超过 [MIN_ATTEMPTS] 之后最多再跑这么久。 */
+        const val BUDGET_MS = 20_000L
     }
 }

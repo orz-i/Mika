@@ -13,8 +13,10 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.BufferedReader
 import java.net.Socket
 
 /** 真的开一个端口(只绑本机回环),用 HTTP 客户端走一遍:门口、协议、任务工具、近期连接的统计。 */
@@ -91,15 +93,26 @@ class McpHostHttpTest {
             val reader = s.getInputStream().bufferedReader()
             out.write(("POST /mcp HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer $TOKEN\r\nContent-Type: application/json\r\n" +
                 "Transfer-Encoding: chunked\r\nExpect: 100-continue\r\nConnection: close\r\n\r\n").toByteArray())
-            assertTrue(reader.readLine().startsWith("HTTP/1.1 100"))
-            reader.readLine()
+            assertTrue(reader.lineOrSkip("the 100 Continue").startsWith("HTTP/1.1 100"))
+            assertTrue(reader.lineOrSkip("the blank line after it").isEmpty())
             val body = """{"jsonrpc":"2.0","id":9,"method":"ping"}"""
             val half = body.length / 2
             out.write("${Integer.toHexString(half)}\r\n${body.substring(0, half)}\r\n".toByteArray())
             out.write("${Integer.toHexString(body.length - half)}\r\n${body.substring(half)}\r\n0\r\n\r\n".toByteArray())
-            assertTrue(reader.readLine().startsWith("HTTP/1.1 200"))
+            assertTrue(reader.lineOrSkip("the response").startsWith("HTTP/1.1 200"))
             assertTrue(reader.readText().contains("\"id\":9"))
         }
+    }
+
+    /**
+     * 本机 loopback 被过滤类代理(AdGuard 一类)接管时,连接会在中途被掐断,`readLine` 给 null。
+     * 服务端不会在 100 Continue 之后立刻断,所以这里按「被接管了」跳过,而不是报成服务端的问题。
+     * 同 `HttpServerTest.notIntercepted`、`MiniHttpServerTest.notIntercepted` 的做法;CI 与安卓上没有这层。
+     */
+    private fun BufferedReader.lineOrSkip(where: String): String {
+        val line = readLine()
+        assumeTrue("loopback HTTP is intercepted here: the connection was cut before $where", line != null)
+        return line!!
     }
 
     private companion object {

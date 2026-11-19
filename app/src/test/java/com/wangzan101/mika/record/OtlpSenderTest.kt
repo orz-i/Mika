@@ -13,6 +13,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayOutputStream
+import java.net.InetAddress
 import java.io.IOException
 
 class OtlpSenderTest {
@@ -35,6 +36,18 @@ class OtlpSenderTest {
         assertFalse(OtlpSender.validHeader("Authorization", "x\r\nX-Test: y"))
     }
 
+    /**
+     * 绑定显式回环地址。
+     *
+     * `MockWebServer()` 默认拿 `InetAddress.getByName("localhost").hostName` 当主机名，而 Windows 上
+     * 这个名字会反向解析成机器名（如 `http://PC:4318`）。[OtlpSender.endpoint] 只接受 https 与本机地址，
+     * 机器名既不是回环也不是私网 IP，于是合法的本地接收端被判成 "Invalid traces endpoint"。
+     */
+    private fun loopback() = MockWebServer().apply { start(InetAddress.getByName("127.0.0.1"), 0) }
+
+    /** 显式拼回环地址:`url()` 用的是 localhost 反向解析的结果,Windows 上那是机器名,过不了 endpoint 的本机校验。 */
+    private fun localUrl(server: MockWebServer, path: String) = "http://127.0.0.1:${server.port}$path"
+
     @Test fun sendsTheExactLocalMetadataAndDistinguishesReceiptsWithoutForwardingCredentials() = runBlocking {
         val store = TraceStore(temp.newFolder())
         val trace = store.start("short")!!
@@ -42,8 +55,8 @@ class OtlpSenderTest {
         store.finish(trace)
         val archive = store.archive("short")!!
         val expected = ByteArrayOutputStream().also { archive.save(it, false) }.toByteArray()
-        MockWebServer().use { receiver ->
-            val url = receiver.url("/v1/traces").toString()
+        loopback().use { receiver ->
+            val url = localUrl(receiver, "/v1/traces")
             suspend fun send() = OtlpSender.send(archive, url, "X-Api-Key", "test-only")
             receiver.enqueue(MockResponse().setHeader("Content-Type", "application/x-protobuf"))
             assertEquals(OtlpReceipt.Accepted, send())
@@ -64,7 +77,7 @@ class OtlpSenderTest {
             assertEquals(beforeRetry + 1, receiver.requestCount)
             receiver.enqueue(MockResponse().setResponseCode(401))
             assertEquals(OtlpReceipt.HttpError(401), send())
-            MockWebServer().use { redirect ->
+            loopback().use { redirect ->
                 receiver.enqueue(MockResponse().setResponseCode(307).setHeader("Location", redirect.url("/elsewhere")))
                 assertEquals(OtlpReceipt.HttpError(307), send())
                 assertEquals(0, redirect.requestCount)

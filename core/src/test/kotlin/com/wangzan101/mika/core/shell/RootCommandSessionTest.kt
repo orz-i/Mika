@@ -65,6 +65,8 @@ class RootCommandSessionTest {
     }
 
     private fun assertFallback(kill: List<List<String>>) {
+        // 兜底脚本要靠宿主的 /bin/sh 跑起来看退出码;Windows 没有它(同文件里 setsid 那条也这么处理)
+        assumeTrue("需要宿主的 /bin/sh", File("/bin/sh").canExecute())
         val process = ProcessBuilder(
             "/bin/sh", "-c",
             RootCommandSession.script(shell = "/bin/sh", setsid = emptyList(), kill = kill),

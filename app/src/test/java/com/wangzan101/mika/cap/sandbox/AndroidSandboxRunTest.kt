@@ -107,7 +107,10 @@ class AndroidSandboxRunTest {
         val private = File(tmp, "s2/private.db").apply { writeText("secret") }
         val linked = File(f.parentFile, "linked.db")
         Files.createLink(linked.toPath(), private.toPath())
-        assertEquals("linked_file", runCatching { sb.share(linked, "linked.db") }.exceptionOrNull().let { (it as SandboxError).code })
+        // nlink 只有 POSIX 文件系统报得出来;Windows 上这一条没有判别力(见 NioFdSys.basicStatOf)
+        if (File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix")) {
+            assertEquals("linked_file", runCatching { sb.share(linked, "linked.db") }.exceptionOrNull().let { (it as SandboxError).code })
+        }
         assertEquals(1, calls.size)
         fail = FileTooLarge(1L shl 30)
         assertEquals("file_too_large", runCatching { sb.share(f, "a.txt") }.exceptionOrNull().let { (it as SandboxError).code })

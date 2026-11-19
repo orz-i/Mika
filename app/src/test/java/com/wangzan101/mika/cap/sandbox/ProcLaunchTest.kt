@@ -9,12 +9,26 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Test
 import java.io.File
 
 /** 起进程、收输出、兜底时限:用宿主的 /bin/sh 跑(不经启动器与 PRoot)。 */
 class ProcLaunchTest {
     private val env = mapOf("PATH" to "/usr/bin:/bin")
+
+    /**
+     * 这套用例全部靠宿主的 POSIX 工具:`/bin/sh -c` 起进程、`/bin/kill -0` 探活、`/dev/zero` 灌输出。
+     * Windows 开发机上这些都不存在,与其报六条"找不到文件",不如明说这一台机器验不了。
+     */
+    @Before
+    fun requirePosixShell() {
+        assumeTrue(
+            "需要宿主的 /bin/sh 与 /bin/kill(Windows 上没有)",
+            File("/bin/sh").canExecute() && File("/bin/kill").canExecute(),
+        )
+    }
 
     @Test fun exitCodeAndMergedOutput() = runBlocking {
         val o = AndroidSandbox.launch(listOf("/bin/sh", "-c", "echo out; echo err >&2; exit 3"), env, 10_000)
