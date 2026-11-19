@@ -26,3 +26,8 @@ CLAUDE.md
 __pycache__/
 *.py[cod]
 *.egg-info/
+
+# 评测跑出来的轮次记录、拉下来的设备文件(体积大,只留本机)
+output/
+# 解包 APK 的分析产物
+apk_analysis/
