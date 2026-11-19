@@ -53,6 +53,7 @@ import com.wangzan101.mika.core.run.Attendance
 import com.wangzan101.mika.core.run.ConfirmEscalator
 import com.wangzan101.mika.core.run.RunEventBus
 import com.wangzan101.mika.core.run.RunInbox
+import com.wangzan101.mika.core.run.SKIPPED_FOR_NEW_MESSAGE
 import com.wangzan101.mika.core.run.RunSpec
 import com.wangzan101.mika.core.run.RunProvenance
 import com.wangzan101.mika.core.run.RunOrigin
@@ -83,14 +84,16 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -306,38 +309,50 @@ class AgentLoop(
         } else {
             null
         }
-        user.begin(threadId, runProvenance, interaction, childEscalator)
-        inbox?.bind(object : RunInbox.Handler {
-            override suspend fun answer(text: String, askId: String?) = user.answerInput(text, askId)
-            override suspend fun confirm(choice: ConfirmChoice, askId: String?) = user.answerConfirmation(choice, askId)
-            override suspend fun handBack(result: HandBack, askId: String?) = user.resumeAfterTakeover(result, askId)
-            override fun cancel() = this@AgentLoop.cancel()
-        })
-        caller.reset(basePrompt)
-        // 同意只在一次任务内有效
-        confirmations?.reset()
-        utterances?.clear()
-        emit(RunEvent.TaskStarted(now(), Redactor.text(task), model.name,
-            origin = runProvenance.origin.takeIf { it != RunOrigin.Ui }?.name?.lowercase(),
-            stepLimit = maxSteps.takeIf { it != Int.MAX_VALUE }, tokenBudget = tokenBudget))
         var end: TaskState? = null
-        replay?.reset()
         lastEnd = null
         try {
+            user.begin(threadId, runProvenance, interaction, childEscalator)
+            inbox?.bind(object : RunInbox.Handler {
+                override suspend fun answer(text: String, askId: String?) = user.answerInput(text, askId)
+                override suspend fun confirm(choice: ConfirmChoice, askId: String?) = user.answerConfirmation(choice, askId)
+                override suspend fun handBack(result: HandBack, askId: String?) = user.resumeAfterTakeover(result, askId)
+                override fun cancel() = this@AgentLoop.cancel()
+            })
+            caller.reset(basePrompt)
+            // 同意只在一次任务内有效
+            confirmations?.reset()
+            utterances?.clear()
+            emit(RunEvent.TaskStarted(now(), Redactor.text(task), model.name,
+                origin = runProvenance.origin.takeIf { it != RunOrigin.Ui }?.name?.lowercase(),
+                stepLimit = maxSteps.takeIf { it != Int.MAX_VALUE }, tokenBudget = tokenBudget))
+            replay?.reset()
             val escalatorContext = if (runProvenance.origin == RunOrigin.Ui && runProvenance.attendance == Attendance.Present && !readOnly) {
                 ConfirmEscalator { req -> user.escalateConfirm(req) }
             } else {
                 EmptyCoroutineContext
             }
             end = withContext(escalatorContext) { runLoop(task, priorTurns, inbox) }
-            lastEnd = end
             return end
         } catch (e: CancellationException) {
             end = TaskState.Cancelled
             throw e
+        } catch (e: Exception) {
+            end = if (e is ModelError) StopRules.modelFailed(e)
+                else TaskState.Failed("任务运行异常:${Redactor.text(e.message ?: e::class.simpleName.orEmpty())}", FailKind.Environment)
+            throw e
         } finally {
-            emit(ended(end))
-            inbox?.close()
+            val terminal = end ?: TaskState.Failed("任务异常中断", FailKind.Environment)
+            lastEnd = terminal
+            try {
+                // 对外可见终态之前关闭控制入口；迟到的追加不能被误收成当前任务的一部分。
+                inbox?.close()
+                user.clear()
+                confirmations?.reset()
+            } finally {
+                _state.value = terminal
+                emit(ended(terminal))
+            }
         }
     }
 
@@ -355,10 +370,7 @@ class AgentLoop(
             TaskState.Cancelled
         } finally {
             job = null
-            user.clear()
-            confirmations?.reset()
         }
-        _state.value = end
         return end
     }
 
@@ -624,9 +636,8 @@ class AgentLoop(
                 continue
             }
             var (reply, used) = routed
-            val proposed = reply.parts.filterIsInstance<Part.ToolCall>().firstOrNull()
-            if (flags.strictIntentGate && provenance.origin == RunOrigin.Ui && intentGate != null && proposed != null &&
-                tools.traits(proposed.name)?.lookupRead != true) {
+            val proposed = reply.parts.filterIsInstance<Part.ToolCall>().firstOrNull { tools.traits(it.name)?.lookupRead != true }
+            if (flags.strictIntentGate && provenance.origin == RunOrigin.Ui && intentGate != null && proposed != null) {
                 if (!intentAssessed) intent = assessIntent()
                 if (intent == IntentGate.Intent.Discuss) {
                     // 提议的调用尚未写进历史、也没有执行；重问一次，只给直接回答的机会。
@@ -636,6 +647,10 @@ class AgentLoop(
                     catch (e: CancellationException) { throw e }
                     catch (e: Exception) { return StopRules.modelFailed(e) }
                     used = model
+                    if (reply.parts.any { it is Part.ToolCall }) {
+                        emit(RunEvent.State(now(), "discussion_tool_rejected", "tools are disabled for this answer"))
+                        return TaskState.Failed("模型在讨论模式中仍请求调用工具，已阻止执行。", FailKind.Model)
+                    }
                 }
             }
             val rawText = reply.parts.filterIsInstance<Part.Text>().joinToString("") { it.text }.trim()
@@ -755,7 +770,19 @@ class AgentLoop(
             var sawPhoneScreen = false
             var latestScreenSeen: ScreenSnapshot? = null
 
-            if (flags.serialToolCallsOnly) {
+            fun skipCall(idx: Int, call: Part.ToolCall, code: String, message: String): SingleCallResult.Skipped {
+                recordReplyOnce(replyArgsJson(secretField = true))
+                return SingleCallResult.Skipped(idx, call, skippedCall(call, step, recorder, code, message))
+            }
+
+            val overCallLimit = calls.size > MAX_TOOL_CALLS_PER_TURN
+            if (overCallLimit) {
+                calls.forEachIndexed { idx, call ->
+                    resultsByIndex[idx] = skipCall(idx, call, "tool_call_limit",
+                        "At most $MAX_TOOL_CALLS_PER_TURN tool calls are allowed in one reply; none were executed. Split the plan into smaller turns.").toolResult
+                }
+                track.markRecovery()
+            } else if (flags.serialToolCallsOnly) {
                 for (i in 1 until calls.size) {
                     resultsByIndex[i] = Part.ToolResult(calls[i].id, buildJsonObject {
                         put("ok", false)
@@ -766,6 +793,10 @@ class AgentLoop(
             }
 
             suspend fun runSingleCall(idx: Int, call: Part.ToolCall): SingleCallResult {
+                currentCoroutineContext().ensureActive()
+                if (inbox?.claimToolStart() == false) {
+                    return skipCall(idx, call, SKIPPED_FOR_NEW_MESSAGE, "A new user message is waiting; this call was not started. Replan after reading it.")
+                }
                 trace?.toolStarted(step, call.name, call.id, now())
                 val callVerb = tools.verb(call.name)
                 val callTraits = tools.traits(call.name)
@@ -873,7 +904,9 @@ class AgentLoop(
             }
 
             val preWaveInterstitialWaited = awaitInterstitialGate()
-            val waves = if (flags.serialToolCallsOnly) {
+            val waves = if (overCallLimit) {
+                emptyList()
+            } else if (flags.serialToolCallsOnly) {
                 listOf(ToolWave.Serial(IndexedValue(0, first)))
             } else {
                 partitionToolWaves(calls)
@@ -909,8 +942,15 @@ class AgentLoop(
 
                 val executed: List<SingleCallResult> = when {
                     runnable.isEmpty() -> emptyList()
-                    wave is ToolWave.Parallel && runnable.size > 1 -> coroutineScope {
-                        runnable.map { item -> async { runSingleCall(item.index, item.value) } }.awaitAll()
+                    wave is ToolWave.Parallel && runnable.size > 1 -> {
+                        // 只创建有限个 worker；每端点/能力再限额。排队者获准后才检查插话并启动。
+                        fun group(item: IndexedValue<Part.ToolCall>) = tools.index[item.value.name]?.capability ?: "core"
+                        val permits = runnable.map(::group).distinct().associateWith { Semaphore(MAX_PARALLEL_TOOLS_PER_CAPABILITY) }
+                        runnable.chunked(MAX_PARALLEL_TOOLS).flatMap { chunk -> coroutineScope {
+                            chunk.map { item -> async {
+                                permits.getValue(group(item)).withPermit { runSingleCall(item.index, item.value) }
+                            } }.awaitAll()
+                        } }
                     }
                     else -> runnable.map { item -> runSingleCall(item.index, item.value) }
                 }
@@ -921,8 +961,10 @@ class AgentLoop(
                     when (res) {
                         is SingleCallResult.Cancelled -> return TaskState.Cancelled
                         is SingleCallResult.GuardStop -> {
-                            pendingStop = Triple(res.state, null, guards.stop)
-                            break@waveLoop
+                            if (pendingStop == null) pendingStop = Triple(res.state, null, guards.stop)
+                        }
+                        is SingleCallResult.Skipped -> {
+                            track.markRecovery()
                         }
                         is SingleCallResult.ApprovedStepFirst -> {
                             track.after(tools.traits(res.call.name) ?: ToolTraits(), ok = false, guard = false, changed = null, recovery = false, app = null)
@@ -936,8 +978,7 @@ class AgentLoop(
                         is SingleCallResult.Batch -> {
                             res.lookNote?.let { followUpMessages += it }
                             if (res.end != null) {
-                                pendingStop = Triple(res.end, null, guards.stop)
-                                break@waveLoop
+                                if (pendingStop == null) pendingStop = Triple(res.end, null, guards.stop)
                             }
                             sawPhoneScreen = true
                             latestScreenSeen = null
@@ -979,12 +1020,13 @@ class AgentLoop(
                             val stopNow = guards.stop ?: executor.offScreenStop
                             val end = StopRules.afterAction(exec.outcome, stopNow)
                             if (end != null) {
-                                pendingStop = Triple(end, exec.outcome, stopNow)
-                                break@waveLoop
+                                if (pendingStop == null) pendingStop = Triple(end, exec.outcome, stopNow)
                             }
                         }
                     }
                 }
+                // 同波次其他调用已经执行，先收齐其真实结果，再停止后续波次。
+                if (pendingStop != null) break@waveLoop
             }
 
             if (preWaveInterstitialWaited && pendingStop == null &&
@@ -1135,9 +1177,10 @@ class AgentLoop(
      * 屏幕上那段回复要留着:下一步一开始界面上的实时文字就清掉了,所以发 `reply_finished_before_steer` 把它挂到插话上方。
      * 没有插话返回 false,什么也不动。
      */
-    private suspend fun keepFinished(history: MutableList<Message>, inbox: RunInbox?): Boolean {
+    private suspend fun keepFinished(history: MutableList<Message>, inbox: RunInbox?, beforeSteers: () -> Unit = {}): Boolean {
         val steers = inbox?.takeSteers().orEmpty()
         if (steers.isEmpty()) return false
+        beforeSteers()
         val current = _state.value as? TaskState.Running
         val shown = current?.preview?.trim()
         if (current?.preview != null) _state.value = current.copy(preview = null)
@@ -1208,12 +1251,27 @@ class AgentLoop(
         class GuardStop(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val state: TaskState) : SingleCallResult
         class ApprovedStepFirst(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult) : SingleCallResult
         class ScreenChanged(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult) : SingleCallResult
+        class Skipped(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult) : SingleCallResult
         class Refused(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val guardHit: Boolean) : SingleCallResult
         class Batch(override val index: Int, override val call: Part.ToolCall, override val toolResult: Part.ToolResult, val lookNote: Message?, val end: TaskState?) : SingleCallResult
         class Ran(override val index: Int, override val call: Part.ToolCall, val args: JsonObject, val traits: ToolTraits?, val offScreen: Boolean, override val toolResult: Part.ToolResult, val ran: ActionOutcome.Ran, val advice: String?) : SingleCallResult
     }
 
     private class BatchOutcome(val result: Part.ToolResult, val lookNote: Message?, val end: TaskState?)
+
+    /** 没有进入执行入口的调用也必须收口；普通回合与收尾共用，不计入动作失败熔断。 */
+    private fun skippedCall(call: Part.ToolCall, step: Int, recorder: ActionRecorder, code: String, message: String): Part.ToolResult {
+        val content = buildJsonObject {
+            put("ok", false)
+            put("error", code)
+            put("message", message)
+            put("executed", false)
+            put("recoverable", true)
+            put("counts_as_failure", false)
+        }
+        recorder.result(step, call.name, tools.verb(call.name), content, JsonObject(emptyMap()), null, null, 0, "model", call.id)
+        return Part.ToolResult(call.id, content.toString(), isError = true)
+    }
 
     private fun partitionToolWaves(calls: List<Part.ToolCall>): List<ToolWave> {
         val waves = mutableListOf<ToolWave>()
@@ -1389,9 +1447,9 @@ class AgentLoop(
                 return StopRules.closeoutFailed(closeout, maxSteps)
             }
             val text = CompletionPlanBlock.extract(reply.parts.filterIsInstance<Part.Text>().joinToString("") { it.text }.trim()).text
-            history += Message(Role.Assistant, cleanReplyParts(reply.parts, text), Author.Mika)
+            history += Message(Role.Assistant, cleanReplyParts(reply.parts, text), Author.Mika).also { caller.noteReply(it, model, reply.usage) }
             val calls = reply.parts.filterIsInstance<Part.ToolCall>()
-            val call = calls.firstOrNull { TurnPolicy.isFinalTool(tools.traits(it.name)) }
+            val call = calls.takeIf { it.size <= MAX_TOOL_CALLS_PER_TURN }?.firstOrNull { TurnPolicy.isFinalTool(tools.traits(it.name)) }
             val retryWaitMs = caller.lastRetryWaitMs
             val repliedAtMs = now()
             val latencyMs = repliedAtMs - asked - retryWaitMs
@@ -1401,15 +1459,38 @@ class AgentLoop(
                 repliedAtMs = repliedAtMs,
             ))
             // 收尾模型也可能正在生成时收到插话。最多重答两次，其余交给下一任务。
-            if (attempt < 2 && keepFinished(history, inbox)) return@repeat
+            fun skipCalls(code: String, message: String) {
+                if (calls.isNotEmpty()) history += Message(Role.Tool, calls.map { skippedCall(it, step, recorder, code, message) }, Author.Mika)
+            }
+            if (attempt < 2 && keepFinished(history, inbox) {
+                    skipCalls(SKIPPED_FOR_NEW_MESSAGE, "A new user message arrived during closeout; these calls were not executed.")
+                }) return@repeat
             if (call == null) {
-                if (calls.isNotEmpty() || text.isEmpty() || reply.stopReason == StopReason.MaxTokens) return StopRules.closeoutFailed(closeout, maxSteps)
-                return conclude(task, text, step, facts, history = null)!!
+                if (calls.isNotEmpty()) {
+                    val code = if (calls.size > MAX_TOOL_CALLS_PER_TURN) "tool_call_limit" else "closeout_tool_not_allowed"
+                    skipCalls(code, "Only a single final-report tool may execute during closeout; no requested action was performed.")
+                    return StopRules.closeoutFailed(closeout, maxSteps)
+                }
+                if (text.isEmpty() || reply.stopReason == StopReason.MaxTokens) return StopRules.closeoutFailed(closeout, maxSteps)
+                val result = conclude(task, text, step, facts, history = null)!!
+                if (attempt < 2 && inbox?.closeUnlessSteered() == false) { keepFinished(history, inbox); return@repeat }
+                return result
+            }
+            currentCoroutineContext().ensureActive()
+            if (inbox?.claimToolStart() == false) {
+                skipCalls(SKIPPED_FOR_NEW_MESSAGE, "A new user message is waiting; no closeout call was started.")
+                if (attempt < 2) { keepFinished(history, inbox); return@repeat }
+                return StopRules.closeoutFailed(closeout, maxSteps)
             }
             val started = now()
             // 只剩放弃,不改变手机
             val exec = tools.executeRead(call)
             recorder.result(step, call.name, tools.verb(call.name), exec.content, exec.record, null, null, now() - started, "model", call.id)
+            history += Message(Role.Tool, calls.map {
+                if (it === call) Part.ToolResult(it.id, exec.content.toString(), exec.content["ok"] == JsonPrimitive(false))
+                else skippedCall(it, step, recorder, "closeout_tool_not_allowed", "Only the selected final-report call was executed.")
+            }, Author.Mika)
+            if (attempt < 2 && inbox?.closeUnlessSteered() == false) { keepFinished(history, inbox); return@repeat }
             return StopRules.afterFinalTurn(exec.outcome, maxSteps)
         }
         return StopRules.closeoutFailed(closeout, maxSteps)
@@ -1418,6 +1499,10 @@ class AgentLoop(
     companion object {
         const val STEER_MARKER = "<user_interjection>"
         const val DEFAULT_MAX_STEPS = 60
+        /** 单回复资源限额；多调用超限整条不执行，避免执行半条计划。 */
+        const val MAX_TOOL_CALLS_PER_TURN = 64
+        const val MAX_PARALLEL_TOOLS = 4
+        const val MAX_PARALLEL_TOOLS_PER_CAPABILITY = 2
         /** 正常任务没有固定步数截止；显式步数预算只用于评测和指定上限的子任务。 */
         const val UNLIMITED_STEPS = Int.MAX_VALUE
         /** 核查期间界面上这一步的说明。 */

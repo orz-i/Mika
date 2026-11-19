@@ -121,8 +121,10 @@ internal class ModelCaller(
                 (e is ModelError.Server && e.status in 400..499)) r.disable()
             null
         }
-        val first = light?.parts?.filterIsInstance<Part.ToolCall>()?.firstOrNull()
-        if (first != null && !needsMain(first)) return light to picked
+        val calls = light?.parts?.filterIsInstance<Part.ToolCall>().orEmpty()
+        val mainOnly = calls.firstOrNull(::needsMain)
+        if (light != null && calls.isNotEmpty() && mainOnly == null) return light to picked
+        val first = mainOnly ?: calls.firstOrNull()
         r.noteTrouble()
         val text = light?.parts?.filterIsInstance<Part.Text>()?.joinToString("") { it.text }?.trim().orEmpty()
         emit(RunEvent.ModelReply(
@@ -136,9 +138,13 @@ internal class ModelCaller(
         return ask(history, specs, step, onText = onText) to model
     }
 
-    private fun needsMain(call: Part.ToolCall): Boolean =
-        ModelRouter.mainOnly(call.name, tools.verb(call.name)) ||
+    private fun needsMain(call: Part.ToolCall): Boolean {
+        // 按实际声明判断；MCP 等扩展工具的 modelTier 不能从通用 Verb 重建。
+        // 未知调用（含循环自己提供的 do_steps）也交主模型处理。
+        val traits = tools.traits(call.name) ?: return true
+        return ModelRouter.mainOnly(call.name, traits) ||
             (!autonomous && ConfirmDecision.mayBeIrreversible(tools, call.name, parseArgs(call.argsJson)))
+    }
 
     /** 问 [using](默认主模型):发出的是给它看的那份历史([viewFor])压缩后的副本。 */
     suspend fun ask(history: List<Message>, specs: List<ToolSpec>, step: Int, using: ChatModel = model, onText: ((String) -> Unit)? = null): ModelReply =

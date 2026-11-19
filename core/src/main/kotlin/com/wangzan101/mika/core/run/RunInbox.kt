@@ -87,6 +87,9 @@ class RunInbox {
     /** 有没有还没交给模型的插话;只看不取(批量执行在子步之间据此停下)。 */
     fun hasSteers(): Boolean = synchronized(lock) { steers.isNotEmpty() }
 
+    /** 与插话投递线性化的启动边界；获准的调用算已开始，排队中的调用不能越过新消息。 */
+    internal fun claimToolStart(): Boolean = synchronized(lock) { !closed && !stopRequested && steers.isEmpty() }
+
     /** 只在模型调用之前或一批工具完成之后取;清除已不再需要的 redirect 唤醒。 */
     internal fun takeSteers(): List<UserSteer> = synchronized(lock) {
         val out = steers.toList()
