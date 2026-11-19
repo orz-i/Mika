@@ -58,7 +58,7 @@ class AtlasP0Test {
         atMs = atMs,
         step = 1,
         tool = tool,
-        argsJson = """{"ref":"@e1"}""",
+        argsJson = if (tool == ATLAS_ENTRY_TOOL) """{"package":"${afterSig?.packageName}"}""" else """{"ref":"@e1"}""",
         target = target,
         before = Anchors(beforeSig?.packageName, beforeSig?.anchors.orEmpty()),
         after = Anchors(afterSig?.packageName, afterSig?.anchors.orEmpty()),
@@ -160,7 +160,7 @@ class AtlasP0Test {
                 screen(searchSig, "搜索页"),
             ),
             edges = listOf(
-                AtlasEdge(ENTRY_SIG_ID, homeSig.sigId, ATLAS_ENTRY_TOOL, weakOk = 3),
+                AtlasEdge(ENTRY_SIG_ID, homeSig.sigId, ATLAS_ENTRY_TOOL, weakOk = 3, launchObserved = true),
                 AtlasEdge(homeSig.sigId, searchSig.sigId, "phone_tap", searchSel, weakOk = 2),
             ),
         )

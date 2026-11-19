@@ -25,7 +25,7 @@ const val MAX_SHORTCUT_CONSECUTIVE_MISSES = 3
 
 /**
  * 虚拟入口节点 ID：表示「还没进入这个 App」的状态（桌面、另一个 App、或刚启动）。
- * 学习时把跨包进入动作记成 `__entry__ --launch--> 首页`，让 L3 能从任意位置导航进目标 App。
+ * 只把实际观察到的启动动作记成 `__entry__ --launch--> 落地页`，外链/通知不能代替启动证据。
  */
 const val ENTRY_SIG_ID = "__entry__"
 
@@ -127,6 +127,8 @@ data class AtlasEdge(
     val lastOkMs: Long = 0L,
     val lastAttemptMs: Long = 0L,
     val appVersion: String? = null,
+    /** 本机是否实际观察过启动抵达该页；旧入口及导入入口默认未验证。 */
+    val launchObserved: Boolean = false,
 ) {
     /** 是否是从 App 外部进入首页的入口边。 */
     fun isEntry(): Boolean = fromSigId == ENTRY_SIG_ID
@@ -429,6 +431,7 @@ internal object AtlasEviction {
         threshold: Double = ScreenSig.DEFAULT_MATCH_THRESHOLD,
     ): Int {
         if (sig.isBlank) return -1
+        if (sig.packageName != null && sig.packageName != pkg) return -1
         val exactIdx = screens.indexOfFirst {
             it.sigId == sig.sigId && ScreenSig.activitiesCompatible(pkg, it.activity, sig.activity)
         }

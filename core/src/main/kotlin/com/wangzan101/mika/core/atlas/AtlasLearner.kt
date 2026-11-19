@@ -156,12 +156,12 @@ object AtlasLearner {
             if (afterSig != null && afterPkg != null && (beforeSig == null || afterPkg != beforePkg)) {
                 afterOnlyByPkg.getOrPut(afterPkg) { mutableListOf() } += (event.atMs to afterSig)
             }
-            // 跨包进入（桌面/通知/另一个 App → 本 App）：记一条入口观测。
-            // 启动 App 时 Mika 在自己的屏上读不到桌面，没有前屏也算从外部进入。
-            val launchedFromOutside = event.tool == "phone_launch_app" && beforePkg == null
-            if (afterSig != null && afterPkg != null &&
-                (launchedFromOutside || (beforePkg != null && afterPkg != beforePkg))
-            ) {
+            // 外链/通知可能直达深层页，不能改写成普通启动也能抵达。启动自身可恢复任意旧页面。
+            val launchedPackage = if (event.tool == ATLAS_ENTRY_TOOL) runCatching {
+                val args = Json.parseToJsonElement(event.argsJson) as? JsonObject
+                (args?.get("package") as? JsonPrimitive)?.takeIf { it.isString }?.content
+            }.getOrNull() else null
+            if (afterSig != null && afterPkg != null && launchedPackage == afterPkg) {
                 entryByPkg.getOrPut(afterPkg) { mutableListOf() } += EntryObservation(event.atMs, afterSig)
             }
         }
@@ -330,7 +330,7 @@ object AtlasLearner {
             upsertScreen(sig, atMs, countHit = true)
         }
 
-        // 入口边：从 App 外部进入的首页。只记录启动这一种方式，执行时补包名，避免回放任意跨包动作。
+        // 只有工具与目标包均核实的启动观测，才能为自动启动入口提供证据。
         for (entry in entries) {
             val idx = AtlasEviction.findMatchingScreenIndex(screens, pkg, entry.sig, matchThreshold)
             val home = upsertScreen(entry.sig, entry.atMs, matchedIdx = idx, countHit = false)
@@ -453,13 +453,16 @@ object AtlasLearner {
                 AtlasEviction.sameEdgeTarget(tool, it.target, target)
         }
         if (idx >= 0) {
-            val old = edges[idx]
+            val prior = edges[idx]
+            // 旧入口可能把外链成功算成启动成功，首次真实启动不能继承这些执行证据。
+            val old = if (fromSigId == ENTRY_SIG_ID && !prior.launchObserved) prior.copy(ok = 0, weakOk = 0, miss = 0) else prior
             edges[idx] = old.copy(
                 ok = old.ok + if (strong) 1 else 0,
                 weakOk = old.weakOk + if (strong) 0 else 1,
                 lastOkMs = maxOf(old.lastOkMs, atMs),
                 lastAttemptMs = maxOf(old.lastAttemptMs, atMs),
                 appVersion = version ?: old.appVersion,
+                launchObserved = old.launchObserved || fromSigId == ENTRY_SIG_ID,
             )
         } else {
             edges += AtlasEdge(
@@ -473,6 +476,7 @@ object AtlasLearner {
                 lastOkMs = atMs,
                 lastAttemptMs = atMs,
                 appVersion = version,
+                launchObserved = fromSigId == ENTRY_SIG_ID,
             )
         }
     }

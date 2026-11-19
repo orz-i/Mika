@@ -125,6 +125,62 @@ class AtlasGovernanceTest {
         assertEquals(2, store.get(pkg)!!.edges.single().ok)
     }
 
+    @Test fun crossPackageTapAndDeepLinkDoNotBecomeLaunchEdges() {
+        for (tool in listOf("phone_tap", "phone_open_link")) {
+            val store = InMemoryAtlasStore()
+            val external = sig("External", "com.example.other")
+            AtlasLearner.learn(listOf(action(tool, external, result)), store, learnDone = true)
+            assertTrue("$tool 不是启动证据", store.get(pkg)!!.entryEdges().isEmpty())
+            assertTrue(store.get(pkg)!!.screens.any { it.sigId == result.sigId })
+        }
+    }
+
+    @Test fun launchForDifferentPackageDoesNotBecomeEntryEvidence() {
+        val store = InMemoryAtlasStore()
+        AtlasLearner.learn(listOf(action(ATLAS_ENTRY_TOOL, null, home, args = """{"package":"com.example.other"}""")), store, learnDone = true)
+        assertTrue(store.get(pkg)!!.entryEdges().isEmpty())
+    }
+
+    @Test fun exactTargetCannotFallBackToReachableAnchorMatch() {
+        val decoy = sig("Decoy")
+        val atlas = AppAtlas(pkg, screens = listOf(screen(home), screen(result, "目标页面"), screen(decoy, "其他页面", listOf("目标页面"))),
+            edges = listOf(AtlasEdge(home.sigId, decoy.sigId, "phone_back", ok = 10)))
+        assertTrue(AtlasNavigator.planPath(atlas, home, "目标页面") is AtlasNavigator.Plan.Unreachable)
+    }
+
+    @Test fun equallyRankedTargetsAreAmbiguousInsteadOfPickingTheClosest() {
+        val second = sig("Second")
+        val atlas = AppAtlas(pkg, screens = listOf(screen(home), screen(result, "同名页面"), screen(second, "同名页面")),
+            edges = listOf(AtlasEdge(home.sigId, result.sigId, "phone_back", ok = 10)))
+        val plan = AtlasNavigator.planPath(atlas, home, "同名页面")
+        assertFalse("同名页面需要明确选择", plan is AtlasNavigator.Plan.Path)
+        assertTrue("sigId 仍能精确选择", AtlasNavigator.planPath(atlas, home, result.sigId) is AtlasNavigator.Plan.Path)
+    }
+
+    @Test fun hopLimitKeepsMoreExpensiveShorterPrefixes() {
+        val x = sig("X")
+        val y = sig("Y")
+        val atlas = AppAtlas(pkg, screens = listOf(home, x, y, result).map { screen(it) }, edges = listOf(
+            AtlasEdge(home.sigId, x.sigId, "phone_back", ok = 1, miss = 1),
+            AtlasEdge(home.sigId, y.sigId, "phone_back", ok = 100),
+            AtlasEdge(y.sigId, x.sigId, "phone_back", ok = 100),
+            AtlasEdge(x.sigId, result.sigId, "phone_back", ok = 100),
+        ))
+        val plan = AtlasNavigator.planPath(atlas, home, result.sigId, maxHops = 2)
+        assertTrue("两跳内有合法路线: $plan", plan is AtlasNavigator.Plan.Path)
+        assertEquals(listOf(home.sigId, x.sigId), (plan as AtlasNavigator.Plan.Path).edges.map { it.fromSigId })
+    }
+
+    @Test fun legacyEntryNeedsFreshLocalLaunchEvidence() {
+        val legacy = AppAtlas(pkg, screens = listOf(screen(home)), edges = listOf(AtlasEdge(ENTRY_SIG_ID, home.sigId, ATLAS_ENTRY_TOOL, ok = 20)))
+        assertTrue(AtlasNavigator.planFromEntry(legacy, home.sigId) is AtlasNavigator.Plan.NoMatchingStart)
+        val store = InMemoryAtlasStore().apply { put(legacy) }
+        AtlasLearner.learn(listOf(action(ATLAS_ENTRY_TOOL, null, home, args = """{"package":"$pkg"}""")), store, learnDone = true)
+        assertTrue(store.get(pkg)!!.entryEdges().single().launchObserved)
+        assertEquals("旧入口次数不再作为启动证据", 1, store.get(pkg)!!.entryEdges().single().ok)
+        assertTrue(AtlasNavigator.planFromEntry(store.get(pkg)!!, home.sigId) is AtlasNavigator.Plan.Path)
+    }
+
     private inner class LaunchBridge(private val landing: ScreenSig, private val next: ScreenSig, private val omitSignature: Boolean = false) : AtlasReplayBridge {
         private val outside = sig("Outside", "com.example.other")
         var current = outside
@@ -145,6 +201,48 @@ class AtlasGovernanceTest {
         }
     }
 
+    private fun launchAtlas(alternate: ScreenSig, via: ScreenSig? = null): AppAtlas {
+        val tap = Selector("button", "继续", "go", emptyList(), 0, true)
+        return AppAtlas(pkg, screens = (listOf(home, form, result, alternate) + listOfNotNull(via)).distinct().map { screen(it) }, edges = listOf(
+            AtlasEdge(ENTRY_SIG_ID, home.sigId, ATLAS_ENTRY_TOOL, ok = 5, launchObserved = true),
+            AtlasEdge(home.sigId, result.sigId, "phone_tap", tap, ok = 5),
+            AtlasEdge(alternate.sigId, (via ?: result).sigId, "phone_tap", tap, ok = 5),
+        ) + listOfNotNull(via?.let { AtlasEdge(it.sigId, result.sigId, "phone_tap", tap, ok = 5) }))
+    }
+
+    @Test fun launchReplansFromActualResumedPageWithoutPenalizingEntry() = runTest {
+        val alternate = sig("Resumed")
+        val atlas = launchAtlas(alternate)
+        val store = InMemoryAtlasStore().apply { put(atlas) }
+        val bridge = LaunchBridge(alternate, result)
+        val outcome = AtlasNavigator.forBridge(bridge).navigate(atlas, result.sigId, maxHops = 2, store = store)
+        assertTrue("应从实际落点重新寻路: $outcome", outcome is AtlasNavigator.Outcome.Arrived)
+        assertEquals(2, (outcome as AtlasNavigator.Outcome.Arrived).hops)
+        assertEquals(listOf(ATLAS_ENTRY_TOOL, "phone_tap"), bridge.calls.map { it.name })
+        assertEquals(bridge.calls.size, bridge.calls.map { it.id }.distinct().size)
+        assertEquals(0, store.get(pkg)!!.entryEdges().single().miss)
+    }
+
+    @Test fun launchReplanCannotExceedOriginalHopBudgetOrRelaunch() = runTest {
+        val alternate = sig("Resumed")
+        val atlas = launchAtlas(alternate, sig("Middle"))
+        val bridge = LaunchBridge(alternate, result)
+        val outcome = AtlasNavigator.forBridge(bridge).navigate(atlas, result.sigId, maxHops = 2)
+        assertTrue(outcome is AtlasNavigator.Outcome.Diverged)
+        assertEquals(1, (outcome as AtlasNavigator.Outcome.Diverged).hopsCompleted)
+        assertEquals(listOf(ATLAS_ENTRY_TOOL), bridge.calls.map { it.name })
+    }
+
+    @Test fun launchWithUnmappedOrUnreadableLandingStopsBeforeAnyTap() = runTest {
+        for (omitSignature in listOf(false, true)) {
+            val unknown = sig("Unknown")
+            val bridge = LaunchBridge(unknown, result, omitSignature)
+            val outcome = AtlasNavigator.forBridge(bridge).navigate(launchAtlas(sig("Resumed")), result.sigId)
+            assertTrue(outcome is AtlasNavigator.Outcome.Diverged)
+            assertEquals(listOf(ATLAS_ENTRY_TOOL), bridge.calls.map { it.name })
+        }
+    }
+
     @Test fun unsafeLegacyShortcutStopsBeforeReadingOrExecuting() = runTest {
         val bridge = LaunchBridge(home, form)
         val step = RouteStep("phone_type_text", """{"text":"$query"}""", target(), Anchors(pkg, emptyList()), Anchors(pkg, emptyList()))
@@ -153,6 +251,12 @@ class AtlasGovernanceTest {
         assertTrue(outcome is AtlasShortcutRunner.Outcome.Diverged)
         assertEquals("unsafe_shortcut", (outcome as AtlasShortcutRunner.Outcome.Diverged).error)
         assertTrue(bridge.calls.isEmpty())
+    }
+
+    @Test fun exactFingerprintCannotMatchTheSameIdFromAnotherPackage() {
+        val atlas = AppAtlas(pkg, screens = listOf(screen(home)))
+        val foreign = home.copy(packageName = "com.example.other")
+        assertTrue(AtlasNavigator.planPath(atlas, foreign, home.sigId) is AtlasNavigator.Plan.NoMatchingStart)
     }
 
     @Test fun orphanInputControlAlsoCleansKnownEchoesInNamesAndOtherSequences() {

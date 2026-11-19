@@ -39,6 +39,7 @@ class AtlasNavigator private constructor(
 
         data object NoMatchingStart : Plan
         data object NoMatchingTarget : Plan
+        data class AmbiguousTarget(val targets: List<AtlasScreen>) : Plan
         data class Unreachable(val fromScreen: AtlasScreen, val targets: List<AtlasScreen>) : Plan
         data class UnreachableFromEntry(val targets: List<AtlasScreen>) : Plan
     }
@@ -97,9 +98,10 @@ class AtlasNavigator private constructor(
             is Plan.AlreadyAtTarget -> Outcome.Arrived(plan.screen, hops = 0, alreadyThere = true)
             Plan.NoMatchingStart -> Outcome.NoPath("current screen is not mapped in atlas for ${atlas.packageName}", summary(initial))
             Plan.NoMatchingTarget -> Outcome.NoPath("target '$targetQuery' not found in atlas for ${atlas.packageName}", summary(initial))
+            is Plan.AmbiguousTarget -> Outcome.NoPath("target '$targetQuery' is ambiguous; use a screen sigId: " + plan.targets.joinToString { it.sigId }, summary(initial))
             is Plan.Unreachable -> Outcome.NoPath("no reliable path from '${plan.fromScreen.displayTitle()}' to '$targetQuery'", summary(initial))
             is Plan.UnreachableFromEntry -> Outcome.NoPath("no reliable path from the app entry to '$targetQuery'", summary(initial))
-            is Plan.Path -> executePlan(atlas, plan, initial, store, callIdPrefix, nowMs)
+            is Plan.Path -> executePlan(atlas, plan, initial, store, callIdPrefix, nowMs, maxHops)
         }
     }
 
@@ -110,6 +112,7 @@ class AtlasNavigator private constructor(
         store: AtlasStore?,
         callIdPrefix: String,
         nowMs: Long,
+        maxHops: Int,
     ): Outcome {
         val total = plan.edges.size
         val pkg = atlas.packageName
@@ -135,8 +138,13 @@ class AtlasNavigator private constructor(
 
             // 中途若已提前落在目标页面，提前完成寻路
             val curSig = snap.resolvedScreenSig()
-            if (curSig != null && !curSig.isBlank && matchesScreen(plan.targetScreen, pkg, curSig, matchThreshold)) {
+            if (curSig != null && !curSig.isBlank && matchesScreen(atlas, plan.targetScreen, curSig, matchThreshold)) {
                 return Outcome.Arrived(plan.targetScreen, hops = i, alreadyThere = false)
+            }
+            if (!isEntryHop && (curSig == null || atlas.findScreen(edge.fromSigId)?.let {
+                    matchesScreen(atlas, it, curSig, matchThreshold)
+                } != true)) {
+                return diverged("current screen no longer matches the planned start", seen, error = "screen_diverged")
             }
 
             val call = when {
@@ -188,21 +196,37 @@ class AtlasNavigator private constructor(
 
             // 逐跳核验跳转目标页是否对上；若直接跳到了最终目标页同样视作成功
             val freshSig = fresh.resolvedScreenSig()
-            if (toScreen != null && toScreen.fingerprint != 0L && freshSig != null && !freshSig.isBlank) {
-                val hitExpected = matchesScreen(toScreen, pkg, freshSig, matchThreshold)
-                val hitFinal = matchesScreen(plan.targetScreen, pkg, freshSig, matchThreshold)
-                if (hitFinal && i < total - 1) {
-                    return Outcome.Arrived(plan.targetScreen, hops = i + 1, alreadyThere = false)
+            if (freshSig == null || freshSig.isBlank || toScreen == null || toScreen.toScreenSig(pkg).isBlank) {
+                return diverged("could not identify screen after hop", nowSummary, executed = true, error = "unverified_hop")
+            }
+            if (isEntryHop) {
+                // Android 可恢复任意旧任务。启动已成功，但不能强行沿着预测的首页继续点击。
+                // 仅从真实落地页重算内部路线，不再次启动，且消耗同一个跳数预算。
+                return when (val next = planPath(atlas, freshSig, plan.targetScreen.sigId, matchThreshold, maxHops - 1)) {
+                    is Plan.AlreadyAtTarget -> Outcome.Arrived(next.screen, hops = 1)
+                    is Plan.Path -> when (val out = executePlan(atlas, next, fresh, store, "$callIdPrefix.after-launch", nowMs, maxHops - 1)) {
+                        is Outcome.Arrived -> out.copy(hops = out.hops + 1)
+                        is Outcome.Diverged -> out.copy(hopsCompleted = out.hopsCompleted + 1, totalHops = out.totalHops + 1, executed = true)
+                        is Outcome.StoppedForConfirmation -> out.copy(hopsCompleted = out.hopsCompleted + 1, totalHops = out.totalHops + 1)
+                        is Outcome.NoPath -> out
+                    }
+                    else -> Outcome.Diverged(1, total, plan.targetScreen, "no reliable path from the actual launch landing within the remaining hop budget", nowSummary,
+                        executed = true, error = "no_path_after_launch")
                 }
-                if (!hitExpected) {
-                    return diverged(
-                        "expected '${toScreen.displayTitle()}' after hop ${i + 1}, but screen diverged",
-                        nowSummary,
-                        executed = true,
-                        error = "screen_diverged",
-                        markMiss = true,
-                    )
-                }
+            }
+            val hitExpected = matchesScreen(atlas, toScreen, freshSig, matchThreshold)
+            val hitFinal = matchesScreen(atlas, plan.targetScreen, freshSig, matchThreshold)
+            if (hitFinal && i < total - 1) {
+                return Outcome.Arrived(plan.targetScreen, hops = i + 1, alreadyThere = false)
+            }
+            if (!hitExpected) {
+                return diverged(
+                    "expected '${toScreen.displayTitle()}' after hop ${i + 1}, but screen diverged",
+                    nowSummary,
+                    executed = true,
+                    error = "screen_diverged",
+                    markMiss = true,
+                )
             }
         }
         return Outcome.Arrived(plan.targetScreen, hops = total, alreadyThere = false)
@@ -241,6 +265,7 @@ class AtlasNavigator private constructor(
 
             val targets = resolveTargets(atlas.screens, targetQuery)
             if (targets.isEmpty()) return Plan.NoMatchingTarget
+            if (targets.size > 1) return Plan.AmbiguousTarget(targets)
             val targetIds = targets.mapTo(HashSet()) { it.sigId }
             if (startScreen.sigId in targetIds) return Plan.AlreadyAtTarget(startScreen)
 
@@ -263,6 +288,7 @@ class AtlasNavigator private constructor(
         ): Plan {
             val targets = resolveTargets(atlas.screens, targetQuery)
             if (targets.isEmpty()) return Plan.NoMatchingTarget
+            if (targets.size > 1) return Plan.AmbiguousTarget(targets)
             val targetIds = targets.mapTo(HashSet()) { it.sigId }
             val screenById = atlas.screens.associateBy { it.sigId }
             val hasEntry = atlas.edges.any { it.isEntry() && it.toSigId in screenById && isNavigableEdge(it) }
@@ -301,40 +327,44 @@ class AtlasNavigator private constructor(
                 isNavigableEdge(it) && it.toSigId in screenById && (it.fromSigId == ENTRY_SIG_ID || it.fromSigId in screenById)
             }
 
-            data class State(val sigId: String, val cost: Double, val hops: Int)
+            // 同一页的低成本长前缀不能覆盖较贵的短前缀：后者可能是唯一满足跳数预算的路。
+            data class Position(val sigId: String, val hops: Int)
+            data class State(val position: Position, val cost: Double)
 
-            val dist = HashMap<String, Double>()
-            val parentEdge = HashMap<String, AtlasEdge>()
-            val queue = PriorityQueue<State>(compareBy<State> { it.cost }.thenBy { it.hops })
+            val dist = HashMap<Position, Double>()
+            val parentEdge = HashMap<Position, AtlasEdge>()
+            val queue = PriorityQueue<State>(compareBy<State> { it.cost }.thenBy { it.position.hops })
+            val outgoing = navigableEdges.groupBy { it.fromSigId }
 
-            dist[startId] = 0.0
-            queue.add(State(startId, 0.0, 0))
+            val start = Position(startId, 0)
+            dist[start] = 0.0
+            queue.add(State(start, 0.0))
 
             while (queue.isNotEmpty()) {
                 val cur = queue.poll()
-                if (cur.cost > (dist[cur.sigId] ?: Double.POSITIVE_INFINITY)) continue
-                if (cur.sigId in targetIds) {
+                if (cur.cost > (dist[cur.position] ?: Double.POSITIVE_INFINITY)) continue
+                if (cur.position.sigId in targetIds) {
                     val reversed = mutableListOf<AtlasEdge>()
-                    var cursor = cur.sigId
-                    while (cursor != startId) {
-                        val e = parentEdge[cursor] ?: break
+                    var cursor = cur.position
+                    while (cursor != start) {
+                        val e = parentEdge[cursor] ?: return null
                         reversed += e
-                        cursor = e.fromSigId
+                        cursor = Position(e.fromSigId, cursor.hops - 1)
                     }
-                    return SearchResult(cur.sigId, reversed.asReversed(), cur.cost)
+                    return SearchResult(cur.position.sigId, reversed.asReversed(), cur.cost)
                 }
-                if (cur.hops >= maxHops) continue
+                if (cur.position.hops >= maxHops) continue
 
-                for (edge in navigableEdges) {
-                    if (edge.fromSigId != cur.sigId) continue
+                for (edge in outgoing[cur.position.sigId].orEmpty()) {
                     val nextScreen = screenById[edge.toSigId] ?: continue
                     val weight = edgeWeight(edge, nextScreen)
                     val nextCost = cur.cost + weight
-                    val prevBest = dist[edge.toSigId] ?: Double.POSITIVE_INFINITY
+                    val next = Position(edge.toSigId, cur.position.hops + 1)
+                    val prevBest = dist[next] ?: Double.POSITIVE_INFINITY
                     if (nextCost + 1e-9 < prevBest) {
-                        dist[edge.toSigId] = nextCost
-                        parentEdge[edge.toSigId] = edge
-                        queue.add(State(edge.toSigId, nextCost, cur.hops + 1))
+                        dist[next] = nextCost
+                        parentEdge[next] = edge
+                        queue.add(State(next, nextCost))
                     }
                 }
             }
@@ -358,16 +388,17 @@ class AtlasNavigator private constructor(
                 return 0
             }
 
-            return screens
+            val ranked = screens
                 .mapNotNull { s -> rank(s).takeIf { it > 0 }?.let { s to it } }
                 .sortedWith(compareByDescending<Pair<AtlasScreen, Int>> { it.second }.thenByDescending { it.first.hits })
-                .map { it.first }
+            val best = ranked.firstOrNull()?.second ?: return emptyList()
+            return ranked.takeWhile { it.second == best }.map { it.first }
         }
 
         internal fun isNavigableEdge(edge: AtlasEdge): Boolean {
             if (edge.strength() <= 0.0 || edge.miss > edge.strength()) return false
             if (edge.fromSigId == edge.toSigId) return false
-            if (edge.isEntry()) return edge.tool == ATLAS_ENTRY_TOOL
+            if (edge.isEntry()) return edge.tool == ATLAS_ENTRY_TOOL && edge.launchObserved
             return when (edge.tool) {
                 "phone_tap" -> edge.target != null && !SLOT_REF.containsMatchIn(edge.target.name)
                 "phone_back" -> true
@@ -384,7 +415,9 @@ class AtlasNavigator private constructor(
             return 1.0 + failureRate * 4.0 + freqPenalty + upgradePenalty
         }
 
-        private fun matchesScreen(screen: AtlasScreen, pkg: String, sig: ScreenSig, threshold: Double): Boolean =
-            AtlasEviction.findMatchingScreenIndex(listOf(screen), pkg, sig, threshold) >= 0
+        private fun matchesScreen(atlas: AppAtlas, screen: AtlasScreen, sig: ScreenSig, threshold: Double): Boolean {
+            val idx = AtlasEviction.findMatchingScreenIndex(atlas.screens, atlas.packageName, sig, threshold)
+            return idx >= 0 && atlas.screens[idx].sigId == screen.sigId
+        }
     }
 }
