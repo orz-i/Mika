@@ -220,12 +220,13 @@ internal class UserExchange(
         capability: String? = null,
     ): ToolExecution {
         val g = confirmations
-        if (g == null && tool == null) {
-            return ToolExecution(buildJsonObject {
-                put("ok", false); put("error", "unknown_tool"); put("tool", RequestConfirmation.name)
-                put("message", Feedback["confirmation_unavailable"]); put("recoverable", true)
-            })
-        }
+        // 没有确认关卡又没人能答:按旧口径说"这里问不了"。判据放在真正会等用户的地方(见下面的 promptConfirmation),
+        // 因为子任务的升级通道、无人值守、远程来源这几支都能自己给结论,不该被这里挡掉。
+        fun unanswerable() = ToolExecution(buildJsonObject {
+            put("ok", false); put("error", "unknown_tool"); put("tool", RequestConfirmation.name)
+            put("message", Feedback["confirmation_unavailable"]); put("recoverable", true)
+        })
+        if (g == null && tool == null) return unanswerable()
         val r = o.request
         fun event(decision: String?) = RunEvent.Confirmation(now(), r.action.name, detail(r.target), detail(r.content), r.amount?.let(::detail), decision)
         fun error(code: String, message: String, recoverable: Boolean) = ToolExecution(buildJsonObject {
@@ -271,7 +272,8 @@ internal class UserExchange(
                 emit(event("declined_remote"))
                 return error("confirmation_declined", CONFIRMATION_DECLINED, recoverable = false)
             }
-            else -> promptConfirmation(r, running)
+            // 界面确认要靠确认关卡托着:没有关卡就没有人会回答,promptConfirmation 会一直等下去(任务挂死)
+            else -> if (g == null) return unanswerable() else promptConfirmation(r, running)
         }
         when {
             !choice.approved -> g?.decide(ConfirmChoice.Deny, step)
