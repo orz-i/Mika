@@ -140,23 +140,37 @@ object RootfsExtractor {
         // 不传 FOLLOW_LINKS:符号链接(包括 root 本身是链接时)按普通文件交给 visitFile
         Files.walkFileTree(root, object : SimpleFileVisitor<Path>() {
             override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
-                val perms = Files.getPosixFilePermissions(dir, LinkOption.NOFOLLOW_LINKS).toMutableSet()
-                perms += listOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE)
-                Files.setPosixFilePermissions(dir, perms)
+                // 只读目录要先放开写权限才删得掉。没有 POSIX 视图的文件系统(Windows 开发机)没有这个概念,
+                // 查权限会直接抛 UnsupportedOperationException,所以先问文件系统支不支持。
+                if ("posix" in dir.fileSystem.supportedFileAttributeViews()) {
+                    val perms = Files.getPosixFilePermissions(dir, LinkOption.NOFOLLOW_LINKS).toMutableSet()
+                    perms += listOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE)
+                    Files.setPosixFilePermissions(dir, perms)
+                }
                 return FileVisitResult.CONTINUE
             }
 
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                Files.delete(file)
+                deleteOne(file)
                 return FileVisitResult.CONTINUE
             }
 
             override fun postVisitDirectory(dir: Path, exc: IOException?): FileVisitResult {
                 if (exc != null) throw exc
-                Files.delete(dir)
+                deleteOne(dir)
                 return FileVisitResult.CONTINUE
             }
         })
+    }
+
+    /** 删一项;删不掉时先放开只读属性再试一次(Windows 上只读文件/目录的删除会报 AccessDenied)。 */
+    private fun deleteOne(target: Path) {
+        try {
+            Files.delete(target)
+        } catch (e: IOException) {
+            if (!target.toFile().setWritable(true)) throw e
+            Files.delete(target)
+        }
     }
 
     private fun linkTarget(at: Path, linkName: String): Path =
@@ -207,6 +221,9 @@ object RootfsExtractor {
 
     /** 只取 0777;属主始终可读写,目录始终可进入,否则之后写不进、删不掉。 */
     private fun setMode(target: Path, tarMode: Int, isDir: Boolean) {
+        // 权限位是 POSIX 概念,Windows 的文件系统没有:那里解出来的文件不必也无法带 0755。
+        // 安卓上 rootfs 要能被 PRoot 执行,这段照旧生效。
+        if ("posix" !in target.fileSystem.supportedFileAttributeViews()) return
         var m = (tarMode and 0x1ff) or 0x180
         if (isDir) m = m or 0x40
         Files.setPosixFilePermissions(target, toPerms(m))

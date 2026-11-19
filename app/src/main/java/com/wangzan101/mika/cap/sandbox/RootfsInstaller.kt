@@ -16,6 +16,7 @@ import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.StandardCopyOption
@@ -154,10 +155,26 @@ class RootfsInstaller(
             throw IOException(tr(R.string.install_unpack_failed, e.message), e)
         }
         if (Files.exists(dirs.rootfs.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-            Files.move(dirs.rootfs.toPath(), old.toPath(), StandardCopyOption.ATOMIC_MOVE)
+            swap(dirs.rootfs, old)
         }
-        Files.move(fresh.toPath(), dirs.rootfs.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        swap(fresh, dirs.rootfs)
         deleteReachable(old)
+    }
+
+    /**
+     * 整目录换名,优先原子操作。
+     *
+     * `ATOMIC_MOVE` 要求同一文件系统且平台支持;Windows 上对目录常常直接拒绝,退到普通移动即可——
+     * 参数里已经确保目标不存在,不存在"覆盖到一半"的问题。
+     */
+    private fun swap(from: File, to: File) {
+        try {
+            Files.move(from.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        } catch (e: AtomicMoveNotSupportedException) {
+            Files.move(from.toPath(), to.toPath())
+        } catch (e: UnsupportedOperationException) {
+            Files.move(from.toPath(), to.toPath())
+        }
     }
 
     private suspend fun check() {

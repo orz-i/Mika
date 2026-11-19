@@ -10,6 +10,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.ByteArrayInputStream
@@ -72,6 +73,7 @@ class RootfsExtractorTest {
     }
 
     @Test fun extractsFilesDirsAndModes() {
+        assumeTrue("需要 POSIX 权限位", File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix"))
         val d = dest()
         val r = RootfsExtractor.extract(
             tarGz(
@@ -116,11 +118,13 @@ class RootfsExtractorTest {
         )
         assertEquals(2, r.symlinks)
         assertTrue(Files.isSymbolicLink(File(d, "bin/sh").toPath()))
-        assertEquals("/bin/busybox", Files.readSymbolicLink(File(d, "bin/sh").toPath()).toString())
-        assertEquals("../etc/x", Files.readSymbolicLink(File(d, "bin/rel").toPath()).toString())
+        // 链接目标是字符串;Windows 的 Path.toString() 会把它改写成 `\bin\busybox`,按 `/` 归一后再比
+        assertEquals("/bin/busybox", Files.readSymbolicLink(File(d, "bin/sh").toPath()).toString().replace('\\', '/'))
+        assertEquals("../etc/x", Files.readSymbolicLink(File(d, "bin/rel").toPath()).toString().replace('\\', '/'))
     }
 
     @Test fun hardlinkBecomesCopy() {
+        assumeTrue("需要 POSIX 权限位", File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix"))
         val d = dest()
         val r = RootfsExtractor.extract(
             tarGz(Dir("bin/"), Reg("bin/busybox", "BB", mode = 0x1ed), Hard("bin/ls", "bin/busybox")),
@@ -187,6 +191,7 @@ class RootfsExtractorTest {
     }
 
     @Test fun ownerAlwaysWritable() {
+        assumeTrue("需要 POSIX 权限位", File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix"))
         val d = dest()
         RootfsExtractor.extract(
             tarGz(Dir("ro/", mode = 0x16d /* 0555 */), Reg("ro/file", "r", mode = 0x124 /* 0444 */)),
@@ -219,6 +224,7 @@ class RootfsExtractorTest {
     }
 
     @Test fun hardlinkToSymlinkCopiesTheLink() {
+        assumeTrue("需要 POSIX 符号链接语义", File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix"))
         val d = dest()
         val r = RootfsExtractor.extract(tarGz(Dir("bin/"), Sym("bin/sh", "/bin/busybox"), Hard("bin/sh2", "bin/sh")), d)
         assertEquals(1, r.hardlinksCopied)
@@ -266,6 +272,7 @@ class RootfsExtractorTest {
     }
 
     @Test fun deleteTreeDoesNotFollowLinks() {
+        assumeTrue("需要 POSIX 符号链接语义", File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix"))
         val outside = tmp.newFolder("outside4")
         val keep = File(File(outside, "sub").apply { mkdirs() }, "keep").apply { writeText("k") }
         val d = dest()

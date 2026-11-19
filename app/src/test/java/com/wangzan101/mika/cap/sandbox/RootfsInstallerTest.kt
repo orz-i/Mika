@@ -11,6 +11,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.tukaani.xz.LZMA2Options
 import org.tukaani.xz.XZOutputStream
@@ -156,6 +157,12 @@ class RootfsInstallerTest {
 
     @Test
     fun resetDeletesReadOnlyTree() = runBlocking {
+        // 这条要真造一个 0555 的只读目录来验"先放开权限再删"。Windows 没有 POSIX 权限位,
+        // 造出来的"只读"删起来毫无阻力,测了也不能说明问题。
+        assumeTrue(
+            "需要 POSIX 权限位来造只读目录",
+            "posix" in File(tmp, "probe").toPath().fileSystem.supportedFileAttributeViews(),
+        )
         val outside = File(tmp, "outside").apply { mkdirs() }
         val keep = File(outside, "keep.txt").apply { writeText("keep") }
         val ro = File(dirs.rootfs, "usr/lib/ro").apply { mkdirs() }
