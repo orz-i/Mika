@@ -44,7 +44,9 @@ class ToolRiskTest {
 
     @Test fun readCallsRefuseWhatTheOldListsRefused() = runTest {
         val refused = oldWriting + oldSandbox + WEB_SCRIPT_TOOL +
-            setOf("phone_find", "phone_collect", "phone_dialog", "phone_run", "phone_run_shortcut", "phone_navigate_to", "phone_system_command", "phone_calendar_bulk_insert", "schedule_task", "spawn_agent", "settings_set", "root_run_command", "web_search")
+            setOf("phone_find", "phone_collect", "phone_dialog", "phone_run", "phone_run_shortcut", "phone_navigate_to", "phone_system_command", "phone_calendar_bulk_insert", "schedule_task", "spawn_agent", "settings_set", "root_run_command", "web_search") +
+            // 工具目录自己的两个入口:只读,但不动屏幕(offScreen),和 read_file 这些沙箱只读工具一样另有守卫、不走「只读调用」这条路
+            setOf("tool_search", "tool_activate")
         assertEquals(refused, allTools().filter { !it.readOnly }.map { it.name }.toSet())
         // root 命令只在给了端口时登记:给一个,所有工具都在
         val d = toolDispatcher(FakeScreen(), root = object : com.wangzan101.mika.core.cap.root.RootPort {
