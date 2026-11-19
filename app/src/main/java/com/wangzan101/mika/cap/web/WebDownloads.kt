@@ -344,11 +344,17 @@ class WebDownloads(
         true
     }
 
+    /**
+     * 完成:先放掉写入句柄,再挂 done。
+     *
+     * [list] 只锁 [entries],不锁 entry:状态一旦可见,外面(模型、界面)就会去读那个文件。先挂状态后关句柄的话,
+     * 会有一小段「说已完成、句柄还开着」的窗口——Windows 上这时别的读写会被挡住。
+     */
     private fun done(entry: Entry) = synchronized(entry) {
         if (entry.status != RUNNING) return
-        entry.status = DONE
         entry.gated?.close()
         entry.gated = null
+        entry.status = DONE
     }
 
     private fun failed(name: String, mime: String?, error: String): String = failedEntry(name, mime, error).file
@@ -356,14 +362,19 @@ class WebDownloads(
     private fun failedEntry(name: String, mime: String?, error: String): Entry =
         Entry("$SANDBOX_DIR/$name", mime).also { it.status = FAILED; it.error = error; synchronized(entries) { entries += it } }
 
-    /** 失败:删掉这个下载自己建的文件(句柄核实过的那个,名字被换成别的就不动),退回额度。 */
+    /**
+     * 失败:删掉这个下载自己建的文件(句柄核实过的那个,名字被换成别的就不动),退回额度。
+     *
+     * 顺序是「先删文件、放句柄,再挂 failed」。反过来会留下一个窗口:外面已经看到 failed,半截文件还在目录里,
+     * 谁去数 downloads/ 都会数到它([list] 不锁 entry,只锁 [entries])。
+     */
     private fun fail(entry: Entry, error: String) {
         synchronized(entry) {
             if (entry.status != RUNNING) return
-            entry.status = FAILED
-            entry.error = error
             entry.gated?.let { g -> runCatching { g.delete() }; g.close() }
             entry.gated = null
+            entry.error = error
+            entry.status = FAILED
         }
         synchronized(entries) {
             if (entry.counted) {
