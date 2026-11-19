@@ -56,10 +56,17 @@ internal object AtlasSanitizer {
             .distinct()
             .take(max)
 
+    /**
+     * 这一步是在往输入框里写字（或清掉里面的字）。这类动作的目标元素上带着用户这次输入的内容，
+     * 既不是这一页的地标，也不该进图谱。
+     */
+    fun isTextInputTool(tool: String): Boolean = tool.endsWith("_type_text") || tool.endsWith("_clear_text")
+
     fun cleanSelector(sel: Selector, isTypeAction: Boolean = false): Selector {
-        val safeName = sel.name.trim().let { n ->
+        // 输入框里的字是用户这一次打进去的内容(搜索词、账号),不是这一页的地标:既不进图谱,也不该出现在提示里
+        // 让人以为「这条路径只能在那个输入框里打那几个字」。
+        val safeName = if (isTypeAction) "" else sel.name.trim().let { n ->
             if (n.isEmpty() || n.length > MAX_SELECTOR_NAME_LEN || n == Redactor.MASK || !isSafeText(n)) ""
-            else if (isTypeAction && n == Redactor.MASK) ""
             else n
         }
         val safeRid = sel.resourceId?.trim()?.takeIf { it.isNotEmpty() && isSafeText(it) }
