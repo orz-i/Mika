@@ -53,10 +53,10 @@ class AtlasHintPolicy(
         if (seenScreens != null && dedupKey in seenScreens) return null
 
         val validEdges = appAtlas.outgoingEdges(matched.sigId)
-            .filter { it.ok > 0 && it.miss <= it.ok }
+            .filter { it.isReliable() }
             .sortedWith(
-                compareByDescending<AtlasEdge> { it.ok - it.miss }
-                    .thenByDescending { it.ok }
+                compareByDescending<AtlasEdge> { it.strength() - it.miss }
+                    .thenByDescending { it.strength() }
                     .thenByDescending { it.lastOkMs },
             )
 
@@ -75,7 +75,8 @@ class AtlasHintPolicy(
         val upgradeNote = if (matched.unverifiedAfterUpgrade) " [unverified after update]" else ""
         val header = "$HEADER $screenTitle$upgradeNote"
 
-        val text = assembleClipped(header, detailLines)
+        // 同一页上有多个同类入口（列表里的每一条）时，几条边写出来是同一句话；行重复对模型没有新增信息，只占位置
+        val text = assembleClipped(header, detailLines.distinct())
         seenScreens?.add(dedupKey)
         return Hint(
             packageName = pkg,
@@ -103,21 +104,44 @@ class AtlasHintPolicy(
             break
         }
 
+        // 列表页同一种入口（点开任意一条）会存成好几条边，成功次数各不相同；对模型来说它们是同一句话，
+        // 只留最强的那条，免得两行一样的建议占掉仅有的位置。
+        val seen = mutableSetOf<String>()
         for (edge in validEdges) {
             if (out.size >= maxDetails) break
             val verb = edge.tool.removePrefix("phone_").removePrefix("web_")
             val targetDesc = describeTarget(edge.target, matched.controls)
             val dest = if (edge.toSigId == matched.sigId) {
-                "current screen"
+                "当前页面（页内跳转）"
             } else {
                 atlas.findScreen(edge.toSigId)?.let { destScreen ->
                     AtlasSanitizer.cleanSingleLine(destScreen.displayTitle(), AtlasSanitizer.MAX_TITLE_LEN)
                         ?: destScreen.fallbackTitle()
                 } ?: ScreenSig.shortHashTag(edge.toSigId)
             }
-            val stats = if (edge.miss > 0) "(ok:${edge.ok}, miss:${edge.miss})" else "(ok:${edge.ok})"
+            val stats = buildString {
+                append("(成功 ").append(formatStrength(edge.strength()))
+                if (edge.miss > 0) append("，失败 ").append(edge.miss)
+                append(')')
+            }
             val actionPart = listOfNotNull(verb.takeIf { it.isNotBlank() }, targetDesc.takeIf { it.isNotBlank() }).joinToString(" ")
-            out += "- $actionPart -> $dest $stats"
+            if (!seen.add("$actionPart|$dest")) continue
+            out += "- $actionPart → $dest $stats"
+        }
+
+        // 有边时也补一条关键控件：告诉模型这一页还能点什么，而不是只给出口
+        if (out.size < maxDetails) {
+            val reliableControls = matched.controls
+                .filter { it.used > 0 && it.noEffect * 2 <= it.used && it.meaning.isNotBlank() }
+                .sortedWith(compareByDescending<AtlasControl> { it.used - it.noEffect }.thenByDescending { it.used })
+            for (ctrl in reliableControls) {
+                if (out.size >= maxDetails) break
+                if (validEdges.any { e -> e.target?.let { AtlasEviction.sameControl(it, ctrl.selector) } == true }) continue
+                val meaning = AtlasSanitizer.cleanSingleLine(ctrl.meaning, AtlasSanitizer.MAX_MEANING_LEN) ?: continue
+                val desc = describeTarget(ctrl.selector, emptyList()).ifBlank { ctrl.selector.role }
+                out += "- 控件 $desc：$meaning"
+                break
+            }
         }
 
         if (out.isEmpty()) {
@@ -156,6 +180,11 @@ class AtlasHintPolicy(
         }
     }
 
+    private fun formatStrength(value: Double): String {
+        val rounded = kotlin.math.round(value * 10) / 10
+        return if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
+    }
+
     private fun assembleClipped(header: String, detailLines: List<String>): String {
         val kept = detailLines.toMutableList()
         while (kept.size > 1) {
@@ -170,7 +199,7 @@ class AtlasHintPolicy(
     companion object {
         const val DEFAULT_MAX_LINES = 3
         const val DEFAULT_MAX_CHARS = 350
-        const val HEADER = "Atlas hint (historical, verify on current screen):"
+        const val HEADER = "页面经验（历史记录，以当前屏幕为准）："
         val Default = AtlasHintPolicy()
     }
 }
