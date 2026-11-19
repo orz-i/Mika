@@ -295,12 +295,12 @@
 
 - **页面身份**:`ScreenReader.extractSignature` 从无障碍树抽结构签名(`aau-a11y` 的 `ScreenSignatureExtractor`):64 位 SimHash + 静态锚点 + 可读 resourceId;列表内容、角标、易变数字、输入框里的字都不进签名。`ActionTarget` 落盘时带动作前后的签名与 Activity(`ActionExecutor`),离线学习只读这些事件,不额外读屏。
 - **学习**(`AtlasLearner`):任务结束后回放本次运行的 `ActionTarget`,合并相似页面、累计控件与边的计数、按 App 版本分桶(升级后旧节点标 `unverifiedAfterUpgrade`,再被命中就转回可用)。边有强、弱两档:任务通过 `LearnGate.done` 记 `ok`,只是整体成功(`TaskState.Succeeded`)记 `weakOk`,所以真实使用里图能长出边;负面只记 `miss`。
-- **入口边**:跨包进入(桌面、通知、另一个 App)记成 `__entry__ --phone_launch_app--> 首页`(`ENTRY_SIG_ID`、`ATLAS_ENTRY_TOOL`)。这条边让自动寻路能从「不在目标 App 里」开始:先启动,再走内部边。
+- **入口边**:只有实际 `phone_launch_app` 且请求包与观测落地包一致,才记成 `__entry__ --phone_launch_app--> 落地页`(`ENTRY_SIG_ID`、`ATLAS_ENTRY_TOOL`)并标 `launchObserved`;外链/通知不能改写成启动证据。旧入口与导入入口需本机重新观测。自动寻路启动后从真实落地页重规划,不假设总会回首页,也不重置跳数预算。
 - **页面命名**(`AtlasNamer`):学习完把新增页面的锚点、`resourceId`、被点过的控件交给轻量模型批量起中文名,30 秒超时(这是任务结束后的离线活,等得起;12 秒常撞超时导致页面永远只有 Activity 短名)。同一个 `Activity` 的不同状态容易被起成同一个名字,`disambiguateTitles` 用「这屏有、同组其他屏没有」的屏幕文字补后缀(`职位搜索页（历史搜索）`),没有独有文字就退回短哈希;带数字的文字不当后缀,重复跑幂等。用户手动改过的名字(`TITLE_USER`)不参与。
 - **使用**分三级:`AtlasHintPolicy` 在每一步把当前页的可靠出口与关键控件写成 1–3 行提示(只进本步结果那一区,不动前缀缓存);`phone_run_shortcut` 执行从轨迹里挖出的 2–10 步子流程(同一序列出现两次才晋升,连续三次偏离自动停用);`phone_navigate_to` 在图上按成功率加权跑 Dijkstra 并逐跳核对。后两者都以 `Origin.Replay` 经唯一入口执行,遇到确认、守卫或页面偏离立即交还模型。
 - **存储**(`app/src/main/java/com/wangzan101/mika/atlas/FileAtlasStore.kt`):每个包一个加密文件,AES-GCM + 临时文件 + 原子替换;坏文件另存并上报。上限为每 App 200 页、1000 条边、50 条快捷流程,按 LRU 与命中数淘汰,入口边不参与页面淘汰。
 - **两个开关**:设置 ›「App 经验」顶部是两件相互独立的事——「使用页面经验」决定是否注入线索、是否提供 `phone_run_shortcut` / `phone_navigate_to`(`FeatureFlags.atlasHintsEnabled`),「记录页面经验」决定是否在写操作前采 `ActionTarget` 并跑离线学习(`FeatureFlags.atlasLearnEnabled` + `AgentLoop.atlasLearn`)。关掉提示仍可继续积累,关掉记录也不影响已学到的内容被使用;两者都不再跟随「照着上次的做法做」。
-- **隐私**:只存框架文字和 Selector,不存列表内容、输入文字和屏幕原文;`protected` 页面与密码动作整条跳过;导出走 `AtlasShare` 脱敏并可在设置里导入合并。
+- **隐私与治理**:页面签名剥离列表内容和输入文字,`protected` 页面与密码动作跳过。快捷输入在进入候选前就必须参数化,不能绑定则切断该段;不保存动作 `reason` 等临时字段。读写存储时清理旧输入残留,无法还原参数的旧快捷/候选不再使用。分享为 schema 2 完整内容摘要,旧分享包需重新导出;导入边计数不当本机证据,导入快捷默认停用。精确导航不退到弱候选,同等级歧义要求 sigId,跳数约束参与图搜索状态。范围、迁移与后续项见 [app-atlas-governance.md](app-atlas-governance.md)。
 
 现状与缺口见 [`app-atlas-audit.md`](app-atlas-audit.md)。
 
