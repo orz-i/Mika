@@ -303,6 +303,10 @@
         <item quantity="other">지식/스킬 %1$d개</item>
     </plurals>
     <string name="app_exp_title">앱 경험</string>
+    <string name="app_exp_hints_toggle">앱 경험 사용</string>
+    <string name="app_exp_hints_toggle_sub">이 화면에서 예전에 어떻게 조작했는지 알려 주고, 단축 흐름과 자동 탐색을 제공합니다</string>
+    <string name="app_exp_learn_toggle">앱 경험 기록</string>
+    <string name="app_exp_learn_toggle_sub">작업을 실행할 때 화면과 이동을 이 기기에 기록하며 업로드하지 않습니다</string>
     <string name="app_exp_search_hint">앱 이름 또는 패키지 검색</string>
     <string name="app_exp_import">가져오기</string>
     <string name="app_exp_clear_all">모두 지우기</string>
@@ -347,6 +351,14 @@
     <string name="app_exp_control_no_effect">효과 없음 %1$d회</string>
     <string name="app_exp_edges">이동 경로</string>
     <string name="app_exp_edges_empty">기록된 화면 전환이 없습니다</string>
+    <string name="app_exp_edge_weak_counts">ok %1$d · weak %2$d · miss %3$d</string>
+    <string name="app_exp_entry_count">%1$d entry transitions</string>
+    <string name="app_exp_screen_rename">Rename</string>
+    <string name="app_exp_screen_rename_title">Name this page</string>
+    <string name="app_exp_screen_rename_hint">e.g. Search</string>
+    <string name="app_exp_screen_rename_failed">That name cannot be used. Try another one.</string>
+    <string name="app_exp_screen_delete_title">Delete this page?</string>
+    <string name="app_exp_screen_delete_body">Only "%1$s" and its transitions are removed. Other pages stay.</string>
     <string name="app_exp_edge_counts">성공 %1$d · 실패 %2$d</string>
     <string name="app_exp_section_routes">저장된 경로</string>
     <string name="app_exp_routes_empty">이 앱에 저장된 경로가 없습니다</string>

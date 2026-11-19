@@ -162,6 +162,14 @@ class AtlasRuntime(
                 try {
                     AtlasNamer(model = lightModel, fallback = null, timeoutMs = namerTimeoutMs)
                         .nameStoreScreens(atlasStore, learnResult.unnamedScreenIds)
+                    runCatching {
+                        val titles = learnResult.unnamedScreenIds.keys.flatMap { pkg ->
+                            atlasStore.get(pkg)?.screens.orEmpty()
+                                .filter { it.sigId in learnResult.unnamedScreenIds.getValue(pkg) }
+                                .map { "${it.sigId}=${it.displayTitle()}/${it.titleSource}" }
+                        }
+                        Log.i(TAG, "atlas naming done: $titles")
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -302,6 +310,33 @@ class AtlasRuntime(
     fun routesForPackage(packageName: String): List<Route> =
         if (routeStore is FileRouteStore) routeStore.routesForPackage(packageName)
         else routeStore.forPackage(packageName).sortedByDescending { it.lastUsedMs }
+
+    /** 手动重命名页面：写入用户标题，之后的模型命名不会再覆盖；返回是否真的改到。 */
+    fun renameScreen(packageName: String, sigId: String, title: String): Boolean {
+        if (packageName.isBlank() || sigId.isBlank() || title.isBlank()) return false
+        var renamed = false
+        atlasStore.update(packageName) { existing ->
+            val cur = existing ?: return@update null
+            if (cur.findScreen(sigId) == null) return@update null
+            val next = cur.withScreenTitle(sigId, title)
+            if (next !== cur) renamed = true
+            next
+        }
+        return renamed
+    }
+
+    /** 删除单个页面节点，连同它的边、以它为入口的快捷流程与候选序列。 */
+    fun removeScreen(packageName: String, sigId: String): Boolean {
+        if (packageName.isBlank() || sigId.isBlank()) return false
+        var removed = false
+        atlasStore.update(packageName) { existing ->
+            val cur = existing ?: return@update null
+            if (cur.findScreen(sigId) == null) return@update null
+            removed = true
+            cur.withoutScreen(sigId)
+        }
+        return removed
+    }
 
     fun toggleRouteDisabled(id: String, disabled: Boolean): Route? {
         if (routeStore is FileRouteStore) return routeStore.toggleDisabled(id, disabled)

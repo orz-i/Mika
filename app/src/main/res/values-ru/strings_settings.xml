@@ -327,6 +327,10 @@
         <item quantity="other">%1$d навыка/заметки</item>
     </plurals>
     <string name="app_exp_title">Опыт приложений</string>
+    <string name="app_exp_hints_toggle">Использовать опыт приложений</string>
+    <string name="app_exp_hints_toggle_sub">Показывать, что раньше работало на этом экране, а также сохранённые сценарии и автопереходы</string>
+    <string name="app_exp_learn_toggle">Записывать опыт приложений</string>
+    <string name="app_exp_learn_toggle_sub">Во время задач сохранять экраны и переходы только на этом устройстве, без отправки</string>
     <string name="app_exp_search_hint">Поиск по названию или пакету</string>
     <string name="app_exp_import">Импорт</string>
     <string name="app_exp_clear_all">Очистить всё</string>
@@ -371,6 +375,14 @@
     <string name="app_exp_control_no_effect">без эффекта %1$d</string>
     <string name="app_exp_edges">Исходящие переходы</string>
     <string name="app_exp_edges_empty">Исходящие переходы не записаны</string>
+    <string name="app_exp_edge_weak_counts">ok %1$d · weak %2$d · miss %3$d</string>
+    <string name="app_exp_entry_count">%1$d entry transitions</string>
+    <string name="app_exp_screen_rename">Rename</string>
+    <string name="app_exp_screen_rename_title">Name this page</string>
+    <string name="app_exp_screen_rename_hint">e.g. Search</string>
+    <string name="app_exp_screen_rename_failed">That name cannot be used. Try another one.</string>
+    <string name="app_exp_screen_delete_title">Delete this page?</string>
+    <string name="app_exp_screen_delete_body">Only "%1$s" and its transitions are removed. Other pages stay.</string>
     <string name="app_exp_edge_counts">успех %1$d · сбой %2$d</string>
     <string name="app_exp_section_routes">Сохранённые маршруты</string>
     <string name="app_exp_routes_empty">Нет сохранённых маршрутов для этого приложения</string>

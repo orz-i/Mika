@@ -303,6 +303,10 @@
         <item quantity="other">%1$d 项知识/技能</item>
     </plurals>
     <string name="app_exp_title">App 经验</string>
+    <string name="app_exp_hints_toggle">使用页面经验</string>
+    <string name="app_exp_hints_toggle_sub">回答前提示这个页面以前怎么操作，并提供快捷流程与自动寻路</string>
+    <string name="app_exp_learn_toggle">记录页面经验</string>
+    <string name="app_exp_learn_toggle_sub">跑任务时在本机记下页面和跳转，不上传</string>
     <string name="app_exp_search_hint">搜索 App 名称或包名</string>
     <string name="app_exp_import">导入经验</string>
     <string name="app_exp_clear_all">全部清空</string>
@@ -348,6 +352,14 @@
     <string name="app_exp_edges">页面跳转</string>
     <string name="app_exp_edges_empty">暂无向外跳转记录</string>
     <string name="app_exp_edge_counts">成功 %1$d · 失效 %2$d</string>
+    <string name="app_exp_edge_weak_counts">成功 %1$d · 弱成功 %2$d · 失效 %3$d</string>
+    <string name="app_exp_entry_count">从外部进入 %1$d 条</string>
+    <string name="app_exp_screen_rename">重命名</string>
+    <string name="app_exp_screen_rename_title">给这个页面起个名字</string>
+    <string name="app_exp_screen_rename_hint">例如：搜索页</string>
+    <string name="app_exp_screen_rename_failed">这个名字不合用，换一个再试</string>
+    <string name="app_exp_screen_delete_title">删除这个页面？</string>
+    <string name="app_exp_screen_delete_body">只删除「%1$s」这一个节点和它的跳转，其他页面不受影响。</string>
     <string name="app_exp_section_routes">操作路线</string>
     <string name="app_exp_routes_empty">还没有这个 App 的操作路线</string>
     <string name="app_exp_route_steps_ok">%1$d 步 · 成功 %2$d 次</string>

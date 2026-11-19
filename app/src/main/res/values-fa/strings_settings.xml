@@ -322,6 +322,10 @@
         <item quantity="other">%1$d مهارت/یادداشت</item>
     </plurals>
     <string name="app_exp_title">تجربهٔ برنامه‌ها</string>
+    <string name="app_exp_hints_toggle">استفاده از تجربهٔ برنامه‌ها</string>
+    <string name="app_exp_hints_toggle_sub">نمایش آنچه پیش‌تر در این صفحه کار کرده، همراه با میانبرهای ذخیره‌شده و پیمایش خودکار</string>
+    <string name="app_exp_learn_toggle">ثبت تجربهٔ برنامه‌ها</string>
+    <string name="app_exp_learn_toggle_sub">هنگام اجرای کارها، صفحه‌ها و جابه‌جایی‌ها فقط روی این دستگاه ذخیره شود و هرگز بارگذاری نمی‌شود</string>
     <string name="app_exp_search_hint">جستجوی نام برنامه یا بسته</string>
     <string name="app_exp_import">وارد کردن</string>
     <string name="app_exp_clear_all">پاک کردن همه</string>
@@ -366,6 +370,14 @@
     <string name="app_exp_control_no_effect">بی‌اثر %1$d</string>
     <string name="app_exp_edges">انتقال‌های خروجی</string>
     <string name="app_exp_edges_empty">انتقال خروجی ثبت نشده است</string>
+    <string name="app_exp_edge_weak_counts">ok %1$d · weak %2$d · miss %3$d</string>
+    <string name="app_exp_entry_count">%1$d entry transitions</string>
+    <string name="app_exp_screen_rename">Rename</string>
+    <string name="app_exp_screen_rename_title">Name this page</string>
+    <string name="app_exp_screen_rename_hint">e.g. Search</string>
+    <string name="app_exp_screen_rename_failed">That name cannot be used. Try another one.</string>
+    <string name="app_exp_screen_delete_title">Delete this page?</string>
+    <string name="app_exp_screen_delete_body">Only "%1$s" and its transitions are removed. Other pages stay.</string>
     <string name="app_exp_edge_counts">موفق %1$d · ناموفق %2$d</string>
     <string name="app_exp_section_routes">مسیرهای ذخیره‌شده</string>
     <string name="app_exp_routes_empty">مسیری برای این برنامه ذخیره نشده است</string>

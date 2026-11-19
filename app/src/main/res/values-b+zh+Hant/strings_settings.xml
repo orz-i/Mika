@@ -303,6 +303,10 @@
         <item quantity="other">%1$d 項知識/技能</item>
     </plurals>
     <string name="app_exp_title">App 經驗</string>
+    <string name="app_exp_hints_toggle">使用頁面經驗</string>
+    <string name="app_exp_hints_toggle_sub">回答前提示這個頁面以前怎麼操作，並提供快捷流程與自動尋路</string>
+    <string name="app_exp_learn_toggle">記錄頁面經驗</string>
+    <string name="app_exp_learn_toggle_sub">跑任務時在本機記下頁面和跳轉，不上傳</string>
     <string name="app_exp_search_hint">搜尋 App 名稱或套件名稱</string>
     <string name="app_exp_import">匯入經驗</string>
     <string name="app_exp_clear_all">全部清空</string>
@@ -347,6 +351,14 @@
     <string name="app_exp_control_no_effect">無效 %1$d 次</string>
     <string name="app_exp_edges">頁面跳轉</string>
     <string name="app_exp_edges_empty">暫無向外跳轉記錄</string>
+    <string name="app_exp_edge_weak_counts">成功 %1$d · 弱成功 %2$d · 失效 %3$d</string>
+    <string name="app_exp_entry_count">從外部進入 %1$d 條</string>
+    <string name="app_exp_screen_rename">重新命名</string>
+    <string name="app_exp_screen_rename_title">給這個頁面起個名字</string>
+    <string name="app_exp_screen_rename_hint">例如：搜尋頁</string>
+    <string name="app_exp_screen_rename_failed">這個名字不合用，換一個再試</string>
+    <string name="app_exp_screen_delete_title">刪除這個頁面？</string>
+    <string name="app_exp_screen_delete_body">只刪除「%1$s」這一個節點和它的跳轉，其他頁面不受影響。</string>
     <string name="app_exp_edge_counts">成功 %1$d · 失效 %2$d</string>
     <string name="app_exp_section_routes">操作路線</string>
     <string name="app_exp_routes_empty">還沒有這個 App 的操作路線</string>

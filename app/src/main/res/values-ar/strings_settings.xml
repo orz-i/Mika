@@ -343,6 +343,10 @@
         <item quantity="other">%1$d مهارة/ملاحظة</item>
     </plurals>
     <string name="app_exp_title">خبرة التطبيقات</string>
+    <string name="app_exp_hints_toggle">استخدام خبرة التطبيقات</string>
+    <string name="app_exp_hints_toggle_sub">إظهار ما نجح سابقًا في هذه الشاشة، مع الاختصارات المحفوظة والتنقل التلقائي</string>
+    <string name="app_exp_learn_toggle">تسجيل خبرة التطبيقات</string>
+    <string name="app_exp_learn_toggle_sub">أثناء تنفيذ المهام، حفظ الشاشات والانتقالات على هذا الجهاز فقط دون رفعها</string>
     <string name="app_exp_search_hint">ابحث عن اسم التطبيق أو الحزمة</string>
     <string name="app_exp_import">استيراد</string>
     <string name="app_exp_clear_all">مسح الكل</string>
@@ -387,6 +391,14 @@
     <string name="app_exp_control_no_effect">بلا أثر %1$d</string>
     <string name="app_exp_edges">الانتقالات الصادرة</string>
     <string name="app_exp_edges_empty">لا توجد انتقالات صادرة مسجلة</string>
+    <string name="app_exp_edge_weak_counts">ok %1$d · weak %2$d · miss %3$d</string>
+    <string name="app_exp_entry_count">%1$d entry transitions</string>
+    <string name="app_exp_screen_rename">Rename</string>
+    <string name="app_exp_screen_rename_title">Name this page</string>
+    <string name="app_exp_screen_rename_hint">e.g. Search</string>
+    <string name="app_exp_screen_rename_failed">That name cannot be used. Try another one.</string>
+    <string name="app_exp_screen_delete_title">Delete this page?</string>
+    <string name="app_exp_screen_delete_body">Only "%1$s" and its transitions are removed. Other pages stay.</string>
     <string name="app_exp_edge_counts">نجاح %1$d · إخفاق %2$d</string>
     <string name="app_exp_section_routes">المسارات المحفوظة</string>
     <string name="app_exp_routes_empty">لا توجد مسارات محفوظة لهذا التطبيق</string>

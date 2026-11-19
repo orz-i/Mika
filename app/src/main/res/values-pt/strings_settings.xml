@@ -319,6 +319,10 @@
         <item quantity="other">%1$d habilidades/notas</item>
     </plurals>
     <string name="app_exp_title">Experiência de apps</string>
+    <string name="app_exp_hints_toggle">Usar experiência de apps</string>
+    <string name="app_exp_hints_toggle_sub">Mostrar o que funcionou antes nesta tela, além de atalhos salvos e navegação automática</string>
+    <string name="app_exp_learn_toggle">Registrar experiência de apps</string>
+    <string name="app_exp_learn_toggle_sub">Ao executar tarefas, guardar telas e transições apenas neste dispositivo; nunca são enviadas</string>
     <string name="app_exp_search_hint">Buscar nome ou pacote do app</string>
     <string name="app_exp_import">Importar</string>
     <string name="app_exp_clear_all">Limpar tudo</string>
@@ -363,6 +367,14 @@
     <string name="app_exp_control_no_effect">sem efeito %1$d</string>
     <string name="app_exp_edges">Transições de saída</string>
     <string name="app_exp_edges_empty">Nenhuma transição de saída registrada</string>
+    <string name="app_exp_edge_weak_counts">ok %1$d · weak %2$d · miss %3$d</string>
+    <string name="app_exp_entry_count">%1$d entry transitions</string>
+    <string name="app_exp_screen_rename">Rename</string>
+    <string name="app_exp_screen_rename_title">Name this page</string>
+    <string name="app_exp_screen_rename_hint">e.g. Search</string>
+    <string name="app_exp_screen_rename_failed">That name cannot be used. Try another one.</string>
+    <string name="app_exp_screen_delete_title">Delete this page?</string>
+    <string name="app_exp_screen_delete_body">Only "%1$s" and its transitions are removed. Other pages stay.</string>
     <string name="app_exp_edge_counts">ok %1$d · falha %2$d</string>
     <string name="app_exp_section_routes">Roteiros salvos</string>
     <string name="app_exp_routes_empty">Nenhum roteiro salvo para este app</string>

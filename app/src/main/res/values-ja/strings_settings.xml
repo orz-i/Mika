@@ -303,6 +303,10 @@
         <item quantity="other">%1$d 件の知識・スキル</item>
     </plurals>
     <string name="app_exp_title">アプリの学習</string>
+    <string name="app_exp_hints_toggle">アプリの経験を使う</string>
+    <string name="app_exp_hints_toggle_sub">この画面での過去の操作をヒントとして示し、ショートカットと自動ナビゲーションを提供します</string>
+    <string name="app_exp_learn_toggle">アプリの経験を記録</string>
+    <string name="app_exp_learn_toggle_sub">タスク実行中に画面と遷移をこの端末に記録します（アップロードされません）</string>
     <string name="app_exp_search_hint">アプリ名またはパッケージ名を検索</string>
     <string name="app_exp_import">読み込み</string>
     <string name="app_exp_clear_all">すべて消去</string>
@@ -347,6 +351,14 @@
     <string name="app_exp_control_no_effect">変化なし %1$d 回</string>
     <string name="app_exp_edges">遷移先</string>
     <string name="app_exp_edges_empty">記録された遷移はありません</string>
+    <string name="app_exp_edge_weak_counts">ok %1$d · weak %2$d · miss %3$d</string>
+    <string name="app_exp_entry_count">%1$d entry transitions</string>
+    <string name="app_exp_screen_rename">Rename</string>
+    <string name="app_exp_screen_rename_title">Name this page</string>
+    <string name="app_exp_screen_rename_hint">e.g. Search</string>
+    <string name="app_exp_screen_rename_failed">That name cannot be used. Try another one.</string>
+    <string name="app_exp_screen_delete_title">Delete this page?</string>
+    <string name="app_exp_screen_delete_body">Only "%1$s" and its transitions are removed. Other pages stay.</string>
     <string name="app_exp_edge_counts">成功 %1$d · 失敗 %2$d</string>
     <string name="app_exp_section_routes">保存した手順</string>
     <string name="app_exp_routes_empty">このアプリの保存済み手順はありません</string>

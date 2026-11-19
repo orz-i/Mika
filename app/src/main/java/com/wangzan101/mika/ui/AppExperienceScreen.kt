@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.R
 import com.wangzan101.mika.atlas.FileAtlasStore
 import com.wangzan101.mika.core.atlas.AtlasShare
+import com.wangzan101.mika.settings.FeatureFlags
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
 import com.wangzan101.mika.i18n.uiLocale
@@ -170,6 +171,44 @@ private fun AppExperienceListScreen(
                 color = c.warn,
             )
         }
+
+        val context = LocalContext.current
+        val featureFlags = remember(context) { FeatureFlags.get(context) }
+        var hintsOn by remember { mutableStateOf(featureFlags.atlasHintsEnabled()) }
+        var learnOn by remember { mutableStateOf(featureFlags.atlasLearnEnabled()) }
+
+        GroupCard {
+            ListRow(
+                icon = MikaIcons.Route,
+                title = stringResource(R.string.app_exp_hints_toggle),
+                subtitle = stringResource(R.string.app_exp_hints_toggle_sub),
+                first = true,
+            ) {
+                MikaSwitch(
+                    checked = hintsOn,
+                    onCheckedChange = { on ->
+                        featureFlags.setAtlasHintsEnabled(on)
+                        hintsOn = on
+                    },
+                    modifier = Modifier.testTag("app-exp-hints-switch"),
+                )
+            }
+            ListRow(
+                icon = MikaIcons.Screens,
+                title = stringResource(R.string.app_exp_learn_toggle),
+                subtitle = stringResource(R.string.app_exp_learn_toggle_sub),
+            ) {
+                MikaSwitch(
+                    checked = learnOn,
+                    onCheckedChange = { on ->
+                        featureFlags.setAtlasLearnEnabled(on)
+                        learnOn = on
+                    },
+                    modifier = Modifier.testTag("app-exp-learn-switch"),
+                )
+            }
+        }
+        Spacer(Modifier.height(14.dp))
 
         if (searching || ui.query.isNotEmpty()) {
             SearchField(
@@ -336,6 +375,8 @@ private fun AppExperienceDetailScreen(
     var confirmClearApp by remember { mutableStateOf(false) }
     var deletingRoute by remember { mutableStateOf<AtlasRouteItem?>(null) }
     var deletingShortcut by remember { mutableStateOf<AtlasShortcutItem?>(null) }
+    var renamingScreen by remember { mutableStateOf<AtlasScreenItem?>(null) }
+    var deletingScreen by remember { mutableStateOf<AtlasScreenItem?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -363,6 +404,9 @@ private fun AppExperienceDetailScreen(
                             )
                             if (detail.summary.versionsSeen.isNotEmpty()) {
                                 add(tr(R.string.app_exp_versions, detail.summary.versionsSeen.joinToString(", ")))
+                            }
+                            if (detail.entryCount > 0) {
+                                add(tr(R.string.app_exp_entry_count, detail.entryCount))
                             }
                             if (detail.summary.lastUsedMs > 0L) {
                                 add(tr(R.string.app_exp_last_used, formatShortDate(detail.summary.lastUsedMs)))
@@ -437,6 +481,8 @@ private fun AppExperienceDetailScreen(
                         first = index == 0,
                         expanded = expanded,
                         onToggle = { expandedScreenId = if (expanded) null else screen.sigId },
+                        onRename = { renamingScreen = screen },
+                        onDelete = { deletingScreen = screen },
                     )
                 }
             }
@@ -535,6 +581,61 @@ private fun AppExperienceDetailScreen(
             },
         )
     }
+
+    renamingScreen?.let { screen ->
+        RenameScreenDialog(
+            current = screen.displayTitle,
+            onDismiss = { renamingScreen = null },
+            onConfirm = { title ->
+                renamingScreen = null
+                vm.renameScreen(screen.sigId, title)
+            },
+        )
+    }
+
+    deletingScreen?.let { screen ->
+        ConfirmDeleteFlowDialog(
+            title = stringResource(R.string.app_exp_screen_delete_title),
+            body = stringResource(R.string.app_exp_screen_delete_body, screen.displayTitle),
+            onDismiss = { deletingScreen = null },
+            onConfirm = {
+                deletingScreen = null
+                vm.removeScreen(screen.sigId)
+            },
+        )
+    }
+}
+
+@Composable
+private fun RenameScreenDialog(
+    current: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember(current) { mutableStateOf(current) }
+    MikaDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.app_exp_screen_rename_title)) },
+        text = {
+            KeyboardDismissArea {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(24) },
+                    modifier = Modifier.fillMaxWidth().keepsKeyboard().testTag("app-exp-rename-input"),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.app_exp_screen_rename_hint)) },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton({ onConfirm(text) }, enabled = text.isNotBlank()) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
 }
 
 @Composable
@@ -543,6 +644,8 @@ private fun AtlasScreenRow(
     first: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     val c = MikaTheme.colors
     val interaction = remember { MutableInteractionSource() }
@@ -616,12 +719,34 @@ private fun AtlasScreenRow(
                                 color = c.ink,
                             )
                             Text(
-                                stringResource(R.string.app_exp_edge_counts, edge.ok, edge.miss),
+                                if (edge.weakOk > 0) {
+                                    stringResource(R.string.app_exp_edge_weak_counts, edge.ok, edge.weakOk, edge.miss)
+                                } else {
+                                    stringResource(R.string.app_exp_edge_counts, edge.ok, edge.miss)
+                                },
                                 style = MikaType.Hint,
                                 color = if (edge.miss > 0) c.warn else c.ok,
                             )
                         }
                     }
+                }
+
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    MikaButton(
+                        text = stringResource(R.string.app_exp_screen_rename),
+                        onClick = onRename,
+                        kind = ButtonKind.Tonal,
+                        size = ButtonSize.Small,
+                        modifier = Modifier.testTag("app-exp-screen-rename"),
+                    )
+                    DangerPill(
+                        text = stringResource(R.string.confirm_delete),
+                        onClick = onDelete,
+                        modifier = Modifier.testTag("app-exp-screen-delete"),
+                    )
                 }
             }
         }

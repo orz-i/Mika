@@ -322,6 +322,10 @@
         <item quantity="other">%1$d skills/notes</item>
     </plurals>
     <string name="app_exp_title">App experience</string>
+    <string name="app_exp_hints_toggle">Use app experience</string>
+    <string name="app_exp_hints_toggle_sub">Show what worked on this screen before, plus saved shortcuts and automatic navigation</string>
+    <string name="app_exp_learn_toggle">Record app experience</string>
+    <string name="app_exp_learn_toggle_sub">While tasks run, remember pages and transitions on this device; never uploaded</string>
     <string name="app_exp_search_hint">Search app name or package</string>
     <string name="app_exp_import">Import</string>
     <string name="app_exp_clear_all">Clear all</string>
@@ -367,6 +371,14 @@
     <string name="app_exp_edges">Outgoing transitions</string>
     <string name="app_exp_edges_empty">No outgoing transitions recorded</string>
     <string name="app_exp_edge_counts">ok %1$d · miss %2$d</string>
+    <string name="app_exp_edge_weak_counts">ok %1$d · weak %2$d · miss %3$d</string>
+    <string name="app_exp_entry_count">%1$d entry transitions</string>
+    <string name="app_exp_screen_rename">Rename</string>
+    <string name="app_exp_screen_rename_title">Name this page</string>
+    <string name="app_exp_screen_rename_hint">e.g. Search</string>
+    <string name="app_exp_screen_rename_failed">That name cannot be used. Try another one.</string>
+    <string name="app_exp_screen_delete_title">Delete this page?</string>
+    <string name="app_exp_screen_delete_body">Only "%1$s" and its transitions are removed. Other pages stay.</string>
     <string name="app_exp_section_routes">Saved routes</string>
     <string name="app_exp_routes_empty">No saved routes for this app</string>
     <string name="app_exp_route_steps_ok">%1$d steps · %2$d ok</string>

@@ -79,6 +79,7 @@ data class AtlasEdgeItem(
     val toSigId: String,
     val toScreenTitle: String,
     val ok: Int,
+    val weakOk: Int = 0,
     val miss: Int,
 )
 
@@ -145,6 +146,8 @@ data class AppExperienceDetail(
     val knowledgeItems: List<RelatedKnowledgeItem>,
     val canExport: Boolean,
     val shortcuts: List<AtlasShortcutItem> = emptyList(),
+    /** 从 App 外部进入首页的入口边条数（0 表示还没学到入口，L3 无法从桌面导航进来）。 */
+    val entryCount: Int = 0,
 )
 
 /** 导入弹窗里的解析预览结果。 */
@@ -274,6 +277,29 @@ class AppExperienceViewModel(
     fun removeShortcut(packageName: String, shortcutId: String) {
         scope.launch {
             withContext(ioDispatcher) { runtime.removeShortcut(packageName, shortcutId) }
+            refresh()
+        }
+    }
+
+    /** 手动重命名页面：写入用户标题，模型之后的自动命名不再覆盖。 */
+    fun renameScreen(sigId: String, title: String) {
+        val pkg = _ui.value.selectedPackage ?: return
+        if (sigId.isBlank() || title.isBlank()) return
+        scope.launch {
+            val ok = withContext(ioDispatcher) { runtime.renameScreen(pkg, sigId, title) }
+            if (!ok) {
+                _ui.update { it.copy(message = tr(R.string.app_exp_screen_rename_failed)) }
+            }
+            refresh()
+        }
+    }
+
+    /** 删除单个页面节点（连同它的边与以它为入口的快捷流程）。 */
+    fun removeScreen(sigId: String) {
+        val pkg = _ui.value.selectedPackage ?: return
+        if (sigId.isBlank()) return
+        scope.launch {
+            withContext(ioDispatcher) { runtime.removeScreen(pkg, sigId) }
             refresh()
         }
     }
@@ -657,6 +683,7 @@ class AppExperienceViewModel(
             knowledgeItems = knowledge.map { it.item },
             canExport = atlas != null || routes.any { !it.disabled },
             shortcuts = shortcutItems,
+            entryCount = atlas?.let { a -> a.entryEdges().count { a.findScreen(it.toSigId) != null } } ?: 0,
         )
     }
 
@@ -695,6 +722,7 @@ class AppExperienceViewModel(
                     toSigId = e.toSigId,
                     toScreenTitle = titleById[e.toSigId] ?: ScreenSig.shortHashTag(e.toSigId),
                     ok = e.ok,
+                    weakOk = e.weakOk,
                     miss = e.miss,
                 )
             }

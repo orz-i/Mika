@@ -303,6 +303,10 @@
         <item quantity="other">%1$d keterampilan/catatan</item>
     </plurals>
     <string name="app_exp_title">Pengalaman aplikasi</string>
+    <string name="app_exp_hints_toggle">Gunakan pengalaman aplikasi</string>
+    <string name="app_exp_hints_toggle_sub">Tampilkan yang pernah berhasil di layar ini, plus alur pintas tersimpan dan navigasi otomatis</string>
+    <string name="app_exp_learn_toggle">Catat pengalaman aplikasi</string>
+    <string name="app_exp_learn_toggle_sub">Saat tugas berjalan, simpan layar dan perpindahan hanya di perangkat ini; tidak pernah diunggah</string>
     <string name="app_exp_search_hint">Cari nama aplikasi atau paket</string>
     <string name="app_exp_import">Impor</string>
     <string name="app_exp_clear_all">Hapus semua</string>
@@ -347,6 +351,14 @@
     <string name="app_exp_control_no_effect">tanpa efek %1$d</string>
     <string name="app_exp_edges">Transisi keluar</string>
     <string name="app_exp_edges_empty">Belum ada transisi keluar yang tercatat</string>
+    <string name="app_exp_edge_weak_counts">ok %1$d · weak %2$d · miss %3$d</string>
+    <string name="app_exp_entry_count">%1$d entry transitions</string>
+    <string name="app_exp_screen_rename">Rename</string>
+    <string name="app_exp_screen_rename_title">Name this page</string>
+    <string name="app_exp_screen_rename_hint">e.g. Search</string>
+    <string name="app_exp_screen_rename_failed">That name cannot be used. Try another one.</string>
+    <string name="app_exp_screen_delete_title">Delete this page?</string>
+    <string name="app_exp_screen_delete_body">Only "%1$s" and its transitions are removed. Other pages stay.</string>
     <string name="app_exp_edge_counts">berhasil %1$d · meleset %2$d</string>
     <string name="app_exp_section_routes">Rute tersimpan</string>
     <string name="app_exp_routes_empty">Belum ada rute tersimpan untuk aplikasi ini</string>

@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import com.wangzan101.mika.ChineseUi
 import com.wangzan101.mika.R
 import com.wangzan101.mika.atlas.AtlasRuntime
@@ -36,10 +37,12 @@ import com.wangzan101.mika.core.replay.Selector
 import com.wangzan101.mika.core.skills.PersonalSkill
 import com.wangzan101.mika.core.skills.PersonalSkills
 import com.wangzan101.mika.core.skills.SkillStatus
+import com.wangzan101.mika.settings.FeatureFlags
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -148,6 +151,32 @@ class AppExperienceScreenTest {
         }
         compose.waitForIdle()
         return vm
+    }
+
+    @Test
+    fun useAndRecordSwitchesToggleIndependently() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val flags = FeatureFlags.get(context)
+        val oldHints = flags.atlasHintsEnabled()
+        val oldLearn = flags.atlasLearnEnabled()
+        try {
+            flags.setAtlasHintsEnabled(true)
+            flags.setAtlasLearnEnabled(true)
+            show()
+
+            compose.onNodeWithTag("app-exp-learn-switch").assertIsOn().performClick()
+            compose.onNodeWithTag("app-exp-learn-switch").assertIsOff()
+            assertFalse(flags.atlasLearnEnabled())
+            assertTrue(flags.atlasHintsEnabled())
+
+            compose.onNodeWithTag("app-exp-hints-switch").assertIsOn().performClick()
+            compose.onNodeWithTag("app-exp-hints-switch").assertIsOff()
+            assertFalse(flags.atlasHintsEnabled())
+            assertFalse(flags.atlasLearnEnabled())
+        } finally {
+            flags.setAtlasHintsEnabled(oldHints)
+            flags.setAtlasLearnEnabled(oldLearn)
+        }
     }
 
     @Test

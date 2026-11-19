@@ -3,6 +3,8 @@ package com.wangzan101.mika.atlas
 import com.wangzan101.mika.core.agent.FailKind
 import com.wangzan101.mika.core.agent.RunOutcome
 import com.wangzan101.mika.core.agent.TaskState
+import com.wangzan101.mika.core.atlas.AppAtlas
+import com.wangzan101.mika.core.atlas.AtlasEdge
 import com.wangzan101.mika.core.atlas.AtlasScreen
 import com.wangzan101.mika.core.atlas.AtlasShare
 import com.wangzan101.mika.core.atlas.AtlasShortcut
@@ -426,5 +428,51 @@ class AtlasRuntimeTest {
         assertEquals(2, mined.first().steps.size)
         assertEquals(0, runtime.activeLearnCount.value)
         assertTrue(runtime.awaitLearningIdle(1_000L))
+    }
+
+    @Test
+    fun renameAndRemoveScreenThroughRuntime() {
+        val (runtime, atlasStore, _) = newRuntime()
+        val pkg = "com.example.app"
+        val home = sig(pkg, "HomeActivity", 0x000000000000AA11L, listOf("首页"))
+        val search = sig(pkg, "SearchActivity", 0x000000000000BB22L, listOf("搜索"))
+        atlasStore.put(
+            AppAtlas(
+                packageName = pkg,
+                screens = listOf(
+                    AtlasScreen(
+                        sigId = home.sigId,
+                        activity = home.activity,
+                        shortActivity = home.shortActivity,
+                        fingerprint = home.fingerprint,
+                        anchors = home.anchors,
+                        resourceIds = home.resourceIds,
+                        title = "HomeActivity",
+                    ),
+                    AtlasScreen(
+                        sigId = search.sigId,
+                        activity = search.activity,
+                        shortActivity = search.shortActivity,
+                        fingerprint = search.fingerprint,
+                        anchors = search.anchors,
+                        resourceIds = search.resourceIds,
+                        title = "SearchActivity",
+                    ),
+                ),
+                edges = listOf(AtlasEdge(home.sigId, search.sigId, "phone_tap", null, ok = 2)),
+            ),
+        )
+
+        assertTrue(runtime.renameScreen(pkg, home.sigId, "首页"))
+        val renamed = atlasStore.get(pkg)!!.findScreen(home.sigId)!!
+        assertEquals("首页", renamed.title)
+        assertEquals(AtlasScreen.TITLE_USER, renamed.titleSource)
+
+        assertTrue(runtime.removeScreen(pkg, search.sigId))
+        val after = atlasStore.get(pkg)!!
+        assertEquals(1, after.screens.size)
+        assertTrue(after.edges.isEmpty())
+
+        assertFalse(runtime.renameScreen(pkg, "missing#0000", "不存在"))
     }
 }
