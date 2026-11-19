@@ -140,11 +140,19 @@ class EvalRunTest {
         testTasks.evalHooks.learnSkills = args.getString("learnSkills") == "on"
         testTasks.evalHooks.rememberMemory = args.getString("memory") == "on"
         testTasks.evalHooks.autoApproveSkillDrafts = args.getString("autoApproveSkills") == "true"
+        atlasMode = AtlasEvalMode.parse(args.getString("evalAtlasMode"))
+        // 页面经验：默认不提示、不记录（分数不受本机已学内容影响）；warm 模式用已学经验，cold 模式学一轮
         testTasks.evalHooks.atlasHints = when (val raw = args.getString("evalAtlasHints")?.trim()?.lowercase()) {
-            null, "" -> null
+            null, "" -> atlasMode == AtlasEvalMode.Warm || atlasMode == AtlasEvalMode.WarmRestore
             "true" -> true
             "false" -> false
             else -> throw IllegalArgumentException("evalAtlasHints must be true or false, got $raw")
+        }
+        testTasks.evalHooks.atlasLearn = when (val raw = args.getString("evalAtlasLearn")?.trim()?.lowercase()) {
+            null, "" -> atlasMode == AtlasEvalMode.Isolated || atlasMode == AtlasEvalMode.ColdKeep
+            "true" -> true
+            "false" -> false
+            else -> throw IllegalArgumentException("evalAtlasLearn must be true or false, got $raw")
         }
         testTasks.evalHooks.operatingPace = OperatingPace.parse(args.getString("evalPace")) ?: OperatingPace.FAST
         val allowIrreversible = args.getString("evalAllowIrreversible") == "true"
@@ -154,7 +162,6 @@ class EvalRunTest {
         savedFlags = featureFlags.speedFlags()
         featureFlags.setSpeed(flags)
 
-        atlasMode = AtlasEvalMode.parse(args.getString("evalAtlasMode"))
         awaitAtlasLearning = atlasMode != AtlasEvalMode.Keep || args.getString("evalAwaitAtlas") == "true"
         if (atlasMode == AtlasEvalMode.Isolated || atlasMode == AtlasEvalMode.ColdKeep) {
             backupUserAtlasAndRoutesIfNeeded()
@@ -560,10 +567,12 @@ class EvalRunTest {
     private fun awaitAtlasSettled(atlasRevBefore: Long) {
         val store = FileAtlasStore.shared(context)
         val runtime = AtlasRuntime.shared(context)
-        waitFor(3_000L) {
+        // 学习是在结果通知之后排队跑的后台活,启动本身就要几百毫秒到十几秒(要等通知交付、记忆提取让路),先等它开工
+        waitFor(30_000L) {
             store.changes.value > atlasRevBefore || runtime.activeLearnCount.value > 0
         }
-        runBlocking { runtime.awaitLearningIdle(15_000L) }
+        // 学习含轻量模型批量命名新页面,遇到限流/慢响应会拖到一分钟以上;这里等它真的收工,别半路杀进程
+        runBlocking { runtime.awaitLearningIdle(180_000L) }
     }
 
     private fun backupDir(): File = File(context.filesDir, ATLAS_BACKUP_DIR)

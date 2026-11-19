@@ -1,0 +1,23 @@
+{
+  "id": "boss-search-android-jobs",
+  "goal": "用 App 打开 BOSS 直聘（不要用网页版）,搜索「Android 开发」,打开第一个职位,告诉我职位名称、公司名称和薪资范围。只看,不要打招呼、不要投递简历、不要收藏职位",
+  "apps": [
+    "com.hpbr.bosszhipin"
+  ],
+  "category": "read",
+  "channel": "app",
+  "partition": "tune",
+  "requires": [
+    "installed:com.hpbr.bosszhipin"
+  ],
+  "expect": "succeeded",
+  "checks": [
+    {
+      "type": "answer_grounded",
+      "minItems": 3
+    }
+  ],
+  "maxSteps": 35,
+  "timeoutSec": 480,
+  "note": "招聘类内容 App 的读题:首页 → 搜索 → 结果页 → 职位详情,跨 4 屏,用来验证页面地图能积累多跳边;全程只读,不碰沟通与投递。"
+}

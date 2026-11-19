@@ -1,0 +1,23 @@
+{
+  "id": "boss-two-jobs",
+  "goal": "用 App 打开 BOSS 直聘（不要用网页版）,搜索「Android 开发」,依次打开搜索结果里的前两个职位,分别告诉我职位名称、公司名称、薪资范围,最后回到搜索结果页。只回答这三项,不要补充城市、经验、学历、招聘者等其他细节。只看,不要打招呼、不要投递简历、不要收藏职位",
+  "apps": [
+    "com.hpbr.bosszhipin"
+  ],
+  "category": "read",
+  "channel": "app",
+  "partition": "tune",
+  "requires": [
+    "installed:com.hpbr.bosszhipin"
+  ],
+  "expect": "succeeded",
+  "checks": [
+    {
+      "type": "answer_grounded",
+      "minItems": 2
+    }
+  ],
+  "maxSteps": 40,
+  "timeoutSec": 600,
+  "note": "多跳读题:搜索 → 详情 → 返回 → 再详情 → 返回,用来做「同一任务多轮」的页面地图对照;全程只读。回答只要三项,免得额外的补充细节踩到「字面核查」被误判成假成功。minItems 取 2 而不是 4:两个职位名和公司名不带单位数字、不参与计数,能计数的事实只有两个薪资,取 4 时措辞稍变就掉到 3 被误杀。"
+}
