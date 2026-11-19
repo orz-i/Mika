@@ -94,6 +94,14 @@ class AtlasGovernanceTest {
         assertTrue(atlas.candidatePatterns.isEmpty())
     }
 
+    @Test fun shareRejectsLiteralInputEvenWhenItPassesSensitiveTextFiltering() {
+        val step = RouteStep("phone_type_text", """{"text":"$query"}""", target(), Anchors(pkg, emptyList()), Anchors(pkg, emptyList()))
+        val atlas = AppAtlas(pkg, screens = listOf(screen(form)), shortcuts = listOf(AtlasShortcut("sc", "搜索", entrySigId = form.sigId, steps = listOf(step))))
+        val manuallyBuilt = AtlasShare(atlas = atlas, fingerprint = AtlasFingerprint.of(atlas))
+        assertTrue(AtlasShare.lint(manuallyBuilt, TOOLS).any { "parameter" in it })
+        assertFalse(AtlasShare.export(atlas).encode().contains(query))
+    }
+
     @Test fun legacyInputEdgesKeepDistinctResourceIds() {
         val store = InMemoryAtlasStore()
         store.put(AppAtlas(pkg, screens = listOf(screen(form)), edges = listOf(
@@ -171,6 +179,28 @@ class AtlasGovernanceTest {
         assertEquals(listOf(home.sigId, x.sigId), (plan as AtlasNavigator.Plan.Path).edges.map { it.fromSigId })
     }
 
+    @Test fun fingerprintCoversWeightsSelectorsAnchorsAndShortcutRuntimeState() {
+        val edge = AtlasEdge(home.sigId, form.sigId, "phone_tap", target(), ok = 1)
+        val step = RouteStep("phone_back", "{}", null, Anchors(pkg, listOf("起点")), Anchors(pkg, listOf("终点")))
+        val shortcut = AtlasShortcut("sc", "返回", entrySigId = form.sigId, steps = listOf(step))
+        val atlas = AppAtlas(pkg, screens = listOf(screen(home).copy(controls = listOf(AtlasControl(target()))), screen(form)),
+            edges = listOf(edge), shortcuts = listOf(shortcut))
+        val fingerprint = AtlasFingerprint.of(atlas)
+        val changes = listOf(
+            atlas.copy(edges = listOf(edge.copy(weakOk = 999))),
+            atlas.copy(edges = listOf(edge.copy(target = target().copy(bounds = listOf(20, 200, 500, 250))))),
+            atlas.copy(edges = listOf(edge.copy(target = target().copy(ordinal = 2)))),
+            atlas.copy(edges = listOf(edge.copy(target = target().copy(uniqueAtRecord = false)))),
+            atlas.copy(screens = listOf(atlas.screens[0].copy(controls = listOf(AtlasControl(target().copy(ordinal = 2)))), atlas.screens[1])),
+            atlas.copy(shortcuts = listOf(shortcut.copy(steps = listOf(step.copy(after = Anchors(pkg, listOf("不同终点"))))))),
+            atlas.copy(shortcuts = listOf(shortcut.copy(disabled = true))),
+        )
+        for (changed in changes) {
+            assertNotEquals(fingerprint, AtlasFingerprint.of(changed))
+            assertTrue(AtlasShare.lint(AtlasShare(atlas = changed, fingerprint = fingerprint)).any { "fingerprint" in it })
+        }
+    }
+
     @Test fun legacyEntryNeedsFreshLocalLaunchEvidence() {
         val legacy = AppAtlas(pkg, screens = listOf(screen(home)), edges = listOf(AtlasEdge(ENTRY_SIG_ID, home.sigId, ATLAS_ENTRY_TOOL, ok = 20)))
         assertTrue(AtlasNavigator.planFromEntry(legacy, home.sigId) is AtlasNavigator.Plan.NoMatchingStart)
@@ -179,6 +209,30 @@ class AtlasGovernanceTest {
         assertTrue(store.get(pkg)!!.entryEdges().single().launchObserved)
         assertEquals("旧入口次数不再作为启动证据", 1, store.get(pkg)!!.entryEdges().single().ok)
         assertTrue(AtlasNavigator.planFromEntry(store.get(pkg)!!, home.sigId) is AtlasNavigator.Plan.Path)
+    }
+
+    @Test fun importedClaimsDoNotInflateLocalEvidenceAndShortcutsStartDisabled() {
+        val step = RouteStep("phone_back", "{}", null, Anchors(pkg, emptyList()), Anchors(pkg, emptyList()))
+        val atlas = AppAtlas(pkg, screens = listOf(screen(home)), edges = listOf(
+            AtlasEdge(ENTRY_SIG_ID, home.sigId, ATLAS_ENTRY_TOOL, ok = 999, launchObserved = true),
+        ), shortcuts = listOf(AtlasShortcut("sc", "返回", entrySigId = home.sigId, steps = listOf(step))))
+        val store = InMemoryAtlasStore()
+        assertTrue(AtlasShare.importInto(AtlasShare.export(atlas).encode(), store) is AtlasShare.ImportResult.Imported)
+        val imported = store.get(pkg)!!
+        assertFalse(imported.edges.single().launchObserved)
+        assertEquals(0.0, imported.edges.single().strength(), 0.0)
+        assertTrue(imported.shortcuts.single().disabled)
+
+        store.put(atlas.copy(edges = listOf(atlas.edges.single().copy(ok = 2))))
+        AtlasShare.importInto(AtlasShare.export(atlas).encode(), store)
+        assertEquals(2, store.get(pkg)!!.edges.single().ok)
+        assertTrue(store.get(pkg)!!.edges.single().launchObserved)
+    }
+
+    @Test fun v1ShareIsRejectedInsteadOfUsingTheIncompleteFingerprint() {
+        val share = AtlasShare.export(AppAtlas(pkg, screens = listOf(screen(home))))
+        assertEquals(2, share.schema)
+        assertTrue(AtlasShare.decodeAndLint(share.encode().replaceFirst("\"schema\":2", "\"schema\":1")) is AtlasShare.LintResult.Rejected)
     }
 
     private inner class LaunchBridge(private val landing: ScreenSig, private val next: ScreenSig, private val omitSignature: Boolean = false) : AtlasReplayBridge {
@@ -299,5 +353,4 @@ class AtlasGovernanceTest {
         assertEquals(AtlasScreen.TITLE_USER, clean.screens.single().titleSource)
         assertEquals("", clean.screens.single().controls.single().selector.name)
     }
-
 }

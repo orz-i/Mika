@@ -14,6 +14,10 @@ import com.wangzan101.mika.core.tool.ToolIndex
 import com.wangzan101.mika.core.uistate.ScreenSig
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -31,7 +35,7 @@ data class AtlasShare(
     val fingerprint: String,
 ) {
     init {
-        require(schema == SCHEMA) { "unsupported atlas share schema: $schema" }
+        require(schema == SCHEMA) { "unsupported atlas share schema: $schema; re-export with the current app" }
     }
 
     fun encode(): String = json.encodeToString(serializer(), this)
@@ -55,7 +59,8 @@ data class AtlasShare(
     }
 
     companion object {
-        const val SCHEMA = 1
+        // v1 指纹漏掉了执行字段，不能降级到旧校验；本机存储格式不受影响。
+        const val SCHEMA = 2
         const val MAX_SHARE_BYTES = 1024 * 1024
         const val MAX_EXPORTED_ROUTES = 100
         private val PACKAGE_NAME_REGEX = Regex("^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+$")
@@ -76,7 +81,7 @@ data class AtlasShare(
             routes: List<Route> = emptyList(),
             exportedAtMs: Long = 0L,
         ): AtlasShare {
-            val cleanAtlas = sanitizeAtlasForExport(atlas)
+            val cleanAtlas = sanitizeAtlasForExport(atlas.privacyCleaned())
             val pkg = cleanAtlas.packageName
             val cleanRoutes = routes
                 .filter { !it.disabled && it.involvesPackage(pkg) }
@@ -171,6 +176,9 @@ data class AtlasShare(
                     problems += "shortcut ${sc.id}: sensitive content in name or description"
                 }
                 sc.steps.forEachIndexed { idx, st ->
+                    if (AtlasSanitizer.sanitizeRouteStep(st) == null) {
+                        problems += "shortcut ${sc.id} step ${idx + 1}: unsafe or non-parameterized input"
+                    }
                     if (st.argsJson.contains(Redactor.MASK) || !AtlasSanitizer.isSafeText(st.argsJson)) {
                         problems += "shortcut ${sc.id} step ${idx + 1}: sensitive content or redacted mask in args"
                     }
@@ -209,6 +217,9 @@ data class AtlasShare(
                 }
                 if (tools != null) {
                     RouteShareLint.check(rs, tools).forEach { problems += "route ${idx + 1}: $it" }
+                }
+                if (rs.route.steps.any { AtlasSanitizer.sanitizeRouteStep(it) == null }) {
+                    problems += "route ${idx + 1}: unsafe or non-parameterized input"
                 }
                 val pkgs = rs.route.packages + RouteShareLint.touchedPackages(rs)
                 if (pkg.isNotEmpty() && pkg !in pkgs) {
@@ -321,12 +332,13 @@ data class AtlasShare(
             }
             val cleanEdges = atlas.edges.map { e ->
                 e.copy(
-                    target = e.target?.let { AtlasSanitizer.cleanSelector(it) },
+                    target = e.target?.let { AtlasSanitizer.cleanSelector(it, isTypeAction = AtlasSanitizer.isTextInputTool(e.tool)) },
                     ok = e.ok.coerceAtLeast(0),
                     weakOk = e.weakOk.coerceAtLeast(0),
                     miss = e.miss.coerceAtLeast(0),
                     lastOkMs = 0L,
                     lastAttemptMs = 0L,
+                    launchObserved = false,
                 )
             }
             val cleanShortcuts = atlas.shortcuts
@@ -345,15 +357,19 @@ data class AtlasShare(
         }
 
         private fun sanitizeAtlasForImport(atlas: AppAtlas, nowMs: Long): AppAtlas {
-            val clean = sanitizeAtlasForExport(atlas)
+            val clean = sanitizeAtlasForExport(atlas.privacyCleaned())
             return clean.copy(
                 screens = clean.screens.map { it.copy(lastSeenMs = nowMs) },
+                // 外部宣称的次数不是本机验证。保留图结构，执行证据等实际观测后再积累。
+                edges = clean.edges.map { it.copy(ok = 0, weakOk = 0, miss = 0, launchObserved = false) },
+                shortcuts = clean.shortcuts.map { it.copy(disabled = true) },
                 lastUsedMs = nowMs,
             )
         }
 
         private fun sanitizeRouteForExport(r: Route, pkg: String): RouteShare? {
             if (SensitiveFilter.hit(r.template) != null) return null
+            val cleanSteps = r.steps.map { AtlasSanitizer.sanitizeRouteStep(it) ?: return null }
             val portable = r.copy(
                 packages = (listOf(pkg) + r.packages).distinct(),
                 successes = 0,
@@ -361,13 +377,7 @@ data class AtlasShare(
                 missStep = null,
                 disabled = false,
                 lastUsedMs = 0L,
-                steps = r.steps.map { st ->
-                    st.copy(
-                        target = st.target?.let { AtlasSanitizer.cleanSelector(it) },
-                        before = st.before.copy(texts = AtlasSanitizer.cleanAnchors(st.before.texts)),
-                        after = st.after.copy(texts = AtlasSanitizer.cleanAnchors(st.after.texts)),
-                    )
-                },
+                steps = cleanSteps,
             )
             return RouteShare.of(portable, title = r.template)
         }
@@ -411,7 +421,7 @@ data class AtlasShare(
                     it.fromSigId == fromId &&
                         it.toSigId == toId &&
                         it.tool == impEdge.tool &&
-                        AtlasEviction.sameOptionalTarget(it.target, impEdge.target)
+                        AtlasEviction.sameEdgeTarget(it.tool, it.target, impEdge.target)
                 }
                 if (idx >= 0) {
                     val cur = edges[idx]
@@ -491,53 +501,36 @@ data class AtlasShare(
     }
 }
 
-/** 稳定的跨设备图谱分享包指纹（不依赖 data class 的 toString）。 */
+/** v2 完整内容摘要；对象键与无序图集合规范化，步骤顺序保留。哈希不提供来源认证。 */
 object AtlasFingerprint {
-    private val LINE = byteArrayOf(0x0a)
+    private val json = Json { encodeDefaults = true }
 
     fun of(atlas: AppAtlas, routes: List<RouteShare> = emptyList()): String {
-        val d = MessageDigest.getInstance("SHA-256")
-        fun line(vararg parts: String) {
-            d.update(parts.joinToString("\u0000").toByteArray(Charsets.UTF_8))
-            d.update(LINE)
-        }
-        line(atlas.packageName, atlas.appLabel)
-        line(*atlas.versionsSeen.toTypedArray())
-        atlas.screens.sortedBy { it.sigId }.forEach { s ->
-            line(
-                s.sigId, s.activity.orEmpty(), s.shortActivity.orEmpty(),
-                s.fingerprint.toString(), s.title, s.titleSource, s.appVersion.orEmpty(),
-                s.hits.toString(), s.anchors.joinToString("\u0001"), s.resourceIds.joinToString("\u0001"),
-            )
-            s.controls.forEach { c ->
-                line("ctrl", c.selector.role, c.selector.name, c.selector.resourceId.orEmpty(), c.meaning, c.used.toString(), c.noEffect.toString())
+        val raw = json.encodeToJsonElement(AppAtlas.serializer(), atlas) as JsonObject
+        val ordered = JsonObject(raw.mapValues { (key, value) ->
+            when (key) {
+                "screens" -> sortedArray((value as JsonArray).map { screen ->
+                    val obj = screen as JsonObject
+                    JsonObject(obj + ("controls" to sortedArray(obj.getValue("controls") as JsonArray)))
+                })
+                "edges", "shortcuts", "candidatePatterns" -> sortedArray(value as JsonArray)
+                else -> value
             }
-        }
-        atlas.edges.sortedWith(
-            compareBy<AtlasEdge>(
-                { it.fromSigId },
-                { it.toSigId },
-                { it.tool },
-                { it.target?.role.orEmpty() },
-                { it.target?.name.orEmpty() },
-                { it.target?.resourceId.orEmpty() },
-                { it.target?.ordinal ?: -1 },
-                { it.target?.bounds?.joinToString(",").orEmpty() },
-            ),
-        ).forEach { e ->
-            line("edge", e.fromSigId, e.toSigId, e.tool, e.target?.role.orEmpty(), e.target?.name.orEmpty(), e.target?.resourceId.orEmpty(), e.ok.toString(), e.miss.toString(), e.appVersion.orEmpty())
-        }
-        atlas.shortcuts.sortedWith(
-            compareBy<AtlasShortcut>({ it.id }, { it.entrySigId }, { it.name }, { it.slots }),
-        ).forEach { sc ->
-            line("shortcut", sc.id, sc.name, sc.description, sc.slots.toString(), sc.entrySigId, sc.appVersion.orEmpty(), sc.steps.size.toString())
-            sc.steps.forEach { st ->
-                line("sc_step", st.tool, st.argsJson, st.target?.role.orEmpty(), st.target?.name.orEmpty(), st.target?.resourceId.orEmpty(), st.before.packageName.orEmpty(), st.after.packageName.orEmpty())
-            }
-        }
-        routes.sortedBy { it.fingerprint }.forEach { r ->
-            line("route", r.fingerprint, r.title)
-        }
-        return d.digest().joinToString("") { "%02x".format(it) }
+        })
+        val payload = JsonObject(mapOf(
+            "schema" to JsonPrimitive(AtlasShare.SCHEMA),
+            "atlas" to ordered,
+            "routes" to sortedArray(routes.map { json.encodeToJsonElement(RouteShare.serializer(), it) }),
+        ))
+        val bytes = canonical(payload).toString().toByteArray(Charsets.UTF_8)
+        return MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun sortedArray(items: List<JsonElement>): JsonArray = JsonArray(items.map(::canonical).sortedBy { it.toString() })
+
+    private fun canonical(value: JsonElement): JsonElement = when (value) {
+        is JsonObject -> JsonObject(value.toSortedMap().mapValues { canonical(it.value) })
+        is JsonArray -> JsonArray(value.map(::canonical))
+        else -> value
     }
 }
