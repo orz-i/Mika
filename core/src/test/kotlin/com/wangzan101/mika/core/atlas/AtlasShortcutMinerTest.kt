@@ -84,6 +84,7 @@ class AtlasShortcutMinerTest {
         // 第一次运行：记录为候选子序列，尚不晋升为快捷流程
         AtlasLearner.learn(
             events = buildRunEvents("蓝牙耳机"),
+            goal = "查找蓝牙耳机",
             store = store,
             appVersions = mapOf(pkg to "1.0"),
             tools = TOOLS,
@@ -93,9 +94,10 @@ class AtlasShortcutMinerTest {
         assertTrue(afterFirst.shortcuts.isEmpty())
         assertTrue(afterFirst.candidatePatterns.isNotEmpty())
 
-        // 第二次运行：输入内容变为 "机械键盘" -> 达到 >= 2 次并自动参数化为 {1} 晋升为 3 步快捷流程（同时抑制被包含的 2 步子窗口重复晋升）
+        // 候选首次就已参数化为 {1}，第二次共现后晋升，并抑制被包含的短窗口。
         AtlasLearner.learn(
             events = buildRunEvents("机械键盘"),
+            goal = "查找机械键盘",
             store = store,
             appVersions = mapOf(pkg to "1.0"),
             tools = TOOLS,

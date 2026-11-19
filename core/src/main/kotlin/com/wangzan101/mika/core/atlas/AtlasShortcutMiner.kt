@@ -108,7 +108,7 @@ object AtlasShortcutMiner {
                         val generalized = generalizeSteps(old.steps, window.map { it.routeStep })
                         if (generalized != null && nextCount >= MIN_OCCURRENCES) {
                             val (finalSteps, slotCount) = generalized
-                            if (allTypeStepsParameterizedOrConstantSafe(finalSteps, slotCount)) {
+                            if (allTypeStepsParameterized(finalSteps, slotCount)) {
                                 val id = shortcutId(entrySigId, skelKey)
                                 val entryTitle = atlas.findScreen(entrySigId)?.displayTitle()
                                     ?: ScreenSig.shortHashTag(entrySigId)
@@ -130,7 +130,7 @@ object AtlasShortcutMiner {
                         val cleanSteps = window.map { it.routeStep }
                         val slotCount = countSlots(cleanSteps)
                         val sameRunRepeated = countSkeletonInSegment(segment, resolvedEntries, start, len, skelKey) >= MIN_OCCURRENCES
-                        if (sameRunRepeated && allTypeStepsParameterizedOrConstantSafe(cleanSteps, slotCount)) {
+                        if (sameRunRepeated && allTypeStepsParameterized(cleanSteps, slotCount)) {
                             val id = shortcutId(entrySigId, skelKey)
                             val entryTitle = atlas.findScreen(entrySigId)?.displayTitle()
                                 ?: ScreenSig.shortHashTag(entrySigId)
@@ -176,11 +176,13 @@ object AtlasShortcutMiner {
         val seenKeys = linkedMapOf<String, MutableList<Pair<String, List<RouteStep>>>>()
 
         for (r in pkgRoutes) {
-            val cleanSteps = r.steps.mapNotNull { st ->
+            // 不能删掉不可复用的中间步后把两边拼起来，那会制造从未执行过的流程。
+            val maybeSteps = r.steps.map { st ->
                 val routable = if (tools != null) tools[st.tool]?.routable == true else st.tool in DEFAULT_ROUTABLE_PHONE_TOOLS
-                if (!routable || st.tool in NO_ROUTE_NAMES) return@mapNotNull null
-                AtlasSanitizer.sanitizeRouteStep(st)
+                if (!routable || st.tool in NO_ROUTE_NAMES) null else AtlasSanitizer.sanitizeRouteStep(st)
             }
+            if (maybeSteps.any { it == null }) continue
+            val cleanSteps = maybeSteps.filterNotNull()
             if (cleanSteps.size < MIN_STEPS) continue
             for (len in minOf(MAX_STEPS, cleanSteps.size) downTo MIN_STEPS) {
                 for (start in 0..(cleanSteps.size - len)) {
@@ -210,7 +212,7 @@ object AtlasShortcutMiner {
             }
             if (!valid) continue
             val slotCount = countSlots(mergedSteps)
-            if (!allTypeStepsParameterizedOrConstantSafe(mergedSteps, slotCount)) continue
+            if (!allTypeStepsParameterized(mergedSteps, slotCount)) continue
             val id = shortcutId(entryId, skelKey)
             if (shortcuts.any { it.id == id || (it.entrySigId == entryId && skeletonKeyFromRouteSteps(entryId, it.steps) == skelKey) }) {
                 continue
@@ -252,6 +254,11 @@ object AtlasShortcutMiner {
     ): List<List<ExtractedStep>> {
         val results = events.filterIsInstance<RunEvent.ToolResult>()
         val resultsByCallId = results.mapNotNull { r -> r.callId?.let { it to r } }.toMap()
+        // 即使回显出现在输入之前/之后的锚点或点击名字中，也不能变成持久经验。
+        val inputValues = events.filterIsInstance<RunEvent.ActionTarget>()
+            .filter { it.tool.endsWith("_type_text") }
+            .mapNotNull { (parseJson(it.argsJson)?.get("text") as? JsonPrimitive)?.contentOrNull }
+            .filter { it.isNotBlank() }.toSet()
         val segments = mutableListOf<MutableList<ExtractedStep>>()
         var current = mutableListOf<ExtractedStep>()
 
@@ -303,7 +310,7 @@ object AtlasShortcutMiner {
             if (parsedArgs == null) {
                 flush(); continue
             }
-            var cleanedArgs = parsedArgs.filterKeys { it != "ref" && it != "snapshotId" && it != "target" }
+            var cleanedArgs = parsedArgs.filterKeys { it != "ref" && it != "snapshotId" && it != "target" && it != "reason" }
             val isType = (tools?.verb(event.tool) == Verb.TypeText) || event.tool.endsWith("_type_text")
 
             var rawTypedText: String? = null
@@ -318,10 +325,12 @@ object AtlasShortcutMiner {
                 }
                 rawTypedText = typed
                 val boundIdx = bindFromGoal(typed)
-                if (boundIdx != null) {
-                    cleanedArgs = cleanedArgs + ("text" to JsonPrimitive("{$boundIdx}"))
-                    goalBound = true
+                if (boundIdx == null) {
+                    // 候选也要先参数化；无法从本次目标安全绑定就切断，不能先存原文等下次泛化。
+                    flush(); continue
                 }
+                cleanedArgs = cleanedArgs + ("text" to JsonPrimitive("{$boundIdx}"))
+                goalBound = true
             }
 
             val cleanTarget = event.target?.let { sel ->
@@ -336,7 +345,7 @@ object AtlasShortcutMiner {
                             sanitized.copy(name = "{$idx}")
                         } else sanitized
                     }
-                    goalSlots.any { it in n } -> sanitized.copy(name = "", uniqueAtRecord = false)
+                    (goalSlots + inputValues).any { it in n } -> sanitized.copy(name = "", uniqueAtRecord = false)
                     else -> sanitized
                 }
             }
@@ -345,7 +354,7 @@ object AtlasShortcutMiner {
                 packageName = a.packageName,
                 texts = AtlasSanitizer.cleanAnchors(
                     a.texts.map(String::trim).filter { s ->
-                        RouteAnchors.stable(s) && s != target?.name?.trim() && goalSlots.none { it.trim() in s }
+                        RouteAnchors.stable(s) && s != target?.name?.trim() && (goalSlots + inputValues).none { it.trim() in s }
                     },
                     max = RouteAnchors.MAX,
                 ),
@@ -461,12 +470,12 @@ object AtlasShortcutMiner {
         return out to finalSlots
     }
 
-    /** 校验所有 type_text 步骤要么已参数化为 `{n}` 槽位，要么不含敏感文本。 */
-    private fun allTypeStepsParameterizedOrConstantSafe(steps: List<RouteStep>, slotCount: Int): Boolean {
+    /** 普通输入也必须是参数槽，敏感词过滤通过不等于允许保存常量。 */
+    private fun allTypeStepsParameterized(steps: List<RouteStep>, slotCount: Int): Boolean {
         for (st in steps) {
             if (st.tool.endsWith("_type_text")) {
                 val text = (parseJson(st.argsJson)?.get("text") as? JsonPrimitive)?.contentOrNull ?: return false
-                if (text == Redactor.MASK || !AtlasSanitizer.isSafeText(text)) return false
+                if (!SLOT_REF.matches(text)) return false
             }
             val refs = SLOT_REF.findAll(st.argsJson + "\u0000" + st.target?.name.orEmpty())
                 .mapNotNull { it.groupValues[1].toIntOrNull() }

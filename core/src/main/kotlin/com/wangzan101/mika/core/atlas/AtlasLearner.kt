@@ -8,6 +8,9 @@ import com.wangzan101.mika.core.replay.Route
 import com.wangzan101.mika.core.replay.Selector
 import com.wangzan101.mika.core.tool.ToolIndex
 import com.wangzan101.mika.core.uistate.ScreenSig
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * 离线页面图谱学习器：在任务结束后解析持久化运行事件（[RunEvent.ActionTarget]、[RunEvent.TaskEnded]、[RunEvent.OutcomeJudged] 等），
@@ -94,6 +97,14 @@ object AtlasLearner {
         tools: ToolIndex? = null,
         routes: List<Route> = emptyList(),
     ): LearnResult {
+        // 搜索词可能回显成不可编辑的标题或点击目标；只在内存里用来剥离，不写入图谱。
+        val inputValues = events.filterIsInstance<RunEvent.ActionTarget>()
+            .filter { it.tool.endsWith("_type_text") }
+            .mapNotNull { event -> runCatching {
+                val args = Json.parseToJsonElement(event.argsJson) as? JsonObject
+                (args?.get("text") as? JsonPrimitive)?.takeIf { it.isString }?.content
+            }.getOrNull() }
+            .filter { it.isNotBlank() }.toSet()
         val resultsByCallId = events.filterIsInstance<RunEvent.ToolResult>()
             .mapNotNull { r -> r.callId?.let { it to r } }
             .toMap()
@@ -114,7 +125,7 @@ object AtlasLearner {
                 selfPackage,
             )
             val beforeSig = if (rawBeforeSig != null && beforePkg != null) {
-                normalizeSig(rawBeforeSig, beforePkg, event.beforeActivity ?: rawBeforeSig.activity)
+                normalizeSig(rawBeforeSig, beforePkg, event.beforeActivity ?: rawBeforeSig.activity, inputValues)
             } else null
 
             val rawAfterSig = if (event.effective) event.afterSig?.takeUnless { it.isBlank } else null
@@ -123,11 +134,11 @@ object AtlasLearner {
                 selfPackage,
             )
             val afterSig = if (rawAfterSig != null && afterPkg != null) {
-                normalizeSig(rawAfterSig, afterPkg, event.afterActivity ?: rawAfterSig.activity)
+                normalizeSig(rawAfterSig, afterPkg, event.afterActivity ?: rawAfterSig.activity, inputValues)
             } else null
 
             val cleanTarget = event.target?.let {
-                AtlasSanitizer.cleanSelector(it, isTypeAction = AtlasSanitizer.isTextInputTool(event.tool))
+                AtlasSanitizer.cleanSelector(it, isTypeAction = AtlasSanitizer.isTextInputTool(event.tool) || inputValues.any { value -> value in it.name })
             }
 
             if (beforeSig != null && beforePkg != null) {
@@ -171,7 +182,7 @@ object AtlasLearner {
 
             val saved = store.update(pkg) { existing ->
                 val merged = mergePackage(
-                    existing = existing,
+                    existing = existing?.let { AtlasSanitizer.cleanStoredAtlas(it, inputValues) },
                     pkg = pkg,
                     label = label,
                     version = version,
@@ -198,8 +209,9 @@ object AtlasLearner {
                 } else {
                     merged
                 }
-                if (routes.isEmpty()) afterRunShortcuts
+                val withRoutes = if (routes.isEmpty()) afterRunShortcuts
                 else AtlasShortcutMiner.mineFromRoutes(afterRunShortcuts, routes, tools = tools, nowMs = nowMs)
+                AtlasSanitizer.cleanStoredAtlas(withRoutes, inputValues)
             }
             if (saved != null) {
                 updated[pkg] = saved
@@ -233,8 +245,7 @@ object AtlasLearner {
             if (versionChanged && s.appVersion != version) s.copy(unverifiedAfterUpgrade = true) else s
         }.toMutableList()
         // 老版本的图谱把输入框里的字当成了地标存进边里（搜索词、账号都可能这样留下来）。
-        // 这里顺手把已有的脏数据洗掉并合并：输入动作只关心「在这一页往哪个输入框写字」，
-        // 输入的字、输入框当时的坐标和序号都不是身份的一部分，按 (起点, 终点, 工具) 并成一条。
+        // 清输入文字，但合并必须保留具体输入框的身份，不能把同一表单的多个字段并成一个。
         val edges = mergeTextInputEdges(existing?.edges.orEmpty()).toMutableList()
 
         var lastAfterSigId: String? = null
@@ -354,10 +365,10 @@ object AtlasLearner {
         ).compacted()
     }
 
-    private fun normalizeSig(sig: ScreenSig, pkg: String, rawActivity: String?): ScreenSig {
+    private fun normalizeSig(sig: ScreenSig, pkg: String, rawActivity: String?, inputValues: Set<String>): ScreenSig {
         val normAct = ScreenSig.normalizeActivityName(pkg, rawActivity) ?: rawActivity?.trim()?.ifEmpty { null }
         val shortAct = sig.shortActivity ?: ScreenSig.shortActivityName(pkg, normAct)
-        val cleanAnchors = AtlasSanitizer.cleanAnchors(sig.anchors)
+        val cleanAnchors = AtlasSanitizer.cleanAnchors(sig.anchors.filterNot { anchor -> inputValues.any { it in anchor } })
         val cleanRids = AtlasSanitizer.cleanResourceIds(sig.resourceIds)
         val sigId = sig.sigId.trim().ifEmpty { ScreenSig.formatSigId(shortAct, sig.fingerprint) }
         return sig.copy(
@@ -394,7 +405,7 @@ object AtlasLearner {
     }
 
     /**
-     * 把已有的输入类边洗一遍：清掉元素上的输入文字，并把同一 (起点, 终点, 工具) 的几条并成一条。
+     * 清掉旧输入文字，并按 (起点, 终点, 工具, 输入框身份) 合并。
      * 只动输入类动作，其它边的身份仍然按目标元素区分。
      */
     private fun mergeTextInputEdges(edges: List<AtlasEdge>): List<AtlasEdge> {
@@ -404,9 +415,10 @@ object AtlasLearner {
                 out += edge
                 continue
             }
-            val clean = if (!edge.target?.name.isNullOrEmpty()) edge.copy(target = edge.target?.copy(name = "")) else edge
+            val clean = edge.copy(target = edge.target?.let { AtlasSanitizer.cleanSelector(it, isTypeAction = true) })
             val i = out.indexOfFirst {
-                it.fromSigId == clean.fromSigId && it.toSigId == clean.toSigId && it.tool == clean.tool
+                it.fromSigId == clean.fromSigId && it.toSigId == clean.toSigId && it.tool == clean.tool &&
+                    AtlasEviction.sameTextInputTarget(it.target, clean.target)
             }
             if (i < 0) {
                 out += clean
@@ -434,20 +446,11 @@ object AtlasLearner {
         version: String?,
         strong: Boolean,
     ) {
-        // 输入类动作按 (起点, 终点, 工具) 归并：同一页的输入框在不同轮次里坐标会差几个像素，
-        // 输入的字每次也不一样，这些都不该让同一条经验裂成好几条。
-        val textInput = AtlasSanitizer.isTextInputTool(tool)
         val idx = edges.indexOfFirst {
             it.fromSigId == fromSigId &&
                 it.toSigId == toSigId &&
                 it.tool == tool &&
-                if (textInput) {
-                    val a = it.target?.resourceId
-                    val b = target?.resourceId
-                    a == null || b == null || a == b
-                } else {
-                    AtlasEviction.sameOptionalTarget(it.target, target)
-                }
+                AtlasEviction.sameEdgeTarget(tool, it.target, target)
         }
         if (idx >= 0) {
             val old = edges[idx]
@@ -483,7 +486,7 @@ object AtlasLearner {
     ) {
         for (i in edges.indices) {
             val e = edges[i]
-            if (e.fromSigId == fromSigId && e.tool == tool && AtlasEviction.sameOptionalTarget(e.target, target)) {
+            if (e.fromSigId == fromSigId && e.tool == tool && AtlasEviction.sameEdgeTarget(tool, e.target, target)) {
                 edges[i] = e.copy(
                     miss = e.miss + 1,
                     lastAttemptMs = maxOf(e.lastAttemptMs, atMs),

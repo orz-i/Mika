@@ -68,9 +68,11 @@ class AtlasShortcutRunner private constructor(
         if (slots.size != shortcut.slots) {
             return Outcome.Diverged(0, total, "expected ${shortcut.slots} slot values, got ${slots.size}", "", executed = false, error = "slot_count_mismatch")
         }
+        val clean = AtlasSanitizer.sanitizeShortcut(shortcut)
+            ?: return Outcome.Diverged(0, total, "shortcut contains unsafe or non-parameterized input", "", error = "unsafe_shortcut")
 
         var seq = 0
-        for ((i, step) in shortcut.steps.withIndex()) {
+        for ((i, step) in clean.steps.withIndex()) {
             fun diverged(why: String, seen: String, executed: Boolean = false, error: String? = null): Outcome =
                 Outcome.Diverged(i, total, why, seen, executed, error)
 

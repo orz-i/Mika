@@ -193,6 +193,9 @@ data class AppAtlas(
 
     fun findShortcut(id: String): AtlasShortcut? = shortcuts.firstOrNull { it.id == id }
 
+    /** 清除旧版本遗留的输入原文，不能安全还原参数的快捷/候选不再使用。 */
+    fun privacyCleaned(): AppAtlas = AtlasSanitizer.cleanStoredAtlas(this)
+
     /** 用户手动重命名页面；标题写入 [AtlasScreen.TITLE_USER]，后续模型命名不再覆盖。空标题或敏感文本不生效。 */
     fun withScreenTitle(sigId: String, title: String, nowMs: Long = System.currentTimeMillis()): AppAtlas {
         val clean = AtlasSanitizer.cleanSingleLine(title, AtlasSanitizer.MAX_TITLE_LEN) ?: return this
@@ -267,7 +270,7 @@ data class AppAtlas(
         nowMs: Long = System.currentTimeMillis(),
     ): AppAtlas = copy(
         edges = edges.map { e ->
-            if (e.fromSigId == fromSigId && e.toSigId == toSigId && e.tool == tool && AtlasEviction.sameOptionalTarget(e.target, target)) {
+            if (e.fromSigId == fromSigId && e.toSigId == toSigId && e.tool == tool && AtlasEviction.sameEdgeTarget(tool, e.target, target)) {
                 e.copy(miss = e.miss + 1, lastAttemptMs = maxOf(e.lastAttemptMs, nowMs))
             } else e
         },
@@ -373,6 +376,19 @@ internal object AtlasEviction {
         a == null || b == null -> false
         else -> sameControl(a, b)
     }
+
+    /** 输入值不参与身份；未知 resourceId 不是通配符，无 id 时还必须有位置证据。 */
+    fun sameTextInputTarget(a: Selector?, b: Selector?): Boolean {
+        if (a == null || b == null || a.role != b.role) return false
+        val aId = a.resourceId?.takeIf { it.isNotBlank() }
+        val bId = b.resourceId?.takeIf { it.isNotBlank() }
+        if (aId != bId) return false
+        if (aId == null && (a.bounds.size != 4 || b.bounds.size != 4)) return false
+        return sameControl(a.copy(name = ""), b.copy(name = ""))
+    }
+
+    fun sameEdgeTarget(tool: String, a: Selector?, b: Selector?): Boolean =
+        if (AtlasSanitizer.isTextInputTool(tool)) sameTextInputTarget(a, b) else sameOptionalTarget(a, b)
 
     private const val NEAR_BOUNDS_DISTANCE = 150.0
     private val SLOT_REF = Regex("\\{(\\d+)\\}")
