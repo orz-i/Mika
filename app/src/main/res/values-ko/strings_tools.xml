@@ -68,4 +68,6 @@
     <string name="tool_probe_ebpf">캡처 오프셋 탐지</string>
     <string name="tool_run_shortcut">단축 흐름 실행</string>
     <string name="tool_navigate_to">자동 경로 탐색</string>
+    <string name="tool_find_tool">사용 가능한 도구 검색</string>
+    <string name="tool_activate_tool">도구 활성화</string>
 </resources>

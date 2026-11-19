@@ -68,4 +68,6 @@
     <string name="tool_probe_ebpf">Deteksi offset tangkapan</string>
     <string name="tool_run_shortcut">Jalankan pintasan</string>
     <string name="tool_navigate_to">Navigasi otomatis</string>
+    <string name="tool_find_tool">Cari alat</string>
+    <string name="tool_activate_tool">Aktifkan alat</string>
 </resources>

@@ -68,4 +68,6 @@
     <string name="tool_probe_ebpf">キャプチャオフセット検出</string>
     <string name="tool_run_shortcut">ショートカットを実行</string>
     <string name="tool_navigate_to">自動ナビゲート</string>
+    <string name="tool_find_tool">利用可能なツールを検索</string>
+    <string name="tool_activate_tool">ツールを有効化</string>
 </resources>

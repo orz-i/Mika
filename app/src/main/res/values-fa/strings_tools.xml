@@ -68,4 +68,6 @@
     <string name="tool_probe_ebpf">تشخیص آفست‌های ضبط</string>
     <string name="tool_run_shortcut">اجرای میان‌بُر</string>
     <string name="tool_navigate_to">ناوبری خودکار</string>
+    <string name="tool_find_tool">جستجوی ابزارها</string>
+    <string name="tool_activate_tool">فعال‌سازی ابزار</string>
 </resources>

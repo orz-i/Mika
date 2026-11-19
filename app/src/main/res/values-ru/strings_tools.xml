@@ -68,4 +68,6 @@
     <string name="tool_probe_ebpf">Поиск смещений перехвата</string>
     <string name="tool_run_shortcut">Выполнить быстрый сценарий</string>
     <string name="tool_navigate_to">Автонавигация</string>
+    <string name="tool_find_tool">Поиск инструментов</string>
+    <string name="tool_activate_tool">Активировать инструмент</string>
 </resources>

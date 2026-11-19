@@ -68,4 +68,6 @@
     <string name="tool_probe_ebpf">Probe capture offsets</string>
     <string name="tool_run_shortcut">Run shortcut</string>
     <string name="tool_navigate_to">Auto-navigate</string>
+    <string name="tool_find_tool">Find tools</string>
+    <string name="tool_activate_tool">Activate a tool</string>
 </resources>

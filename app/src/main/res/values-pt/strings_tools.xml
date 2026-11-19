@@ -68,4 +68,6 @@
     <string name="tool_probe_ebpf">Detectar deslocamentos de captura</string>
     <string name="tool_run_shortcut">Executar atalho</string>
     <string name="tool_navigate_to">Navegação automática</string>
+    <string name="tool_find_tool">Buscar ferramentas</string>
+    <string name="tool_activate_tool">Ativar uma ferramenta</string>
 </resources>

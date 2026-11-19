@@ -2157,6 +2157,8 @@ class ToolLabels(private val tools: ToolIndex, private val legacy: LegacyNames =
             "探测抓包偏移" to R.string.tool_probe_ebpf,
             "执行快捷流程" to R.string.tool_run_shortcut,
             "自动寻路导航" to R.string.tool_navigate_to,
+            "检索可用工具" to R.string.tool_find_tool,
+            "按需激活工具" to R.string.tool_activate_tool,
         )
     }
 }

@@ -68,4 +68,6 @@
     <string name="tool_probe_ebpf">فحص إزاحات الالتقاط</string>
     <string name="tool_run_shortcut">تشغيل اختصار</string>
     <string name="tool_navigate_to">تنقل تلقائي</string>
+    <string name="tool_find_tool">البحث عن الأدوات</string>
+    <string name="tool_activate_tool">تفعيل أداة</string>
 </resources>
