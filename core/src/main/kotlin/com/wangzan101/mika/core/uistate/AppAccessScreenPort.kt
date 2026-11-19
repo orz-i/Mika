@@ -162,7 +162,7 @@ class AppAccessScreenPort(
     override suspend fun otherProfiles() = inner.otherProfiles()
     override suspend fun appCopies() = inner.appCopies()
     override val afterTask: AfterTaskMarks? get() = inner.afterTask
-    override val network: com.wangzan101.mika.core.cap.phone.PhoneNetworkPort? get() = inner.network
+    override val network: com.wangzan101.mika.core.net.PhoneNetworkPort? get() = inner.network
 
     companion object {
         /** 有认不出归属的窗口时,隔多久再问一次(刚开的窗口要一会儿才读得到)。 */

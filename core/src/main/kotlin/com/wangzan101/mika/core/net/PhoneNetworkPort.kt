@@ -1,8 +1,14 @@
-package com.wangzan101.mika.core.cap.phone
+package com.wangzan101.mika.core.net
 
-import com.wangzan101.mika.core.capability.CapabilityKey
-import com.wangzan101.mika.core.tool.ToolContext
 import kotlinx.serialization.Serializable
+
+/**
+ * 抓包端口与它返回的几种模型。
+ *
+ * 放在这里而不是 `cap/phone`:端口是**中性类型**——界面状态([com.wangzan101.mika.core.uistate.ScreenPort])
+ * 要把它交给工具层,而核心的界面状态不许认识能力包(`cap/` 下那些)。模型跟着端口一起放,
+ * `cap/phone` 只保留工具上下文里的那个入口。
+ */
 
 /**
  * 捕获到的网络响应概要信息。
@@ -131,10 +137,3 @@ interface PhoneNetworkPort {
      */
     suspend fun probeEbpf(targetPackage: String? = null, useHeuristicsOnly: Boolean = true): EbpfProbeReport? = null
 }
-
-/** 注入到上下文中的网络端口 Key。 */
-internal val PHONE_NETWORK_KEY = CapabilityKey<PhoneNetworkPort>("phone_network")
-
-/** 工具上下文快捷访问：优先从 ToolContext 提取，降级从 ScreenPort.network 提取。 */
-internal val ToolContext.network: PhoneNetworkPort?
-    get() = this[PHONE_NETWORK_KEY] ?: phone.screen.network

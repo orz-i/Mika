@@ -250,6 +250,10 @@ class AppAccessScreenPortTest {
         val OWN = setOf("getAppAccess", "checkAppAccess")
 
         /** 不碰任何 App 界面、原样转交的成员;按目标挑 App 的系统动作由端口自己看名单。加进来要说得出为什么。 */
-        val PASS_THROUGH = setOf("systemAction", "systemCommand", "bulkCalendarInsert", "listApps", "otherProfiles", "appCopies", "getAfterTask")
+        val PASS_THROUGH = setOf(
+            "systemAction", "systemCommand", "bulkCalendarInsert", "listApps", "otherProfiles", "appCopies", "getAfterTask",
+            // 抓包端口读的是旁路流量,不驱动任何 App 的界面,也没有目标 App 这一说
+            "getNetwork",
+        )
     }
 }

@@ -136,7 +136,7 @@ class AndroidScreen(
      */
     private val awaitApp: suspend (packageName: String, user: Int?, timeoutMs: Long, free: suspend () -> Boolean) -> AppWait =
         { _, _, _, _ -> AppWait.Unsupported },
-    override val network: com.wangzan101.mika.core.cap.phone.PhoneNetworkPort? = null,
+    override val network: com.wangzan101.mika.core.net.PhoneNetworkPort? = null,
     private val flags: FeatureFlags? = null,
     private val appVersionCode: Int = 0,
     private val jumpConfirmProfiles: com.wangzan101.mika.core.custody.JumpConfirmProfilePolicy =

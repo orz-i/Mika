@@ -362,5 +362,5 @@ interface ScreenPort {
     suspend fun drainSettledSpill(): OpenedElsewhere? = null
 
     /** 手机端网络抓包端口；设备不支持或未启用抓包时为 null。 */
-    val network: com.wangzan101.mika.core.cap.phone.PhoneNetworkPort? get() = null
+    val network: com.wangzan101.mika.core.net.PhoneNetworkPort? get() = null
 }
