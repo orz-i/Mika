@@ -216,8 +216,9 @@ internal object PhoneNavigateTo : PhoneTool {
             return@textOnly failed("protected_page", message = "Current screen is protected.")
         }
         val pkg = a.str("package")?.trim()?.takeIf { it.isNotEmpty() }
-            ?: initial.packageName
-            ?: return@textOnly failed("no_app_open", message = "Cannot determine foreground package.")
+            ?: initial.packageName?.takeIf { store.get(it) != null }
+            ?: resolvePackageByTarget(store, target)
+            ?: return@textOnly failed("no_app_open", message = "Cannot determine which app '$target' belongs to.")
         val appAtlas = store.get(pkg)
             ?: return@textOnly failed("atlas_not_found", message = "No atlas available for $pkg.")
 
@@ -288,6 +289,14 @@ internal object PhoneNavigateTo : PhoneTool {
             )
         }
     }
+}
+
+private fun resolvePackageByTarget(store: AtlasStore, target: String): String? {
+    val hits = store.listPackages().filter { pkg ->
+        val atlas = store.get(pkg) ?: return@filter false
+        AtlasNavigator.resolveTargets(atlas.screens, target).isNotEmpty()
+    }
+    return hits.singleOrNull()
 }
 
 private fun createBridge(sub: SubActions, ctx: ToolContext, prefix: String): AtlasReplayBridge {
