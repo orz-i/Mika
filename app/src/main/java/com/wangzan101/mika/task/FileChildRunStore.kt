@@ -1,6 +1,7 @@
 package com.wangzan101.mika.task
 
 import com.wangzan101.mika.core.child.ChildPhase
+import com.wangzan101.mika.core.io.AtomicFile
 import com.wangzan101.mika.core.child.ChildRecord
 import com.wangzan101.mika.core.child.ChildRunStore
 import java.io.File
@@ -28,6 +29,6 @@ class FileChildRunStore(private val file: File) : ChildRunStore {
         file.parentFile?.mkdirs()
         val temp = File(file.parentFile, file.name + ".tmp")
         FileOutputStream(temp).use { out -> out.write(Json.encodeToString(records.values.toList()).toByteArray()); out.fd.sync() }
-        check(temp.renameTo(file)) { "child run store rename failed" }
+        AtomicFile.replace(temp, file)
     }
 }

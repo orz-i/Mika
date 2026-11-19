@@ -1,5 +1,6 @@
 package com.wangzan101.mika.task
 
+import com.wangzan101.mika.core.io.AtomicFile
 import com.wangzan101.mika.core.run.Attendance
 import com.wangzan101.mika.core.run.ChannelPeer
 import com.wangzan101.mika.core.run.RunOrigin
@@ -112,10 +113,7 @@ class FileFollowUpQueueStore(private val file: File) : FollowUpQueueStore {
         }).toString()
         val temp = File(file.parentFile, file.name + ".tmp")
         FileOutputStream(temp).use { out -> out.write(json.toByteArray(Charsets.UTF_8)); out.fd.sync() }
-        if (!temp.renameTo(file)) {
-            temp.delete()
-            error("follow-up queue rename failed")
-        }
+        AtomicFile.replace(temp, file)
     }
 
     private fun provenance(o: JsonObject): RunProvenance {

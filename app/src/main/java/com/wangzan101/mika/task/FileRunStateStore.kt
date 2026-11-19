@@ -1,5 +1,6 @@
 package com.wangzan101.mika.task
 
+import com.wangzan101.mika.core.io.AtomicFile
 import com.wangzan101.mika.core.run.RunId
 import com.wangzan101.mika.core.run.ChannelPeer
 import com.wangzan101.mika.core.run.RunPhase
@@ -68,7 +69,7 @@ class FileRunStateStore(private val file: File) : RunStore {
         } }).toString()
         val temp = File(file.parentFile, file.name + ".tmp")
         FileOutputStream(temp).use { out -> out.write(json.toByteArray(Charsets.UTF_8)); out.fd.sync() }
-        check(temp.renameTo(file)) { "run store rename failed" }
+        AtomicFile.replace(temp, file)
     }
 
     @Synchronized override fun get(id: RunId): StoredRun? = records[id]

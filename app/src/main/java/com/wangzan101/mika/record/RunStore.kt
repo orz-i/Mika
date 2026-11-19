@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
+import com.wangzan101.mika.core.io.AtomicFile
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunMetrics
 import com.wangzan101.mika.core.record.RunMetricsStore
@@ -130,7 +131,7 @@ class RunStore internal constructor(
             val summary = RunEvent.json.decodeFromString(RunSummary.serializer(), summaryFile.readText()).with(e)
             val tmp = File(dir, "$RUN_JSON.tmp")
             tmp.writeText(RunEvent.json.encodeToString(RunSummary.serializer(), summary))
-            if (!tmp.renameTo(summaryFile)) error("rename failed")
+            AtomicFile.replace(tmp, summaryFile)
             if (e is RunEvent.OutcomeJudged) metrics.update(runId) { it.copy(judged = e.outcome) }
         }.onFailure { runCatching { Log.w(TAG, "could not append to run $runId", it) } }
     }
@@ -284,7 +285,7 @@ class RunHandle internal constructor(
         safely("summary") {
             val tmp = File(dir, "${RunStore.RUN_JSON}.tmp")
             tmp.writeText(RunEvent.json.encodeToString(RunSummary.serializer(), summary))
-            if (!tmp.renameTo(File(dir, RunStore.RUN_JSON))) error("rename failed")
+            AtomicFile.replace(tmp, File(dir, RunStore.RUN_JSON))
         }
     }
 

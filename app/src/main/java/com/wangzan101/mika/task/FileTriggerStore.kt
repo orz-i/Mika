@@ -1,5 +1,6 @@
 package com.wangzan101.mika.task
 
+import com.wangzan101.mika.core.io.AtomicFile
 import com.wangzan101.mika.core.trigger.ConditionNotify
 import com.wangzan101.mika.core.trigger.MemoryTriggerStore
 import com.wangzan101.mika.core.trigger.TriggerDefinition
@@ -110,6 +111,6 @@ class FileTriggerStore(
         target.parentFile?.mkdirs()
         val temp = File(target.parentFile, target.name + ".tmp")
         FileOutputStream(temp).use { out -> out.write(text.toByteArray(Charsets.UTF_8)); out.fd.sync() }
-        check(temp.renameTo(target)) { "trigger store rename failed" }
+        AtomicFile.replace(temp, target)
     }
 }
