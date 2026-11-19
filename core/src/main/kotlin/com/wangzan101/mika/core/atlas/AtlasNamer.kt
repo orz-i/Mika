@@ -6,6 +6,7 @@ import com.wangzan101.mika.core.model.Message
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.model.Role
 import com.wangzan101.mika.core.prompt.Prompts
+import com.wangzan101.mika.core.uistate.ScreenSig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -44,7 +45,7 @@ class AtlasNamer(
             .sortedWith(compareByDescending<AtlasScreen> { it.lastSeenMs }.thenByDescending { it.hits })
             .take(MAX_BATCH_SCREENS)
 
-        if (candidates.isEmpty()) return applyFallbacks(atlas, targetSigIds)
+        if (candidates.isEmpty()) return disambiguateTitles(applyFallbacks(atlas, targetSigIds))
 
         val controlSlices = candidates.associate { s ->
             val topIndices = s.controls.withIndex()
@@ -86,7 +87,7 @@ class AtlasNamer(
                 controls = updatedControls,
             )
         }
-        return atlas.copy(screens = updatedScreens)
+        return disambiguateTitles(atlas.copy(screens = updatedScreens))
     }
 
     /** 批量处理 [AtlasStore] 中指定各包的新增未命名页面并写回存储。 */
@@ -197,13 +198,50 @@ class AtlasNamer(
     internal data class NamedItem(val title: String?, val controlMeanings: Map<Int, String>)
 
     companion object {
-        const val DEFAULT_TIMEOUT_MS = 12_000L
+        /**
+         * 一次批量命名最多等多久。这是跑在任务结束之后的离线活，用户已经拿到结果了，等得起；
+         * 太短（曾经 12 秒）会让慢一点的模型总是超时，页面就永远只有 Activity 短名，提示里几个页面分不开。
+         */
+        const val DEFAULT_TIMEOUT_MS = 30_000L
         const val MAX_BATCH_SCREENS = 10
         const val MAX_CONTROLS_PER_SCREEN = 6
+        /** 消歧后缀取屏幕文字，太长会顶掉提示的其余内容。 */
+        private const val DISAMBIGUATE_MAX_LEN = 8
         private const val MAX_PROMPT_ANCHORS = 12
         private const val MAX_PROMPT_RIDS = 12
 
         val PROMPT: String by lazy { Prompts.role("atlas_name") }
+
+        /**
+         * 同包内多个页面被命名成同一个标题时（同一个 Activity 的不同状态最常遇到，比如搜索框、搜索建议、搜索结果都叫「职位搜索页」），
+         * 用各自独有的屏幕文字把标题分开，否则提示里几个页面长得一模一样，模型分不出「从这里点进去是哪一个」。
+         * 已经有后缀的标题按「（」前面那段参与分组，重复跑不会越接越长。
+         */
+        internal fun disambiguateTitles(atlas: AppAtlas): AppAtlas {
+            fun base(title: String) = title.substringBefore("（").trim()
+            val groups = atlas.screens
+                .filter { it.titleSource != AtlasScreen.TITLE_USER && it.title.isNotBlank() }
+                .groupBy { base(it.title) }
+            val renamed = HashMap<String, String>()
+            for ((title, group) in groups) {
+                if (group.size < 2 || title.isEmpty()) continue
+                val anchorsById = group.associate { it.sigId to it.anchors.toSet() }
+                for (s in group) {
+                    val others = anchorsById.filterKeys { it != s.sigId }.values.flatten().toSet()
+                    val unique = s.anchors.asSequence()
+                        .mapNotNull { AtlasSanitizer.cleanSingleLine(it, DISAMBIGUATE_MAX_LEN) }
+                        .filter { it.length >= 2 && it.none(Char::isDigit) && it !in others }
+                        .maxByOrNull { it.length }
+                    renamed[s.sigId] = if (unique != null) {
+                        "$title（$unique）"
+                    } else {
+                        "$title ${ScreenSig.shortHashTag(s.sigId)}"
+                    }
+                }
+            }
+            if (renamed.isEmpty()) return atlas
+            return atlas.copy(screens = atlas.screens.map { s -> renamed[s.sigId]?.let { s.copy(title = it) } ?: s })
+        }
 
         /** 解析模型返回的 JSON 数组，并对每条标题与控件含义做敏感词/脱敏校验。 */
         internal fun parse(raw: String, allowedSigIds: Set<String>): Map<String, NamedItem> {
