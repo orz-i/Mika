@@ -95,8 +95,9 @@ class FileAtlasStore(
         val target = fileFor(atlas.packageName)
         storeLock.read {
             synchronized(lockFor(target)) {
-                writeLocked(target, atlas)
-                cache[target.name] = atlas
+                val clean = atlas.privacyCleaned()
+                writeLocked(target, clean)
+                cache[target.name] = clean
                 _changes.update { it + 1 }
             }
         }
@@ -162,7 +163,7 @@ class FileAtlasStore(
                     cache.remove(target.name)
                     readLocked(target)?.also { cache[target.name] = it }
                 })?.takeIf { it.packageName == packageName }
-                val next = change(current) ?: return@synchronized null
+                val next = change(current)?.privacyCleaned() ?: return@synchronized null
                 require(next.packageName == packageName) { "update must keep packageName ($packageName != ${next.packageName})" }
                 writeLocked(target, next)
                 cache[target.name] = next
@@ -217,7 +218,7 @@ class FileAtlasStore(
     private fun readLocked(file: File): AppAtlas? {
         if (!file.isFile) return null
         val bytes = file.readBytes()
-        return try {
+        val decoded = try {
             val plain = cipher.decrypt(bytes).toString(Charsets.UTF_8)
             AtlasCodec.decode(plain)
         } catch (e: Exception) {
@@ -227,6 +228,11 @@ class FileAtlasStore(
             moveAsideLocked(file)
             null
         }
+        if (decoded == null) return null
+        val clean = decoded.privacyCleaned()
+        // 迁移写失败不是文件损坏：必须在上面的解密/解码 catch 之外，不移走原文件。
+        if (clean != decoded) writeLocked(file, clean)
+        return clean
     }
 
     private fun writeLocked(target: File, atlas: AppAtlas) {

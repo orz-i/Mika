@@ -2,6 +2,7 @@ package com.wangzan101.mika.atlas
 
 import com.wangzan101.mika.core.atlas.AppAtlas
 import com.wangzan101.mika.core.atlas.AtlasControl
+import com.wangzan101.mika.core.atlas.AtlasCodec
 import com.wangzan101.mika.core.atlas.AtlasEdge
 import com.wangzan101.mika.core.atlas.AtlasScreen
 import com.wangzan101.mika.core.atlas.AtlasShare
@@ -24,6 +25,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 import java.security.KeyStoreException
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -285,5 +287,65 @@ class FileAtlasStoreTest {
         reopened.invalidateCache()
         assertTrue(reopened.changes.value > revBefore)
         assertEquals("磁盘还原后名称", reopened.get("com.example.shop")?.appLabel)
+    }
+
+    private fun legacyInputAtlas(): AppAtlas {
+        val base = sampleAtlas()
+        val selector = Selector("EditText", "蓝牙耳机", "query", listOf(0, 100, 300, 150), 0, true)
+        val step = RouteStep("phone_type_text", """{"text":"蓝牙耳机"}""", selector, Anchors(base.packageName, emptyList()), Anchors(base.packageName, emptyList()))
+        return base.copy(
+            screens = listOf(base.screens.first().copy(controls = listOf(AtlasControl(selector, used = 7)))) + base.screens.drop(1),
+            edges = base.edges + AtlasEdge(base.screens.first().sigId, base.screens.first().sigId, "phone_type_text", selector, ok = 5),
+            shortcuts = listOf(AtlasShortcut("old", "搜索", entrySigId = base.screens.first().sigId, steps = listOf(step))),
+            candidatePatterns = listOf(ShortcutCandidate("old", base.screens.first().sigId, listOf(step))),
+        )
+    }
+
+    @Test fun legacyPrivateInputsAreMigratedOnReadAndRewrittenEncryptedOnce() {
+        val legacy = legacyInputAtlas()
+        val cipher = AesGcmKeyCipher { key }
+        atlasDir().mkdirs()
+        val file = File(atlasDir(), "${legacy.packageName}.json")
+        file.writeBytes(cipher.encrypt(AtlasCodec.encode(legacy).toByteArray(Charsets.UTF_8)))
+
+        val migrated = store().get(legacy.packageName)!!
+        assertEquals(2, migrated.screens.size)
+        assertEquals(7, migrated.screens.first().controls.single().used)
+        assertEquals(5, migrated.edges.last().ok)
+        assertTrue(migrated.shortcuts.isEmpty())
+        assertTrue(migrated.candidatePatterns.isEmpty())
+        assertFalse(AtlasCodec.encode(migrated).contains("蓝牙耳机"))
+        val encrypted = file.readBytes()
+        assertFalse(cipher.decrypt(encrypted).toString(Charsets.UTF_8).contains("蓝牙耳机"))
+        assertEquals(migrated, store().get(legacy.packageName))
+        assertArrayEquals("第二次读取不再迁移重写", encrypted, file.readBytes())
+    }
+
+    @Test fun migrationWriteFailureDoesNotQuarantineOrOverwriteValidSource() {
+        val legacy = legacyInputAtlas()
+        val cipher = AesGcmKeyCipher { key }
+        atlasDir().mkdirs()
+        val file = File(atlasDir(), "${legacy.packageName}.json")
+        val original = cipher.encrypt(AtlasCodec.encode(legacy).toByteArray(Charsets.UTF_8))
+        file.writeBytes(original)
+        val failing = object : KeyCipher {
+            override fun encrypt(plain: ByteArray): ByteArray = throw IOException("disk unavailable")
+            override fun decrypt(data: ByteArray) = cipher.decrypt(data)
+        }
+        val s = FileAtlasStore(atlasDir(), failing)
+        assertTrue(runCatching { s.get(legacy.packageName) }.exceptionOrNull() is IOException)
+        assertArrayEquals(original, file.readBytes())
+        assertNull(s.brokenNotice.value)
+        assertEquals(listOf(file.name), atlasDir().listFiles()!!.map { it.name })
+    }
+
+    @Test fun putAndUpdateCleanBothCacheAndDisk() {
+        val legacy = legacyInputAtlas()
+        val s = store()
+        s.put(legacy)
+        assertFalse(AtlasCodec.encode(s.get(legacy.packageName)!!).contains("蓝牙耳机"))
+        s.update(legacy.packageName) { legacy }
+        assertFalse(AtlasCodec.encode(s.get(legacy.packageName)!!).contains("蓝牙耳机"))
+        assertEquals(s.get(legacy.packageName), store().get(legacy.packageName))
     }
 }
