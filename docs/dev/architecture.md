@@ -289,6 +289,21 @@
 
 成功路线可记录下来,同类任务直接回放、每步轻量核对、不调模型,对不上就交还模型(`core/replay/`,回放的动作以 `Origin.Replay` 经唯一入口执行)。路线只从办成的运行里记录(`LearnGate`,`TaskRun.settleOutcome` 判过结局后从落盘的运行事件里取,`RouteRecorder` 只管路线本身记不记得下);回放走完、这次又算办成的,路线成功计数加一(`RouteReplay.noteResult`)。速度开关「照着上次的做法做」默认开:旧设置由 `FeatureFlags` 升级一次(`speed_defaults_applied_v3`),之后用户关掉就保持关闭。
 
+### App 页面地图（App Atlas）
+
+按包名组织的「页面 → 关键控件 → 跳转边 → 可用子流程」离线图谱,和整条路线互补:路线管一次任务,图谱管一个 App 的地形。代码在 `core/atlas/`,界面在设置 ›「App 经验」。
+
+- **页面身份**:`ScreenReader.extractSignature` 从无障碍树抽结构签名(`aau-a11y` 的 `ScreenSignatureExtractor`):64 位 SimHash + 静态锚点 + 可读 resourceId;列表内容、角标、易变数字、输入框里的字都不进签名。`ActionTarget` 落盘时带动作前后的签名与 Activity(`ActionExecutor`),离线学习只读这些事件,不额外读屏。
+- **学习**(`AtlasLearner`):任务结束后回放本次运行的 `ActionTarget`,合并相似页面、累计控件与边的计数、按 App 版本分桶(升级后旧节点标 `unverifiedAfterUpgrade`,再被命中就转回可用)。边有强、弱两档:任务通过 `LearnGate.done` 记 `ok`,只是整体成功(`TaskState.Succeeded`)记 `weakOk`,所以真实使用里图能长出边;负面只记 `miss`。
+- **入口边**:跨包进入(桌面、通知、另一个 App)记成 `__entry__ --phone_launch_app--> 首页`(`ENTRY_SIG_ID`、`ATLAS_ENTRY_TOOL`)。这条边让自动寻路能从「不在目标 App 里」开始:先启动,再走内部边。
+- **页面命名**(`AtlasNamer`):学习完把新增页面的锚点、`resourceId`、被点过的控件交给轻量模型批量起中文名,30 秒超时(这是任务结束后的离线活,等得起;12 秒常撞超时导致页面永远只有 Activity 短名)。同一个 `Activity` 的不同状态容易被起成同一个名字,`disambiguateTitles` 用「这屏有、同组其他屏没有」的屏幕文字补后缀(`职位搜索页（历史搜索）`),没有独有文字就退回短哈希;带数字的文字不当后缀,重复跑幂等。用户手动改过的名字(`TITLE_USER`)不参与。
+- **使用**分三级:`AtlasHintPolicy` 在每一步把当前页的可靠出口与关键控件写成 1–3 行提示(只进本步结果那一区,不动前缀缓存);`phone_run_shortcut` 执行从轨迹里挖出的 2–10 步子流程(同一序列出现两次才晋升,连续三次偏离自动停用);`phone_navigate_to` 在图上按成功率加权跑 Dijkstra 并逐跳核对。后两者都以 `Origin.Replay` 经唯一入口执行,遇到确认、守卫或页面偏离立即交还模型。
+- **存储**(`app/src/main/java/com/wangzan101/mika/atlas/FileAtlasStore.kt`):每个包一个加密文件,AES-GCM + 临时文件 + 原子替换;坏文件另存并上报。上限为每 App 200 页、1000 条边、50 条快捷流程,按 LRU 与命中数淘汰,入口边不参与页面淘汰。
+- **两个开关**:设置 ›「App 经验」顶部是两件相互独立的事——「使用页面经验」决定是否注入线索、是否提供 `phone_run_shortcut` / `phone_navigate_to`(`FeatureFlags.atlasHintsEnabled`),「记录页面经验」决定是否在写操作前采 `ActionTarget` 并跑离线学习(`FeatureFlags.atlasLearnEnabled` + `AgentLoop.atlasLearn`)。关掉提示仍可继续积累,关掉记录也不影响已学到的内容被使用;两者都不再跟随「照着上次的做法做」。
+- **隐私**:只存框架文字和 Selector,不存列表内容、输入文字和屏幕原文;`protected` 页面与密码动作整条跳过;导出走 `AtlasShare` 脱敏并可在设置里导入合并。
+
+现状与缺口见 [`app-atlas-audit.md`](app-atlas-audit.md)。
+
 ## 10. 定时与条件触发
 
 - **工具**:`schedule_task`(`core/general/ScheduleTask.kt`),`op` = create(默认)/ list / pause / resume / delete / run_now / reschedule。只在对话界面发起的运行里提供。恢复认领过(跑过或正在跑)的一次性计划时(`TriggerEngine.setEnabled`)不改,报 `already_ran`(计划页对这种计划也不给开关),要再跑用 reschedule 或 run_now。
