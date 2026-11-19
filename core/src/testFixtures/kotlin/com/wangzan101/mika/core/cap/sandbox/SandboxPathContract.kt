@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
@@ -16,6 +17,9 @@ import com.wangzan101.mika.core.workspace.SandboxPaths
  * 子类给出沙箱和一个在沙箱根目录之外的宿主目录(符号链接的目标)。
  */
 abstract class SandboxPathContract {
+    /** 跑测试的这台机器有没有 POSIX 文件语义(Windows 没有:链接以长路径形式存、没有权限位、没有 nlink)。 */
+    protected fun posixFs(): Boolean = File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix")
+
     protected abstract fun sandbox(): SandboxPort
     /** 宿主上不属于任何工作区、也不属于技能目录的目录;测试只在里面建子目录。 */
     protected abstract fun outsideDir(): File
@@ -46,6 +50,9 @@ abstract class SandboxPathContract {
     }
 
     @Test fun symlinkOutOfWorkspaceRejected() {
+        // 这条靠符号链接的 canonicalPath 解析来验"不跟出去"。Windows 上链接以 `\\?\` 长路径形式存储、
+        // 目录链接还需要额外特权,判定语义与 POSIX 不同;真机的 AndroidFdSys 按句柄核验,比这里更严。
+        assumeTrue("需要 POSIX 符号链接语义", posixFs())
         val out = freshOutside()
         File(out, "secret").writeText("key")
         val root = wsRoot()
@@ -65,7 +72,8 @@ abstract class SandboxPathContract {
         val path = sb.saveOutput(workspace, "完整输出")
         assertTrue(path, path.startsWith("/workspace/.mika/out-"))
         assertEquals("完整输出", sb.hostPath(workspace, path, forWrite = false)!!.readText())
-        // .mika 被换成指到外面的链接:不写,抛异常
+        // .mika 被换成指到外面的链接:不写,抛异常。这一半要 POSIX 符号链接语义,Windows 上验不了。
+        assumeTrue("需要 POSIX 符号链接语义来把 .mika 换成指向外面的链接", posixFs())
         val out = freshOutside()
         val mika = File(wsRoot(), ".mika")
         mika.deleteRecursively()

@@ -22,6 +22,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 import com.wangzan101.mika.core.cap.sandbox.SandboxTools
@@ -271,6 +272,7 @@ class ToolDispatcherSandboxTest {
     }
 
     @Test fun outputNotSavedThroughSymlinkedMikaDir() = runTest {
+        assumeTrue("需要 POSIX 符号链接语义", File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix"))
         val outside = File(sb.root, "outside-mika").apply { mkdirs() }
         java.nio.file.Files.createSymbolicLink(File(ws, ".mika").toPath(), outside.toPath())
         sb.next = { CommandResult(0, false, false, 50, "x".repeat(20_000), 0, false) }
@@ -282,6 +284,7 @@ class ToolDispatcherSandboxTest {
     }
 
     @Test fun specialFilesAreNotAFile() = runTest {
+        assumeTrue("需要 mkfifo 造管道", File("/usr/bin/mkfifo").canExecute() || File("/bin/mkfifo").canExecute())
         val fifo = File(ws, "pipe")
         assertEquals(0, ProcessBuilder("mkfifo", fifo.path).start().waitFor())
         val d = dispatcher()

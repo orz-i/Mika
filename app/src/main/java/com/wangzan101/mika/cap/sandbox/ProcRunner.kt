@@ -12,6 +12,14 @@ import kotlin.math.abs
 /** 一次进程运行的原始结果;[timedOut] 只表示 Kotlin 侧的兜底时限到了。 */
 internal class ProcOutcome(val exitCode: Int, val output: ByteArray, val droppedBytes: Long, val timedOut: Boolean, val durationMs: Long)
 
+/**
+ * 交给 PRoot 的路径一律用 `/` 分隔。
+ *
+ * 这些参数在安卓上本来就是 `/...`;开发机上跑测试时 `File.path` 会变成 `\data\...`,
+ * 那既不是 PRoot 认得的路径,也让参数断言失去意义。
+ */
+private fun File.posix(): String = path.replace('\\', '/')
+
 /** 拼启动器 + PRoot 的命令行与环境变量。 */
 object ProcRunner {
     const val OUTPUT_LIMIT = 1 shl 20
@@ -31,21 +39,21 @@ object ProcRunner {
         devices: List<String> = ProotDevices.bindArgs(),
         pty: Boolean = false, ptyCols: Int = 80, ptyRows: Int = 24, ptySizePath: File? = null,
     ): List<String> = buildList {
-        add(dirs.lib("libmikarun.so").path)
+        add(dirs.lib("libmikarun.so").posix())
         if (timeoutSec > 0) addAll(listOf("--timeout", timeoutSec.toString()))
         addAll(listOf("--net", if (network) "on" else "off"))
         if (pty) addAll(listOf("--pty", "--pty-cols", ptyCols.toString(), "--pty-rows", ptyRows.toString()))
-        if (pty && ptySizePath != null) addAll(listOf("--pty-size", ptySizePath.path))
+        if (pty && ptySizePath != null) addAll(listOf("--pty-size", ptySizePath.posix()))
         add("--")
-        add(dirs.lib("libproot.so").path)
-        addAll(listOf("--kill-on-exit", "--link2symlink", "-0", "-r", dirs.rootfs.path))
+        add(dirs.lib("libproot.so").posix())
+        addAll(listOf("--kill-on-exit", "--link2symlink", "-0", "-r", dirs.rootfs.posix()))
         addAll(devices)
         addAll(listOf("-b", "/proc", "-b", "/sys"))
-        for (s in standIns) addAll(listOf("-b", "${File(dirs.procStandIns, s).path}:/proc/$s"))
+        for (s in standIns) addAll(listOf("-b", "${File(dirs.procStandIns, s).posix()}:/proc/$s"))
         addAll(
             listOf(
-                "-b", "${workspace.path}:${SandboxPaths.WORKSPACE}",
-                "-b", "${dirs.skills.path}:${SandboxPaths.SKILLS}",
+                "-b", "${workspace.posix()}:${SandboxPaths.WORKSPACE}",
+                "-b", "${dirs.skills.posix()}:${SandboxPaths.SKILLS}",
                 "-w", if (cwd.isEmpty()) SandboxPaths.WORKSPACE else "${SandboxPaths.WORKSPACE}/$cwd",
             ),
         )
@@ -59,8 +67,8 @@ object ProcRunner {
         proxy: String = "",
         pty: Boolean = false,
     ): Map<String, String> = buildMap {
-        put("PROOT_LOADER", dirs.lib("libproot_loader.so").path)
-        put("PROOT_TMP_DIR", dirs.tmp.path)
+        put("PROOT_LOADER", dirs.lib("libproot_loader.so").posix())
+        put("PROOT_TMP_DIR", dirs.tmp.posix())
         put("HOME", "/root")
         put("PATH", PATH)
         put("LANG", "C.UTF-8")

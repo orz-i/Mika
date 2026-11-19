@@ -42,8 +42,13 @@ class UploadStagingTest {
         File(ws, "big.bin").writeBytes(ByteArray(2000))
         File(ws, "a.bin").writeBytes(ByteArray(1000)); File(ws, "b.bin").writeBytes(ByteArray(1000))
         fun refused(vararg p: String) = (staging.stage(ws, p.toList()) as UploadStaging.Result.Refused).error
-        assertEquals("file_not_found", refused("/workspace/link.txt"))
-        assertEquals("linked_file", refused("/workspace/hard.txt"))
+        // 链接与硬链接的识别靠 POSIX 语义:Windows 上链接以 `\\?\` 长路径形式存、nlink 也拿不到,
+        // 这两个拒绝码在那里验不出来;CI(Linux)与真机(AndroidFdSys 按句柄核验)都会验。
+        val posix = File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix")
+        if (posix) {
+            assertEquals("file_not_found", refused("/workspace/link.txt"))
+            assertEquals("linked_file", refused("/workspace/hard.txt"))
+        }
         assertEquals("path_outside_workspace", refused("/workspace/../etc/passwd"))
         assertEquals("path_outside_workspace", refused("/opt/mika/skills/x"))
         assertEquals("file_not_found", refused("/workspace/none.txt"))

@@ -57,7 +57,8 @@ class ProcRunnerArgsTest {
             dirs, ws, "", 0, network = true, standIns = emptyList(), command = listOf("/bin/sh"),
             devices = emptyList(), pty = true, ptySizePath = size,
         )
-        assertTrue(argv.hasPair("--pty-size", size.path))
+        // 交给 PRoot 的路径统一是 `/` 分隔(见 ProcRunner 里的 posix()),断言也跟着用这一套
+        assertTrue(argv.hasPair("--pty-size", size.path.replace('\\', '/')))
         assertTrue(argv.contains("--pty"))
     }
 

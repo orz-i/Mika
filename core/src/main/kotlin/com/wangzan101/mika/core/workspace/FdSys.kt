@@ -75,10 +75,36 @@ object NioFdSys : FdSys {
         try { Files.readAttributes(p, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS) } catch (e: IOException) { null }
 
     private fun statOf(p: Path): FdStat? {
-        val a = try { Files.readAttributes(p, "unix:mode,nlink,size,dev,ino", LinkOption.NOFOLLOW_LINKS) } catch (e: IOException) { return null }
+        val a = try {
+            Files.readAttributes(p, "unix:mode,nlink,size,dev,ino", LinkOption.NOFOLLOW_LINKS)
+        } catch (e: IOException) {
+            return null
+        } catch (e: RuntimeException) {
+            // Windows 没有 unix 视图（"View 'unix' not available"）；开发机上退到基础属性
+            return basicStatOf(p)
+        }
         val mode = (a["mode"] as Int) and 0xF000
         val kind = when (mode) { 0x8000 -> FdStat.Kind.FILE; 0x4000 -> FdStat.Kind.DIR; 0xA000 -> FdStat.Kind.LINK; else -> FdStat.Kind.OTHER }
         return FdStat(kind, (a["nlink"] as Number).toLong(), (a["size"] as Number).toLong(), (a["dev"] as Number).toLong(), (a["ino"] as Number).toLong())
+    }
+
+    /**
+     * 取不到 `unix:` 视图时的近似(Windows 开发机):类型和大小仍是真的,硬链接数按 1 算。
+     *
+     * 这只影响本机跑单元测试那一路——手机上走的是 app 里的安卓实现,`nlink` 是 fstat 真值,
+     * 硬链接检测不受影响。开发机上按 1 算意味着"多链接文件"这类用例没有判别力,
+     * 属于可接受的降级:宁可在这台机器上少验一条,也不让整套文件测试因为平台差异全红。
+     */
+    private fun basicStatOf(p: Path): FdStat? {
+        val a = attrs(p) ?: return null
+        val kind = when {
+            a.isSymbolicLink -> FdStat.Kind.LINK
+            a.isDirectory -> FdStat.Kind.DIR
+            a.isRegularFile -> FdStat.Kind.FILE
+            else -> FdStat.Kind.OTHER
+        }
+        val ino = (a.fileKey()?.hashCode()?.toLong() ?: 0L) and 0xFFFFFFFFL
+        return FdStat(kind, 1L, a.size(), 0L, ino)
     }
 
     private fun dirAt(p: Path): Fd {
@@ -120,8 +146,10 @@ object NioFdSys : FdSys {
 
     override fun lstat(dir: OpenFd, name: String): FdStat? = statOf(fd(dir).path.resolve(name))
 
+    // 链接目标是原样存下来的字符串,不该被平台改写:Windows 上 Path.toString() 会把 `/proc/self/fd`
+    // 变成 `\proc\self\fd`,读出来就对不上了。沙箱里的路径一律按 `/` 表示。
     override fun readlink(dir: OpenFd, name: String): String? =
-        runCatching { Files.readSymbolicLink(fd(dir).path.resolve(name)).toString() }.getOrNull()
+        runCatching { Files.readSymbolicLink(fd(dir).path.resolve(name)).toString().replace('\\', '/') }.getOrNull()
 
     override fun list(dir: OpenFd): List<String> = Files.list(fd(dir).path).use { s -> s.map { it.fileName.toString() }.toList() }
 
@@ -139,9 +167,13 @@ object NioFdSys : FdSys {
     }
 
     override fun chmod(fd: OpenFd, mode: Int) {
+        // 权限位只有 POSIX 文件系统有。Windows 开发机上没法表达"可执行",也没必要:
+        // 那里跑的是 JVM 测试,不经过 PRoot;安卓上走的是 AndroidFdSys,这段照旧生效。
+        val path = fd(fd).path
+        if ("posix" !in path.fileSystem.supportedFileAttributeViews()) return
         val perms = java.nio.file.attribute.PosixFilePermissions.fromString(
             (0..8).joinToString("") { i -> if (mode and (1 shl (8 - i)) != 0) "rwx"[i % 3].toString() else "-" },
         )
-        Files.setPosixFilePermissions(fd(fd).path, perms)
+        Files.setPosixFilePermissions(path, perms)
     }
 }

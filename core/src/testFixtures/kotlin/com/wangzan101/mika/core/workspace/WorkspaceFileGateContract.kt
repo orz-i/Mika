@@ -23,6 +23,10 @@ abstract class WorkspaceFileGateContract {
     protected val secret by lazy { File(tmp, "secret").apply { mkdirs(); File(this, "key.txt").writeText("private") } }
     protected val gate by lazy { WorkspaceFileGate(sys) }
 
+    /** 这台机器有没有 POSIX 文件语义(Windows 没有:拿不到 nlink、打开中的文件删不掉)。 */
+    protected fun posixFs(): Boolean = fileSystem().supportedFileAttributeViews().contains("posix")
+    private fun fileSystem() = java.nio.file.FileSystems.getDefault()
+
     protected fun code(block: () -> Unit): String = try { block(); fail("expected a refusal"); "" } catch (e: SandboxError) { e.code }
     protected fun link(at: File, to: File) { Files.createSymbolicLink(at.toPath(), to.toPath()) }
     /** 系统不让建硬链接时跳过这条测试。 */
@@ -54,6 +58,9 @@ abstract class WorkspaceFileGateContract {
     }
 
     @Test fun hardLinkedFilesAreRefusedBeforeAnyWrite() {
+        // 靠 nlink 判断"这个文件还有别的名字"。Windows 的 JDK 不暴露 nlink(见 NioFdSys.basicStatOf),
+        // 开发机上验不出来;Linux CI 与真机的 AndroidFdSys(fstat)都照常验。
+        org.junit.Assume.assumeTrue("需要 POSIX 的 nlink", posixFs())
         val target = File(secret, "db").apply { writeText("keep me") }
         hardLink(File(ws, "h.txt"), target)
         assertEquals("linked_file", code { gate.openRead(ws, "h.txt").close() })
@@ -97,6 +104,9 @@ abstract class WorkspaceFileGateContract {
     }
 
     @Test fun deleteOnlyRemovesTheVerifiedFile() {
+        // 这条要"句柄开着时把文件删掉、写个新的进去"。Windows 上打开中的文件既删不掉也覆盖不了,
+        // 场景本身构造不出来。
+        org.junit.Assume.assumeTrue("需要 POSIX 的删除语义", posixFs())
         val g = gate.createNew(ws, "downloads/p.part")
         // 核实之后名字被换成了别的文件:不删
         File(ws, "downloads/p.part").delete(); File(ws, "downloads/p.part").writeText("someone else")
@@ -133,7 +143,8 @@ abstract class WorkspaceFileGateContract {
 
     @Test fun symlinkReplacesTheEntryAndMkdirsAnchored() {
         gate.symlink(ws, "dev/fd", "/proc/self/fd")
-        assertEquals("/proc/self/fd", Files.readSymbolicLink(File(ws, "dev/fd").toPath()).toString())
+        // 同 RootfsExtractorTest:链接目标按 `/` 归一后再比
+        assertEquals("/proc/self/fd", Files.readSymbolicLink(File(ws, "dev/fd").toPath()).toString().replace('\\', '/'))
         gate.symlink(ws, "dev/fd", "/proc/self/fd")
         link(File(ws, "sym"), secret)
         assertEquals("not_a_file", code { gate.mkdirs(ws, "sym/inside") })

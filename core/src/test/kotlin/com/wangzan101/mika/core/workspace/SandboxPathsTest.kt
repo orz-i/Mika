@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 import java.nio.file.Files
@@ -33,6 +34,8 @@ class SandboxPathsTest {
     }
 
     @Test fun symlinkEscapeRejected() {
+        // Windows 上链接以 `\\?\` 长路径形式存,canonicalPath 的解析结果与 POSIX 不同,这条验不出口径
+        assumeTrue("需要 POSIX 符号链接语义", File(".").toPath().fileSystem.supportedFileAttributeViews().contains("posix"))
         val tmp = Files.createTempDirectory("paths").toFile()
         val root = File(tmp, "ws").apply { mkdirs() }
         val outside = File(tmp, "outside").apply { mkdirs() }

@@ -47,8 +47,11 @@ object SandboxPaths {
             val p = cur.toPath()
             if (Files.isSymbolicLink(p)) {
                 if (!Files.exists(p)) return null
-                cur = cur.canonicalFile
-                if (!inside(cur, base)) return null
+                // 这里必须用 toRealPath:Windows 上 File.getCanonicalPath 不解析目录链接(原样返回链接自己),
+                // 换成它会把「指到根外面的链接」当成根里的路径放过去,越界检查就成了摆设。
+                val real = runCatching { p.toRealPath() }.getOrNull() ?: return null
+                if (!inside(real.toFile(), base)) return null
+                cur = real.toFile()
             }
         }
         return cur.canonicalFile.takeIf { inside(it, base) }

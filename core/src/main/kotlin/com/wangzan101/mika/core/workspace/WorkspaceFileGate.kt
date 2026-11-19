@@ -145,7 +145,7 @@ class WorkspaceFileGate(private val sys: FdSys) {
         // 之后 dir 归 GatedFile 关;dir 不是根目录本身时根目录句柄这里就关
         if (dir !== rootFd) rootFd.close()
         try {
-            if (under != null && dir.realPath() != rootReal.trimEnd('/') + "/" + segments(under).joinToString("/")) throw outside()
+            if (under != null && flat(dir.realPath()) != flat(rootReal) + "/" + segments(under).joinToString("/")) throw outside()
             val f = file(dir, segs.last(), how)
             try {
                 return GatedFile(sys, dir, f, segs.last(), verify(f, rootReal, dir, segs.last()))
@@ -197,7 +197,7 @@ class WorkspaceFileGate(private val sys: FdSys) {
     /** 在句柄上核实:实际位置就是打开它的那个目录里的那个名字、在根目录里;普通文件;只有一个硬链接。 */
     private fun verify(f: OpenFd, rootReal: String, dir: OpenFd, name: String): FdStat {
         val real = f.realPath()
-        if (!inside(real, rootReal) || real != dir.realPath().trimEnd('/') + "/" + name) throw outside()
+        if (!inside(real, rootReal) || flat(real) != flat(dir.realPath()) + "/" + name) throw outside()
         val st = f.stat()
         if (st.kind != FdStat.Kind.FILE) throw notAFile()
         if (st.nlink != 1L) throw SandboxError(LINKED_FILE, "The file has more than one hard link, so Mika does not use it; copy it (cp) and use the copy.", recoverable = true)
@@ -240,7 +240,19 @@ class WorkspaceFileGate(private val sys: FdSys) {
             return if (dot > 0) "${name.substring(0, dot)} ($n)${name.substring(dot)}" else "$name ($n)"
         }
 
-        internal fun inside(path: String, root: String): Boolean = path == root || path.startsWith(root.trimEnd('/') + "/")
+        /**
+         * 比较路径用的统一写法:分隔符一律按 `/`,去掉结尾的 `/`。
+         *
+         * `realPath()` 用的是平台原生分隔符——安卓上是 `/`,Windows 开发机上是 `\`。这里若直接拿它跟
+         * `目录 + "/" + 名字` 比,Windows 上永远不相等,合法的文件会被判成越界(`path_outside_workspace`)。
+         */
+        internal fun flat(p: String): String = p.replace('\\', '/').trimEnd('/')
+
+        internal fun inside(path: String, root: String): Boolean {
+            val p = flat(path)
+            val r = flat(root)
+            return p == r || p.startsWith("$r/")
+        }
     }
 }
 
@@ -289,6 +301,9 @@ class GatedFile internal constructor(
     fun delete() {
         val now = sys.lstat(dir, name) ?: return
         if (now.dev != stat.dev || now.ino != stat.ino || now.kind != FdStat.Kind.FILE) return
+        // 文件句柄还开着时,Windows 不允许删这个名字(而且会安静地失败)。删只需要目录句柄,
+        // 所以先把文件句柄松开;POSIX 上本来就能删,这一步只是让两边行为一致。
+        runCatching { fd.close() }
         try { sys.remove(dir, name) } catch (e: FdSysException) { if (e.kind != FdSysException.Kind.NOT_FOUND) throw e }
     }
 
