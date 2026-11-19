@@ -184,6 +184,7 @@ internal class DisplayCustodian(
         fun packageOfTask(taskId: Int): String?
         fun userOfTask(taskId: Int): Int
         fun visibleOnMainScreen(pkg: String, userId: Int): Boolean
+        fun displayOfPackage(pkg: String): Int
         fun uidOfPackage(pkg: String): Int
         fun appLabel(pkg: String): String?
         suspend fun inspectDisplayWindows(
@@ -686,9 +687,13 @@ internal class DisplayCustodian(
             standardTask = arrival.standard,
         )
 
-        val ctx = buildAttributionContext(vd, now)
+        val ctx = buildAttributionContext(vd, now, originWasMainTop(resolvedOrigin, vd))
         val result = CustodyAttribution.attribute(coreArrival, resolvedOrigin, ctx)
-        Log.i(TAG, "arrival task=${arrival.taskId} pkg=${arrival.packageName} disp=${arrival.displayId} origin=${resolvedOrigin.pkg}/${resolvedOrigin.uid} -> $result")
+        Log.i(
+            TAG,
+            "arrival task=${arrival.taskId} pkg=${arrival.packageName} disp=${arrival.displayId} " +
+                "origin=${resolvedOrigin.pkg}/${resolvedOrigin.uid} onMain=${ctx.originOnMain} -> $result",
+        )
 
         when (result) {
             is AttributionResult.Ignore -> {
@@ -2020,10 +2025,10 @@ internal class DisplayCustodian(
         return runtime.launchOrigin(arrival.taskId)
     }
 
-    private suspend fun buildAttributionContext(vd: Int, nowMs: Long): AttributionContext = stateMutex.withLock {
+    private suspend fun buildAttributionContext(vd: Int, nowMs: Long, originOnMain: Boolean): AttributionContext = stateMutex.withLock {
         pruneUserIntents(nowMs)
         val managedMap = if (vd > Display.DEFAULT_DISPLAY) {
-            mapOf(vd to managedUidsByDisplay[vd].orEmpty().toSet())
+            mapOf(vd to liveManagedUids(vd))
         } else {
             emptyMap()
         }
@@ -2036,11 +2041,44 @@ internal class DisplayCustodian(
             mainDisplayId = Display.DEFAULT_DISPLAY,
             previousMainTopTaskId = previousMainTopTaskId.takeIf { it >= 0 },
             existingMainUserTaskIds = existingMainUserTaskIds.toSet(),
+            originOnMain = originOnMain,
             ledgerEntries = ledger.snapshot(nowMs),
             userIntents = userIntents.toList(),
             recentAgentAction = recentAction,
             lastAgentActionAtMs = lastAt,
         )
+    }
+
+    /**
+     * 此刻真正还活在虚拟屏上的托管 UID。
+     *
+     * `managedUidsByDisplay` 是"曾在这块屏上出现过"的账本，只增不减；App 被别人挪回主屏后它照样留着。
+     * 拿这份旧账去判"是不是 Agent 开的"，就会把用户在主屏上用的微信当成虚拟屏里的微信（小程序整条被搬走即由此而来）。
+     * 所以判之前先跟一次实况对齐：包名此刻必须还有任务停在 [vd] 上，否则不算托管。
+     */
+    private fun liveManagedUids(vd: Int): Set<Int> {
+        val managed = managedUidsByDisplay[vd].orEmpty()
+        if (managed.isEmpty()) return emptySet()
+        return managed.filterTo(HashSet()) { uid ->
+            val pkg = findPackageByUid(uid) ?: return@filterTo true
+            runtime.displayOfPackage(pkg) == vd
+        }
+    }
+
+    /**
+     * 发起方这个 App 是不是就是主屏上最后到达的那一个 —— 用户此刻正在主屏用它。
+     *
+     * 系统代转（`uid < 10000`，含 shell 2000 与 android 1000）不适用：那不是"用户在某个 App 里点了什么"，
+     * 而是 Agent 自己或系统框架在起任务。
+     */
+    private fun originWasMainTop(origin: LaunchOrigin, vd: Int): Boolean {
+        if (vd <= Display.DEFAULT_DISPLAY || origin.isUnknown) return false
+        if (origin.uid < android.os.Process.FIRST_APPLICATION_UID) return false
+        val pkg = origin.pkg?.takeIf { it.isNotBlank() } ?: return false
+        if (pkg == selfPackage || pkg in launcherPackages) return false
+        val top = currentMainTopTaskId
+        if (top < 0) return false
+        return runCatching { runtime.packageOfTask(top) }.getOrNull() == pkg
     }
 
     private suspend fun buildClassificationContext(
@@ -2055,7 +2093,7 @@ internal class DisplayCustodian(
         val lastAt = lastAgentActionAtMs
         val recentAgentAction = lastAt != null && nowMs - lastAt in 0L..JumpConfirmPolicy.ACTIVE_AGENT_ACTION_WINDOW_MS
         val originUid = origin.uid.takeIf { it >= 0 }
-        val managedUids = if (vd > Display.DEFAULT_DISPLAY) managedUidsByDisplay[vd].orEmpty() else emptySet()
+        val managedUids = if (vd > Display.DEFAULT_DISPLAY) liveManagedUids(vd) else emptySet()
         val hasManagedOrigin = originUid != null && originUid in managedUids
         val originPkg = origin.pkg ?: originUid?.let { findPackageByUid(it) }
         val profileState = jumpConfirmProfiles.current()
@@ -2311,6 +2349,9 @@ internal class DisplayCustodian(
 
         override fun visibleOnMainScreen(pkg: String, userId: Int): Boolean =
             runCatching { shell.visibleOnMainScreen(pkg, userId) }.getOrDefault(false)
+
+        override fun displayOfPackage(pkg: String): Int =
+            runCatching { shell.displayOfPackage(pkg) }.getOrDefault(-1)
 
         override fun uidOfPackage(pkg: String): Int =
             runCatching { pm.getApplicationInfo(pkg, 0).uid }.getOrDefault(-1)

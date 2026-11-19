@@ -42,6 +42,7 @@ class CustodyAttributionTest {
         userIntents: List<UserIntentEvidence> = emptyList(),
         recentAgentAction: Boolean = false,
         lastAgentActionAtMs: Long? = null,
+        originOnMain: Boolean = false,
     ) = AttributionContext(
         selfPackage = selfPkg,
         launcherPackages = setOf(launcherPkg),
@@ -49,6 +50,7 @@ class CustodyAttributionTest {
         mainDisplayId = 0,
         previousMainTopTaskId = previousMainTopTaskId,
         existingMainUserTaskIds = existingMainUserTaskIds,
+        originOnMain = originOnMain,
         ledgerEntries = ledgerEntries,
         userIntents = userIntents,
         recentAgentAction = recentAgentAction,
@@ -537,6 +539,35 @@ class CustodyAttributionTest {
                 selfOrigin,
                 baseContext(previousMainTopTaskId = 49337, lastAgentActionAtMs = 5_000L),
             ),
+        )
+    }
+
+    @Test
+    fun `R1_5 leaves alone a task the user opened inside an app that is still on the main screen`() {
+        // 真机取证：微信留在主屏，用户在微信里点开小程序，小程序是微信自己 startActivity 新建的任务，
+        // 来源 UID/包名就是微信自己。旧规则按 R3 判成"托管来源、无用户意图"把整条任务搬到虚拟屏上。
+        val wechatOrigin = LaunchOrigin(uid = managedAppUid, pkg = "com.tencent.mm", confidence = OriginConfidence.HIGH)
+        val miniProgram = baseArrival(taskId = 49722, pkg = "com.tencent.mm")
+
+        assertEquals(
+            AttributionResult.Ignore(IgnoreReason.ORIGIN_ON_MAIN),
+            CustodyAttribution.attribute(
+                miniProgram,
+                wechatOrigin,
+                baseContext(originOnMain = true, recentAgentAction = true),
+            ),
+        )
+    }
+
+    @Test
+    fun `R1_5 does not shield arrivals once the origin app has left the main screen`() {
+        // 微信此刻只在虚拟屏上（Agent 正在操作它）：它冒到主屏的新任务仍应被拉回
+        val wechatOrigin = LaunchOrigin(uid = managedAppUid, pkg = "com.tencent.mm", confidence = OriginConfidence.HIGH)
+        val jumpedOut = baseArrival(taskId = 49722, pkg = "com.tencent.mm")
+
+        assertEquals(
+            AttributionResult.Spill(managedDisplayId, SpillReason.MANAGED_ORIGIN_NO_USER_INTENT),
+            CustodyAttribution.attribute(jumpedOut, wechatOrigin, baseContext(originOnMain = false)),
         )
     }
 }

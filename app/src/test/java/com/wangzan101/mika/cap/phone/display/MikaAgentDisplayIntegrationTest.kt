@@ -62,6 +62,19 @@ class MikaAgentDisplayIntegrationTest {
         }
 
         override fun startApp(displayId: Int, packageName: String?): Int = 0
+        /** 单帧截图：本桩不产图，真实实现由 Shell 侧完成。 */
+        override fun capturePng(displayId: Int, timeoutMs: Int, privilege: Int): ParcelFileDescriptor? = null
+        /** 长图截取：同上，结构体只做类型闭环。 */
+        override fun captureLongPng(
+            displayId: Int,
+            maxScrolls: Int,
+            maxHeightPx: Int,
+            privilege: Int,
+            topInsetPercent: Int,
+            bottomInsetPercent: Int,
+        ): Bundle? = null
+        /** 截图能力探测：无图可截，返回空能力表。 */
+        override fun captureCapability(): Bundle? = null
         override fun topTaskId(displayId: Int): Int = 101
         override fun moveTask(taskId: Int, displayId: Int): Boolean {
             movedTaskId = taskId

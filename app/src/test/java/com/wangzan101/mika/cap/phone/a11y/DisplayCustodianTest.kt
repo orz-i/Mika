@@ -131,6 +131,10 @@ class DisplayCustodianTest {
         override fun visibleOnMainScreen(pkg: String, userId: Int): Boolean =
             topTaskByDisplay[Display.DEFAULT_DISPLAY]?.let { taskPackages[it] == pkg } == true
 
+        /** 与引擎一致：只有任务停在托管屏上才返回托管屏 ID，否则 -1。 */
+        override fun displayOfPackage(pkg: String): Int =
+            if (taskPackages.entries.any { it.value == pkg && taskDisplays[it.key] == vdId }) vdId else -1
+
         override fun uidOfPackage(pkg: String): Int = uids[pkg] ?: -1
 
         override fun appLabel(pkg: String): String? = labels[pkg]

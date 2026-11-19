@@ -77,6 +77,7 @@ enum class IgnoreReason {
     SELF_PACKAGE,
     LAUNCHER_PACKAGE,
     USER_INTENT_EVIDENCE,
+    ORIGIN_ON_MAIN,
     OTHER,
 }
 
@@ -112,7 +113,8 @@ sealed interface AttributionResult {
  *
  * - [managedDisplays]：键为当前处于托管中的虚拟屏 ID，值为该屏托管的 UID 集合；
  * - [previousMainTopTaskId]：本次到达前主屏的顶部任务 ID；
- * - [existingMainUserTaskIds]：用户主屏上原本就存在的任务 ID 集合（用于判定 `sameTask` 是否落入用户已有任务）。
+ * - [existingMainUserTaskIds]：用户主屏上原本就存在的任务 ID 集合（用于判定 `sameTask` 是否落入用户已有任务）；
+ * - [originOnMain]：发起方这个 App 此刻是否还有任务留在主屏（含后台不可见的那一份）。
  */
 data class AttributionContext(
     val selfPackage: String,
@@ -121,6 +123,7 @@ data class AttributionContext(
     val mainDisplayId: Int = 0,
     val previousMainTopTaskId: Int? = null,
     val existingMainUserTaskIds: Set<Int> = emptySet(),
+    val originOnMain: Boolean = false,
     val ledgerEntries: List<LedgerEntry> = emptyList(),
     val userIntents: List<UserIntentEvidence> = emptyList(),
     val recentAgentAction: Boolean = false,
@@ -148,9 +151,12 @@ data class AttributionContext(
 /**
  * 主屏任务到达的纯逻辑归因器。
  *
- * 严格按优先级 **R0 -> R1 -> R2 -> R3 -> R4 -> R5 -> R6** 判定：
+ * 严格按优先级 **R0 -> R1 -> R1.5 -> R2 -> R3 -> R4 -> R5 -> R6** 判定：
  * - **R0**：非主屏到达 / 桌面 / Mika 自身 / 非标准任务 -> [AttributionResult.Ignore]
  * - **R1**：到达前就是主屏顶部任务，或 `sameTask` 落在用户主屏原有任务里 -> [AttributionResult.InUse]
+ * - **R1.5**：发起方这个 App 此刻仍有任务留在主屏（`originOnMain`，用户正在主屏用它）-> [AttributionResult.Ignore]
+ *   （用户在主屏的应用内自己跳转——小程序、内置浏览器、扫一扫结果页等都会新建任务，来源包名就是该 App 自己；
+ *   这种到达不是 Agent 越屏，不能把用户的界面搬到虚拟屏上去）
  * - **R2**：账本中存在托管屏 D 的未拒绝中间页 I（Open，或未拒绝且 Resolved ≤ 10s），且满足下列任一条件 -> [AttributionResult.Spill]（忽略用户在 I 上的点击）：
  *   1. `origin.pkg == I.pkg` 或 `origin.uid ∈ managed(D)`；
  *   2. 针对 `JumpConfirm` / `Chooser` 的派生态：`origin` 为系统代转（如 `uid=1000` / `pkg="android"`）或 `UNKNOWN`、到达包名不是 I 自身、1.5s 内无桌面/SystemUI/最近任务的用户意图证据（且若为 `UNKNOWN` origin 且 `JumpConfirm` 已明确 `targetPackage`，到达包需匹配该目标或处于 `Open` 状态）。
@@ -177,6 +183,11 @@ object CustodyAttribution {
 
         // R1: 到达前就是主屏顶部任务，或 sameTask 落在用户主屏原有任务里 -> InUse
         r1InUseReason(arrival, context)?.let { return AttributionResult.InUse(it) }
+
+        // R1.5: 发起方这个 App 自己还留在主屏上 -> 这是用户在主屏内的跳转（小程序等），不是越屏
+        if (context.originOnMain) {
+            return AttributionResult.Ignore(IgnoreReason.ORIGIN_ON_MAIN)
+        }
 
         // R2: 账本中存在屏 D 的中间页 I（Open 或未拒绝且 Resolved ≤ 10s），含系统代转派生态 -> Spill(D)
         matchR2LedgerEntry(arrival, origin, context)?.let { entry ->
