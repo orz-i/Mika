@@ -2,6 +2,9 @@
 
 这份文档分析 Mika 的「连接电脑」功能集到底是什么、它的价值在哪、哪些部分能直接沉进 AAU、哪些必须抽象、怎么分期落地。目标读者是准备动手改 AAU 的人。
 
+> 状态：方案已按本文落地（`aau/aau-remote`）。§1、§2 是现状描述，跟着代码走；§5–§7 是当初的**目标设计、迁移映射与分期**，里面出现的名字是计划名，最终以 AAU 实际实现为准（例如错误类型最后沿用了 `RemoteTaskError`，设备工具并进了 `ToolCatalog`）。
+
+
 结论先说：
 
 1. **它不是投屏，是任务委派 API。** 电脑（或电脑上的 AI Agent）只提交「要办成什么」，手机自己决定怎么做。这条语义与 AAU 的「提供手机动作能力」正交，不重复。
@@ -36,11 +39,11 @@
 |---|---|---|
 | 入口 | Skill 脚本、`mika` CLI、MCP 服务器、裸 HTTP | 电脑侧（`tools/mika`、`tools/mika-feishu`） |
 | 传输 | USB（adb forward 回环）、局域网/私有 VPN（明文 HTTP + 令牌）、自托管网关（出站 WSS + TLS） | 手机侧 + `tools/relay` |
-| 协议 | MCP Streamable HTTP（双代）、任务 API v1（REST + JSON） | 手机侧 `core/mcp`、`core/remote` |
-| 业务 | 任务提交/查询/等待/回答/插话/取消/列表、附件上下行、运行记录导出、历史会话读取、设备唤醒解锁 | 手机侧 `core/remote` + 宿主 |
-| 权限 | 令牌、来源地址白名单、失败冷却、owner 隔离、能力开关（历史/设备/导出） | 手机侧 `core/remote` |
+| 协议 | MCP Streamable HTTP（双代）、任务 API v1（REST + JSON） | 手机侧 `core/mcp/`、`core/remote/` |
+| 业务 | 任务提交/查询/等待/回答/插话/取消/列表、附件上下行、运行记录导出、历史会话读取、设备唤醒解锁 | 手机侧 `core/remote/` + 宿主 |
+| 权限 | 令牌、来源地址白名单、失败冷却、owner 隔离、能力开关（历史/设备/导出） | 手机侧 `core/remote/` |
 | 引导 | USB 一键脚本、连接信息文件、`mika connect` 自动转发、网关配对 | 手机侧 + 电脑侧 |
-| 观测 | 设置页连接状态与最近请求、任务台 `mika ui`、运行事件导出 | 手机侧 `app/ui` + `tools/mika/scripts/mika_desk` |
+| 观测 | 设置页连接状态与最近请求、任务台 `mika ui`、运行事件导出 | 手机侧 `app/ui/` + `tools/mika/scripts/mika_desk` |
 
 **没有 Mika 服务器的含义要说清**：局域网/USB 是点对点；公网只有用户自己部署的网关，网关只做透明转发，令牌由手机校验。这条设计直接决定了 AAU 的沉淀范围——不需要多租户，不需要账号体系。
 
@@ -63,7 +66,7 @@
 | `core/remote/RelayGateway.kt` | 77 | 网关地址校验与配对/解绑 |
 | `core/mcp/McpRpc.kt` | 246 | JSON-RPC 双代协议（modern/legacy）、头一致性校验、无状态无 SSE |
 | `core/mcp/McpTaskTools.kt` | 206 | 7 个任务工具的定义与调用适配 |
-| `core/mcp/McpDeviceTools.kt` | 40 | 3 个设备工具（state/wake/unlock） |
+| `aau/aau-remote/.../mcp/ToolCatalog.kt` | 289 | 任务工具 + 3 个设备工具（state/wake/unlock）；设备工具已搬到 AAU，Mika 侧只剩 `RemoteHost.kt` 里的 `toRemoteDevicePort` 适配 |
 | `core/mcp/McpServer.kt` | 99 | 本机传输桩：`McpToolSession` + `McpTaskHost`（**Mika 专用，不搬**） |
 | `core/mcp/McpUsb.kt` | 93 | USB 连接信息文件 + `connect-computer.sh` 的生成 |
 | `core/device/DeviceAccess.kt` | 173 | 主屏唤醒/解锁状态机（凭据只在端侧、失败即封） |
@@ -173,8 +176,8 @@ fun same(a: String, b: String): Boolean {
 
 | AAU 现有 | 对应 |
 |---|---|
-| `aau-common/.../shell/DeviceUnlockInput.kt` | `DeviceAccessPort` 的 `wake/dismiss/reveal/enter` 实现，连"严格只对 systemui UID 注入"这条都一致 |
-| `aau-setup/.../PrivilegeManager.kt` + `WirelessAdbLauncher.kt` | USB/无线调试引导可以复用，比 Mika 的纯 adb 方案更完整 |
+| `aau/aau-common/.../shell/DeviceUnlockInput.kt` | `DeviceAccessPort` 的 `wake/dismiss/reveal/enter` 实现，连"严格只对 systemui UID 注入"这条都一致 |
+| `aau/aau-setup/.../PrivilegeManager.kt` + `WirelessAdbLauncher.kt` | USB/无线调试引导可以复用，比 Mika 的纯 adb 方案更完整 |
 | `gradle/libs.versions.toml` 已有 `kotlin-jvm`、`kotlin-serialization`、`okhttp`、`coroutines` | `aau-remote` 可以直接做纯 JVM 模块，不需要新增任何依赖 |
 | 模块化 + 单向依赖纪律 | 与 Mika `:core` 的纯 Kotlin 做法同构，测试策略可照搬 |
 
@@ -371,7 +374,7 @@ USB 引导脚本的 `component` 必须参数化（接入方包名不定）：`Us
 | `usb/` | `UsbBridge.kt`（`mcp-usb.json` + `connect-computer.sh`，component 参数化） |
 | 根 | `RemoteBridge.kt`（门面：`start`/`stop`/`rebind`/`handle`）、`RemoteBrand.kt`（`appName`/`toolPrefix`） |
 
-**Mika 侧**：`core/src/main/kotlin/.../core/remote/` 下原有 15 个文件全部降级为 `typealias` 指向 AAU 类型（调用点零改动），仅保留真正有 Mika 业务的 `RunRecordExport`（`RunExportRecord` 渲染）；`RemoteHost.kt` 重写成装配壳；新增 `MikaTaskStates.kt` 做 `TaskState` → `RemoteTaskState` 映射。`app/` 侧 `RemoteTaskHub`、`RemoteTaskReceipts`、`RemoteRunExport`、`McpRuntime` 改到 AAU 端口上。
+**Mika 侧**：`core/src/main/kotlin/com/wangzan101/mika/core/remote/` 下原有 15 个文件全部降级为 `typealias` 指向 AAU 类型（调用点零改动），仅保留真正有 Mika 业务的 `RunRecordExport`（`RunExportRecord` 渲染）；`RemoteHost.kt` 重写成装配壳；新增 `MikaTaskStates.kt` 做 `TaskState` → `RemoteTaskState` 映射。`app/` 侧 `RemoteTaskHub`、`RemoteTaskReceipts`、`RemoteRunExport`、`McpRuntime` 改到 AAU 端口上。
 
 **协议保持不变的硬约定**（保证 `mika` CLI / Skill / 飞书连接器零成本驱动）：路径 `/mcp`、`/api/v1/*`；MCP 工具名仍为 `mika_*`（由 `RemoteBrand.toolPrefix` 生成，可改）；客户端头 `x-mika-client`；`capabilities`/`limits` 字段名不变。唯一变更是 relay 子协议 `mika-relay.v2` → `aau-relay.v1`，帧格式未动。
 
@@ -380,7 +383,7 @@ USB 引导脚本的 `component` 必须参数化（接入方包名不定）：`Us
 - `:aau-remote:test` 25 项 0 失败（2 项因本机透明代理污染 loopback 用 `Assume` 跳过）。
 - `:core:relayTest` 通过：真 Go 网关（`relayGatewayBinary` 现编）+ 真 Kotlin `RelayClient` 以 `aau-relay.v1` 握手成功。
 - `tools/relay` 的 `go test ./...` 通过。
-- `:core:test` 全量 114 项（remote+mcp 子集）3 失败、`:app:testDebugUnitTest` 全量 1930 项 63 失败——已用 `git worktree` 在 HEAD 基线跑同一批用例，失败项与失败名字**完全一致**（`HttpServerTest.keepsServingWhenConnectionOptionsDoNotIncludeClose`、`HttpServerTest.rejectsUnauthenticatedOverflowBeforeTheHandlerAndKeepsServing`、`McpHostHttpTest.chunkedBodyAfterExpectContinue`），判定为环境既有问题（本机 AdGuard 类透明代理往 loopback 注入阻塞页），非本次引入。
+- 单测全量现在两边都是 0 失败（`:app:testDebugUnitTest` 1930 项、`:core:test` 3274 项），细节与逐条修法见 `docs/dev/windows-test-failures.md`。其中三条原始 socket 用例（`HttpServerTest` 两条、`McpHostHttpTest.chunkedBodyAfterExpectContinue`）在本机由 AdGuard 类透明代理往 loopback 注入阻塞页，已按 `MiniHttpServerTest` 的做法用 `Assume` 跳过；CI 与安卓上照常真跑。
 
 **未做**：任务台 UI 壳（`mika ui` / `mika_desk`）按决策不迁；`McpRuntime`/`McpService`/`McpSettings`/`McpScreen` 作为宿主层留在 Mika。
 

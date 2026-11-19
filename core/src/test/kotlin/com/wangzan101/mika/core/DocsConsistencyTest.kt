@@ -12,6 +12,7 @@ import java.io.File
  *
  * 只检查「整段反引号内容就是一个标识符」的写法;下面这些一律不查(规则,不是白名单):
  *  - 围栏代码块(```)整块不看;行内反引号里含空白的是命令或代码片段;
+ *  - 方案文档里「目标设计」「迁移映射」「分期」「落地计划」这几段写的是打算怎么做,名字可能还没落地,整段不看;
  *  - 含 < > * … { } ( ) = : " ' $ , ; | # 的是占位、通配、调用、键值、示例值;
  *  - 以 / ~ 开头的是设备或系统路径,含 :// 的是网址;
  *  - 路径:带 / 的,只有第一段是仓库根下真有的目录或文件才查(`files/sandbox/rootfs`、`read/system` 这类是运行时产物或分类名);
@@ -55,11 +56,25 @@ class DocsConsistencyTest {
     /** 去掉围栏代码块后,取所有行内反引号里的内容。 */
     private fun spans(text: String): List<String> {
         var fenced = false
+        var plan = false
         val prose = text.lines().filter { line ->
-            if (line.trimStart().startsWith("```")) { fenced = !fenced; false } else !fenced
+            val t = line.trimStart()
+            when {
+                t.startsWith("```") -> { fenced = !fenced; false }
+                fenced -> false
+                else -> {
+                    // 方案文档里这几段写的是「打算怎么做」,名字可能还没落地或最终叫了别的名字,不按现状查。
+                    // 只认二级标题:三级小标题(5.4、5.5…)跟着上级走,不能把状态重置回「现状」。
+                    if (t.startsWith("## ")) plan = planSection.containsMatchIn(t)
+                    !plan
+                }
+            }
         }.joinToString("\n")
         return Regex("`([^`\n]+)`").findAll(prose).map { it.groupValues[1].trim() }.toList()
     }
+
+    /** 只放行「目标是未来」的段落:目标设计、迁移映射、分期。文档里描述现状的部分照旧查。 */
+    private val planSection = Regex("""^##\s*\d*(\.\d+)*\s*(目标设计|迁移映射|分期|落地计划)""")
 
     private val notIdentifier = Regex("""[\s<>*…{}()=:"'$,;|#]""")
     private val pathExtensions = setOf("kt", "kts", "java", "md", "json", "xml", "txt", "yml", "yaml", "gradle", "toml", "properties", "py", "sh", "js", "html", "pro", "aidl", "cpp", "h")
@@ -115,7 +130,7 @@ class DocsConsistencyTest {
     /** `java.lang` 隐含导入,源码里看不到 import;文档提到这几个异常不算脱节。 */
     private val javaLang = setOf(
         "Exception", "RuntimeException", "IllegalStateException", "IllegalArgumentException",
-        "IndexOutOfBoundsException", "SecurityException", "Throwable", "Error",
+        "IndexOutOfBoundsException", "SecurityException", "Throwable", "Error", "UnsupportedOperationException",
     )
 
     /** 源码里以字符串字面量出现过的名字是运行记录、协议里的标记(如 `tool_result`),不是工具名。 */
