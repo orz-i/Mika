@@ -3,6 +3,7 @@ package com.wangzan101.mika.task
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import com.wangzan101.mika.cap.phone.a11y.AppCopyReader
 import com.wangzan101.mika.settings.KeyCipher
 import com.wangzan101.mika.settings.KeystoreKeyCipher
 import com.wangzan101.mika.shell.IMikaShell
@@ -58,11 +59,32 @@ class PrefsMarker(private val prefs: SharedPreferences, private val name: String
 interface AudioPort {
     /** 当前 PLAY_AUDIO 模式;读不到返回 null。 */
     fun mode(packageName: String): String?
+    /** 系统明确拒绝时跳过 AppOps，避免给从未写入的状态创建恢复记录。 */
+    fun appOpsDenied(): Boolean = false
     fun mute(packageName: String): Boolean
     fun setMode(packageName: String, mode: String): Boolean
 }
 
+/** 只活在助手和虚拟屏的生命周期内，不属于 AppOps 持久化账本。 */
+fun interface TaskMediaRoute {
+    fun setMuted(key: String, muted: Boolean, preparing: Boolean): Boolean
+}
+
+internal class ShellMediaRoute(
+    private val shell: IMikaShell,
+    private val mainUser: Int,
+    private val displayId: () -> Int?,
+) : TaskMediaRoute {
+    override fun setMuted(key: String, muted: Boolean, preparing: Boolean): Boolean = runCatching {
+        val (pkg, user) = AppAudioKey.parse(key) ?: return false
+        val display = displayId() ?: return !muted // 不会给尚未创建的屏建路由
+        shell.setTaskMediaMuted(display, pkg, user ?: mainUser, muted, preparing)
+    }.getOrDefault(false)
+}
+
 class ShellAudio(private val shell: IMikaShell) : AudioPort {
+    override fun appOpsDenied(): Boolean = runCatching { shell.playAudioAppOpsDenied() }.getOrDefault(false)
+
     override fun mode(packageName: String): String? = runCatching {
         val (pkg, user) = AppAudioKey.parse(packageName) ?: return null
         if (user == null) shell.getAudioMode(pkg) else shell.getAudioModeInUser(pkg, user)
@@ -81,12 +103,26 @@ class ShellAudio(private val shell: IMikaShell) : AudioPort {
 }
 
 /**
- * 任务期间关掉目标 App 的声音。静音前把原模式写进持久化记录:shell 服务随 Mika 进程一起结束,
- * 它内存里的原值会丢,只有这份记录能让下次启动时恢复。
+ * 任务期间关掉目标 App 的声音。AppOps 原值先落盘以便崩溃恢复；系统明确拒绝 AppOps 时走临时路由，
+ * 不写系统模式，也不留持久化记录。临时路由还由助手负责随屏、解绑或进程退出释放。
  */
-class AudioMute(private val port: AudioPort, private val store: MarkerStore) {
+class AudioMute(
+    private val port: AudioPort,
+    private val store: MarkerStore,
+    private val mediaRoute: TaskMediaRoute? = null,
+) {
+    private val routed = LinkedHashSet<String>()
+
     @Synchronized
-    fun mute(packageName: String): Boolean {
+    fun usesRoute(packageName: String): Boolean = packageName in routed
+
+    @Synchronized
+    fun mute(packageName: String, preparing: Boolean = false): Boolean {
+        if (mediaRoute != null && (packageName in routed || port.appOpsDenied())) {
+            // 即使调用失败，清理时也向助手确认路由已释放（Binder 可能在创建之后才断开）。
+            routed += packageName
+            return mediaRoute.setMuted(packageName, true, preparing)
+        }
         val saved = store.load().orEmpty()
         if (packageName !in saved) {
             val prior = port.mode(packageName) ?: return false
@@ -98,21 +134,30 @@ class AudioMute(private val port: AudioPort, private val store: MarkerStore) {
     /** 只恢复一个 App(用户接管时让它能出声);恢复不了就留在记录里。没静音过的视为已恢复。 */
     @Synchronized
     fun restore(packageName: String): Boolean {
+        val routeReleased = releaseRoute(packageName)
         val saved = store.load().orEmpty()
-        if (packageName !in saved) return true
+        if (packageName !in saved) return routeReleased
         if (!port.setMode(packageName, saved[packageName] ?: "default")) return false
         val left = saved - packageName
         if (left.isEmpty()) store.clear() else store.save(left)
-        return true
+        return routeReleased
     }
 
     /** 恢复记录里的全部 App;恢复不了的留在记录里下次再试。 */
     @Synchronized
     fun restoreAll(): Boolean {
-        val saved = store.load() ?: return true
+        routed.toList().forEach(::releaseRoute)
+        val saved = store.load() ?: return routed.isEmpty()
         val left = saved.filterNot { (pkg, mode) -> port.setMode(pkg, mode ?: "default") }
         if (left.isEmpty()) store.clear() else store.save(left)
-        return left.isEmpty()
+        return left.isEmpty() && routed.isEmpty()
+    }
+
+    private fun releaseRoute(key: String): Boolean {
+        if (key !in routed) return true
+        if (mediaRoute?.setMuted(key, false, false) != true) return false
+        routed -= key
+        return true
     }
 }
 
@@ -153,7 +198,8 @@ class TaskRecovery(context: Context, private val sharedShell: SharedShell) {
     /** 还在跑的任务;进程被杀后为空,所有记录都归恢复处理。 */
     private val live = ConcurrentHashMap.newKeySet<String>()
 
-    fun audioMute(shell: IMikaShell, runKey: String) = AudioMute(ShellAudio(shell), marker(runKey))
+    fun audioMute(shell: IMikaShell, runKey: String, displayId: () -> Int?): AudioMute =
+        AudioMute(ShellAudio(shell), marker(runKey), ShellMediaRoute(shell, AppCopyReader.myUser, displayId))
 
     private fun marker(runKey: String) = PrefsMarker(prefs(), "${MUTED}_$runKey")
 

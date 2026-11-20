@@ -638,7 +638,7 @@ class TaskRun(
                         side.launch { appAccess.state.collect { if (dispatcher?.surface != WEB && !previewAllowed()) _frames.value = null } }
                     }
                 }
-                val audio = recovery.audioMute(shell, key).also { mute = it }
+                val audio = recovery.audioMute(shell, key) { agentDisplay.current?.displayId }.also { mute = it }
                 val muter = appMuter(shell, audio)
                 // 占用登记里的名字:另一份用户里的那份单独占,和本来那份互不挡;占着的任务还在不在用它,问内置助手
                 fun claimKey(pkg: String, user: Int?) = if (user == null) pkg else "$pkg@$user"
@@ -726,8 +726,11 @@ class TaskRun(
                     tr(if (provenance.origin == RunOrigin.Channel) R.string.wechat_unlock_failed else R.string.trigger_unlock_failed)
                 },
             ) {
-                val t = phone?.screen?.target?.value
-                t != null && t.taskId >= 0 && moveBackToAgent(t.taskId)
+                val p = phone ?: return@TaskGate false
+                val t = p.screen.target.value ?: return@TaskGate false
+                if (t.taskId < 0 || !moveBackToAgent(t.taskId)) return@TaskGate false
+                withContext(Dispatchers.IO) { p.audio.opened(t.packageName, copyUser(t.userId)) }
+                true
             }
             gate = taskGate
             // 记录开不起来就不记,任务照跑
@@ -1144,12 +1147,13 @@ class TaskRun(
                         r.close()
                         if (BuildConfig.DEBUG) runStore?.mirrorToExternal(r.runId)
                     }
-                    // 恢复抛错也要撤掉「在跑」的登记,否则这份记录永远不归恢复处理
                     runCatching { phoneServices.network.detach() }
-                    try { mute?.restoreAll() } finally { recovery.endRun(key) }
                     watcher?.close()
                 } finally {
-                    resources.close()
+                    // 屏还没放掉（如 finishDisplay 异常）就先放屏；恢复抛错也要撤掉「在跑」的登记。
+                    try { resources.close() } finally {
+                        try { mute?.restoreAll() } finally { recovery.endRun(key) }
+                    }
                 }
             }
             phone = null

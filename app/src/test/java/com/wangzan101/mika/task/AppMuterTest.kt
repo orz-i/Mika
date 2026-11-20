@@ -14,6 +14,8 @@ class AppMuterTest {
         val modes = mutableMapOf<String, String>()
         val mutes = mutableListOf<String>()
         val failing = mutableSetOf<String>()
+        var denied = false
+        override fun appOpsDenied(): Boolean = denied
         override fun mode(packageName: String) = if (packageName in failing) null else modes[packageName] ?: "default"
         override fun mute(packageName: String): Boolean {
             if (packageName in failing) return false
@@ -30,7 +32,12 @@ class AppMuterTest {
 
     private val audio = FakeAudio()
     private val store = MemoryMarker()
-    private val record = AudioMute(audio, store)
+    private val routeCalls = mutableListOf<Triple<String, Boolean, Boolean>>()
+    private var routeAvailable = true
+    private val record = AudioMute(audio, store, TaskMediaRoute { key, on, preparing ->
+        routeCalls += Triple(key, on, preparing)
+        routeAvailable
+    })
     private var enabled = true
     private val onMain = mutableSetOf<String>()
     private val failed = mutableListOf<String>()
@@ -177,6 +184,48 @@ class AppMuterTest {
         muter.opened("video.app", 10)
         assertTrue(audio.mutes.isEmpty())
         assertTrue(failed.isEmpty())
+    }
+
+    @Test fun routeIsArmedBeforeLaunchAndConfirmedAfterTheAppReallyOpens() {
+        audio.denied = true
+        muter.beforeOpen("video.app", 10)
+        muter.opened("video.app", 10)
+        assertEquals(listOf(Triple("video.app@10", true, true), Triple("video.app@10", true, false)), routeCalls)
+        assertTrue(audio.mutes.isEmpty())
+        assertTrue(failed.isEmpty())
+        assertNull(store.saved)
+    }
+
+    @Test fun routeIsRemovedOnRefusedLaunchAndOnUserTakeover() {
+        audio.denied = true
+        muter.beforeOpen("video.app", null)
+        muter.notOpened("video.app", null)
+        muter.opened("video.app", null)
+        assertTrue(muter.release("video.app", null))
+        muter.opened("video.app", null)
+        assertEquals(listOf(true, false, true, false, true), routeCalls.map { it.second })
+    }
+
+    @Test fun seeingSameAppOnMainCancelsItsRouteImmediately() {
+        audio.denied = true
+        muter.beforeOpen("video.app", null)
+        onMain += "video.app"
+        muter.opened("video.app", null)
+        assertEquals(listOf(true, false), routeCalls.map { it.second })
+        assertEquals(listOf("video.app"), failed)
+    }
+
+    @Test fun unsupportedRouteStillWarnsAndAnExplicitSoundRestoreKeepsItOff() {
+        audio.denied = true
+        routeAvailable = false
+        muter.beforeOpen("video.app", null)
+        muter.opened("video.app", null)
+        assertEquals(listOf("video.app"), failed)
+        routeAvailable = true
+        muter.opened("video.app", null)
+        assertTrue(muter.unmute("video.app", null))
+        muter.opened("video.app", null)
+        assertEquals(listOf(true, true, true, false), routeCalls.map { it.second })
     }
 
     @Test fun failedManualUnmuteKeepsLedgerAndRepeatedClickRetries() {

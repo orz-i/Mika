@@ -1117,6 +1117,7 @@ class AndroidScreen(
         val retryUntil = SystemClock.uptimeMillis() + IN_USE_RETRY_MS
         while (code == ShellService.START_IN_USE_ON_MAIN && SystemClock.uptimeMillis() < retryUntil) {
             delay(IN_USE_POLL_MS)
+            beforeOpen(packageName, user)
             code = launch()
         }
         if (code != ShellService.START_OK && code != ShellService.START_OK_COLD_IGNORED) notOpened(packageName, user)

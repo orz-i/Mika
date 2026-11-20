@@ -16,6 +16,8 @@ class MemoryMarker : MarkerStore {
 class AudioMuteTest {
     private class FakeAudio(val modes: MutableMap<String, String>) : AudioPort {
         var online = true
+        var denied = false
+        override fun appOpsDenied(): Boolean = denied
         override fun mode(packageName: String) = if (online) modes[packageName] ?: "default" else null
         override fun mute(packageName: String): Boolean = online.also { if (it) modes[packageName] = "ignore" }
         override fun setMode(packageName: String, mode: String): Boolean = online.also { if (it) modes[packageName] = mode }
@@ -71,5 +73,49 @@ class AudioMuteTest {
         assertTrue(mute.mute("a.app"))
         assertTrue(mute.restoreAll())
         assertEquals("allow", audio.modes["a.app"])
+    }
+
+    @Test fun appOpsDenialUsesOnlyTemporaryRoutesWithoutWritingAnAppOpsRecord() {
+        val audio = FakeAudio(mutableMapOf()).apply { denied = true }
+        val store = MemoryMarker()
+        val calls = mutableListOf<Triple<String, Boolean, Boolean>>()
+        val mute = AudioMute(audio, store, TaskMediaRoute { key, on, preparing ->
+            calls += Triple(key, on, preparing)
+            true
+        })
+
+        assertTrue(mute.mute("a.app@10", preparing = true))
+        assertTrue(mute.usesRoute("a.app@10"))
+        assertTrue(mute.mute("a.app@10"))
+        assertTrue(mute.restore("a.app@10"))
+        assertFalse(mute.usesRoute("a.app@10"))
+        assertEquals(listOf(Triple("a.app@10", true, true), Triple("a.app@10", true, false), Triple("a.app@10", false, false)), calls)
+        assertTrue(audio.modes.isEmpty())
+        assertNull(store.saved)
+    }
+
+    @Test fun routeFailureDoesNotClaimSuccessAndAnUncertainReleaseCanBeRetried() {
+        val store = MemoryMarker()
+        val audio = FakeAudio(mutableMapOf()).apply { denied = true }
+        var available = false
+        val mute = AudioMute(audio, store, TaskMediaRoute { _, _, _ -> available })
+
+        assertFalse(mute.mute("a.app"))
+        assertFalse(mute.restoreAll())
+        assertTrue(mute.usesRoute("a.app"))
+        available = true
+        assertTrue(mute.restoreAll())
+        assertFalse(mute.usesRoute("a.app"))
+        assertNull(store.saved)
+    }
+
+    @Test fun regularAppOpsPathDoesNotRegisterAnyMediaRoute() {
+        val store = MemoryMarker()
+        val audio = FakeAudio(mutableMapOf())
+        val mute = AudioMute(audio, store, TaskMediaRoute { _, _, _ -> error("unexpected route") })
+        assertTrue(mute.mute("a.app", preparing = true))
+        assertEquals("ignore", audio.modes["a.app"])
+        assertTrue(mute.restoreAll())
+        assertEquals("default", audio.modes["a.app"])
     }
 }

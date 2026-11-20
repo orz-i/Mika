@@ -3,7 +3,7 @@ package com.wangzan101.mika.task
 import com.wangzan101.mika.cap.phone.shell.AppAudioKey
 
 /**
- * 任务期间让 Mika 屏上的 App 不出声。PLAY_AUDIO 按「包 + 用户」设([AppAudioKey]),本来那份和另一份(分身、工作资料)分开静。
+ * 任务期间让 Mika 屏上的 App 不出声。按「包 + 用户」静音：优先 PLAY_AUDIO；系统明确拒绝时改用临时媒体路由。
  *
  * - [beforeOpen]:Mika 要启动某个 App 时,发出启动之前先静上,开头几秒就没声;这一步失败先不报,等它真开出来再试。
  * - [opened]:Mika 屏上冒出一个 App(启动的目标,或从别的 App 里点开、另一份顶上来的):没静过就静,静不了记成「可能出声」。
@@ -38,20 +38,23 @@ class AppMuter(
     @Synchronized
     fun beforeOpen(packageName: String, user: Int?) {
         val key = AppAudioKey.of(packageName, user)
-        if (key in muted || key in unmuted || !wanted(packageName) || onMainScreen(packageName, user)) return
-        if (audio.mute(key)) {
-            muted += key
-            early += key
-        }
+        if (alreadyMutedByAppOps(key) || key in unmuted || !wanted(packageName) || onMainScreen(packageName, user)) return
+        if (audio.mute(key, preparing = true) && muted.add(key)) early += key
     }
 
     @Synchronized
     fun opened(packageName: String, user: Int?) {
         val key = AppAudioKey.of(packageName, user)
         early -= key
-        if (key in muted || key in unmuted || !wanted(packageName)) return
+        // 临时路由可能在启动超时、App 被用户挪走后被助手撤掉；按当前屏确认，不能只信旧缓存。
+        if (alreadyMutedByAppOps(key) || key in unmuted || !wanted(packageName)) return
         // 用户在主屏上正用着它:不静,照实说它可能出声
-        if (onMainScreen(packageName, user) || !audio.mute(key)) {
+        if (onMainScreen(packageName, user)) {
+            if (audio.usesRoute(key) && audio.restore(key)) muted -= key
+            failed(packageName)
+            return
+        }
+        if (!audio.mute(key)) {
             failed(packageName)
             return
         }
@@ -90,4 +93,6 @@ class AppMuter(
     }
 
     private fun wanted(packageName: String) = enabled() && mutable(packageName)
+
+    private fun alreadyMutedByAppOps(key: String) = key in muted && !audio.usesRoute(key)
 }
