@@ -140,6 +140,12 @@ interface IMikaShell {
     // 本机截屏能力快照（screencap 路径与可用性、su 提权、input -d 滚动支持），字段见 AAU 的 ScreenCaptureCapability
     Bundle captureCapability() = 58;
 
+    // 以助手的实际身份检查 AppOps 写入权限；旧助手没有这个接口时仍走旧静音路径。
+    boolean playAudioAppOpsDenied() = 59;
+    // AppOps 被拒时，只给自有屏上的目标 App 建临时媒体路由。preparing 允许启动前短时间预装；其他情况须已在该屏。
+    // 到主屏、释放屏或助手退出时自动撤掉，不写 AppOps，不提供音频数据。
+    boolean setTaskMediaMuted(int displayId, String packageName, int userId, boolean muted, boolean preparing) = 60;
+
     // 沿用早先定下的销毁事务号;AIDL 要求要么全部方法编号要么都不编号
     void destroy() = 16777114;
 }

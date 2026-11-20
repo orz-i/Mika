@@ -160,6 +160,8 @@ class MikaAgentDisplayIntegrationTest {
         override fun setAudioMutedInUser(packageName: String?, userId: Int, muted: Boolean): Boolean = true
         override fun setAudioModeInUser(packageName: String?, userId: Int, mode: String?): Boolean = true
         override fun visibleOnMainScreen(packageName: String?, userId: Int): Boolean = false
+        override fun playAudioAppOpsDenied(): Boolean = false
+        override fun setTaskMediaMuted(displayId: Int, packageName: String?, userId: Int, muted: Boolean, preparing: Boolean): Boolean = false
         override fun finishDisplay(displayId: Int, keep: Array<out String>?, close: Array<out String>?): Bundle = Bundle().apply {
             finishedDisplayId = displayId
             putStringArray("kept", keep ?: emptyArray())

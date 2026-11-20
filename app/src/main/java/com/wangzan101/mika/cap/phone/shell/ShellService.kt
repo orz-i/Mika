@@ -1,11 +1,20 @@
 package com.wangzan101.mika.cap.phone.shell
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.os.Binder
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.Parcel
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
+import android.util.Log
 import android.view.Surface
 import com.agent.use.common.IAgentCustodyListener
 import com.agent.use.common.capture.CaptureDelivery
@@ -34,8 +43,20 @@ class ShellService(
         tag = TAG,
         ownPageClass = SystemIntents.OWN_PAGE_CLASS,
         allowSystemIntent = SystemIntents::allowed,
-        exitProcessFn = { exitProcess(0) },
+        exitProcessFn = ::exitHelper,
     )
+    private val mediaSink = MediaRouteSink(engine.context)
+    private val mediaRoutes = DisplayMediaRoutes(
+        ownDisplay = engine::ownDisplay,
+        tasks = ::playbackTasks,
+        dedicatedUid = ::dedicatedAudioUid,
+        playing = ::hasStartedPlayback,
+        open = mediaSink::open,
+        now = SystemClock::uptimeMillis,
+        closeFailed = { Log.w(TAG, "media route cleanup will be retried", it) },
+    )
+    private val routeHandler by lazy { Handler(Looper.getMainLooper()) }
+    private val routeCheck = Runnable { checkMediaRoutes() }
 
     /** 助手进程看 Mika 交来的心愿(见 [setRestoreWish]); Mika 死后据此决定要不要把它拉起来。 */
     @Volatile
@@ -55,9 +76,14 @@ class ShellService(
     override fun createDisplay(surface: Surface, width: Int, height: Int, dpi: Int): Int =
         engine.createDisplay(surface, width, height, dpi, name = "mika-agent")
 
-    override fun releaseDisplay(displayId: Int) = engine.releaseDisplay(displayId)
-    override fun releaseAll() = engine.releaseAll()
-    override fun destroy() = engine.destroy()
+    override fun releaseDisplay(displayId: Int) = asShell { mediaRoutes.finish(displayId) { engine.releaseDisplay(displayId) } }
+    override fun releaseAll() = asShell { mediaRoutes.finish { engine.releaseAll() } }
+    override fun destroy() = asShell { engine.destroy() }
+
+    private fun exitHelper() {
+        mediaRoutes.finish { }
+        exitProcess(0) // 系统还会随 Binder 死亡回收没有及时注销的 AudioPolicy。
+    }
 
     override fun startApp(displayId: Int, packageName: String): Int =
         engine.startApp(displayId, packageName)
@@ -77,8 +103,9 @@ class ShellService(
     override fun startSystemAction(displayId: Int, intent: Intent, asMika: PendingIntent?): Int =
         engine.startSystemAction(displayId, intent, asMika)
 
-    override fun finishDisplay(displayId: Int, keep: Array<String>?, close: Array<String>?): Bundle? =
-        engine.finishDisplay(displayId, keep, close)
+    override fun finishDisplay(displayId: Int, keep: Array<String>?, close: Array<String>?): Bundle? = asShell {
+        mediaRoutes.finish(displayId) { engine.finishDisplay(displayId, keep, close) }
+    }
 
     override fun topTaskId(displayId: Int): Int = engine.topTaskId(displayId)
     override fun topActivity(displayId: Int): String? = engine.topActivity(displayId)
@@ -88,7 +115,9 @@ class ShellService(
     override fun displayOfPackageInUser(packageName: String, userId: Int): Int =
         engine.displayOfPackageInUser(packageName, userId)
     override fun userOfTask(taskId: Int): Int = engine.userOfTask(taskId)
-    override fun moveTask(taskId: Int, displayId: Int): Boolean = engine.moveTask(taskId, displayId)
+    override fun moveTask(taskId: Int, displayId: Int): Boolean = engine.moveTask(taskId, displayId).also { moved ->
+        if (moved && mediaRoutes.hasRoutes()) asShell { checkMediaRoutes() }
+    }
 
     override fun visibleOnMainScreen(packageName: String, userId: Int): Boolean =
         engine.visibleOnMainScreen(packageName, userId)
@@ -123,6 +152,70 @@ class ShellService(
         engine.setAudioMode(packageName, mode)
     override fun setAudioModeInUser(packageName: String, userId: Int, mode: String): Boolean =
         engine.setAudioModeInUser(packageName, userId, mode)
+
+    override fun playAudioAppOpsDenied(): Boolean = asShell {
+        engine.context.checkSelfPermission("android.permission.MANAGE_APP_OPS_MODES") != PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun setTaskMediaMuted(displayId: Int, packageName: String, userId: Int, muted: Boolean, preparing: Boolean): Boolean = asShell {
+        if (displayId <= 0 || userId < 0) return@asShell false
+        synchronized(mediaRoutes) {
+            mediaRoutes.setMuted(displayId, packageName, userId, muted, preparing).also { scheduleRouteCheck() }
+        }
+    }
+
+    private fun checkMediaRoutes() = synchronized(mediaRoutes) {
+        mediaRoutes.reconcile()
+        scheduleRouteCheck()
+    }
+
+    private fun scheduleRouteCheck() {
+        if (mediaRoutes.hasRoutes() && !routeHandler.hasCallbacks(routeCheck)) {
+            routeHandler.postDelayed(routeCheck, ROUTE_CHECK_MS)
+        }
+    }
+
+    @SuppressLint("PrivateApi")
+    private fun playbackTasks(): List<DisplayMediaRoutes.Task>? = runCatching {
+        engine.allTasks().map { task ->
+            DisplayMediaRoutes.Task(
+                displayId = taskInfo.getField("displayId").getInt(task),
+                userId = taskInfo.getField("userId").getInt(task).takeIf { it >= 0 },
+                packages = listOfNotNull(
+                    (taskInfo.getField("baseActivity").get(task) as? ComponentName)?.packageName,
+                    (taskInfo.getField("topActivity").get(task) as? ComponentName)?.packageName,
+                ).toSet(),
+                visible = taskInfo.getField("isVisible").getBoolean(task),
+            )
+        }
+    }.getOrNull()
+
+    @SuppressLint("PrivateApi")
+    private fun dedicatedAudioUid(packageName: String, userId: Int): Int? = runCatching {
+        val pm = engine.context.packageManager
+        val uid = pm.javaClass.getMethod("getPackageUidAsUser", String::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+            .invoke(pm, packageName, 0, userId) as Int
+        uid.takeIf { it != allowedUid && DisplayMediaRoutes.isDedicatedAppUid(it, userId, packageName, pm.getPackagesForUid(it)) }
+    }.getOrNull()
+
+    @SuppressLint("PrivateApi")
+    private fun hasStartedPlayback(uid: Int): Boolean? = runCatching {
+        val configs = engine.context.getSystemService(AudioManager::class.java).activePlaybackConfigurations
+        val uidOf = AudioPlaybackConfiguration::class.java.getMethod("getClientUid")
+        val stateOf = AudioPlaybackConfiguration::class.java.getMethod("getPlayerState")
+        val playing = configs.filter { stateOf.invoke(it) == AppsAfterTask.PLAYER_STATE_STARTED }.map { uidOf.invoke(it) as Int }
+        when {
+            uid in playing -> true
+            playing.any { it < 0 } -> null
+            else -> false
+        }
+    }.getOrNull()
+
+    // AudioPolicy 的本地权限和音频归属检查应看到助手，不是发起 Binder 调用的 Mika App。
+    private inline fun <T> asShell(block: () -> T): T {
+        val calling = Binder.clearCallingIdentity()
+        return try { block() } finally { Binder.restoreCallingIdentity(calling) }
+    }
 
     override fun setClipText(text: String): Int = engine.setClipText(text)
     override fun restoreClip(): Boolean = engine.restoreClip()
@@ -190,6 +283,8 @@ class ShellService(
     companion object {
         private const val TAG = "MikaShell"
         private const val CLIP_LABEL = "Mika"
+        private const val ROUTE_CHECK_MS = 500L
+        private val taskInfo by lazy { Class.forName("android.app.TaskInfo") }
 
         const val START_OK = AgentShellEngine.START_OK
         const val START_IN_USE_ON_MAIN = AgentShellEngine.START_IN_USE_ON_MAIN
