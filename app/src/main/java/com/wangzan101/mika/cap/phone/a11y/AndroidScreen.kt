@@ -29,6 +29,10 @@ import com.wangzan101.mika.core.uistate.AppCopy
 import com.wangzan101.mika.core.uistate.AppProfiles
 import com.wangzan101.mika.core.uistate.LaunchChoice
 import com.wangzan101.mika.core.uistate.LaunchChooser
+import com.wangzan101.mika.core.uistate.LocalIcon
+import com.wangzan101.mika.core.uistate.LocalIconFrame
+import com.wangzan101.mika.core.uistate.LocalIconRegion
+import com.wangzan101.mika.core.uistate.LocalIconResult
 import com.wangzan101.mika.core.uistate.OpenedElsewhere
 import com.wangzan101.mika.core.uistate.UnseenField
 import com.wangzan101.mika.core.uistate.normalize
@@ -63,6 +67,7 @@ import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.settings.FeatureFlags
 import com.wangzan101.mika.shell.IMikaShell
 import java.io.Closeable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -94,6 +99,9 @@ import java.util.concurrent.locks.Lock
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.min
 import kotlin.math.roundToInt
+
+private val localIconWorker = Dispatchers.Default.limitedParallelism(1)
+private val packageNamePattern = Regex("[A-Za-z0-9._]+")
 
 /**
  * [ScreenPort] 的安卓实现:读 Agent 虚拟屏的无障碍窗口,在这块屏上操作。
@@ -154,6 +162,9 @@ class AndroidScreen(
     private val screenWidth get() = display.current?.width ?: display.width
     private val screenHeight get() = display.current?.height ?: display.height
     private val ids = NodeIds()
+    private val localIcons = lazy { LocalIcons.create(a11y.assets) }
+    override val supportsLocalIcons get() = LocalIcons.supported
+    private enum class WindowProtection { Clear, Protected, Unknown }
 
     /** 最近一次 launch_app 成功打开的包,用于判断是否被切走。 */
     @Volatile private var targetPackage: String? = null
@@ -213,11 +224,12 @@ class AndroidScreen(
         val after = treeHash()
         val foreground = if (r.topPackage == null) foregroundTaskPackage() else null
         val currentPkg = r.topPackage ?: foreground
-        val screenProtected = isProtected()
-        val activity = if (!screenProtected && currentPkg != null) {
+        val windowProtection = currentWindowProtection()
+        val screenProtected = windowProtection == WindowProtection.Protected
+        val activity = if (windowProtection == WindowProtection.Clear && currentPkg != null) {
             ScreenReader.normalizeTopActivity(currentPkg, runCatching { shell.topActivity(displayId) }.getOrNull())
         } else null
-        val screenSig = if (!screenProtected) {
+        val screenSig = if (windowProtection == WindowProtection.Clear) {
             ScreenReader.extractSignature(r, activityName = activity, protected = false)
         } else null
         val snap = NodeSnapshot(snapshotId(), r.entries)
@@ -236,8 +248,13 @@ class AndroidScreen(
             // 还在等用户在主屏/确认弹窗处理:照样说一声
             opened = late ?: custodyState.value?.toWaitingOpened(),
             // 黑帧只说明画面不可用,不能据此声称窗口防截屏;读屏元素仍可作为降级路径。
-            captureError = if ((r.anyAppWindow || foreground != null) && frameServable() && frameBlack() == true)
-                ScreenDiagnosis.DISPLAY_CAPTURE_UNAVAILABLE else null,
+            captureError = when {
+                windowProtection == WindowProtection.Unknown && (r.anyAppWindow || foreground != null) ->
+                    ScreenDiagnosis.DISPLAY_CAPTURE_UNAVAILABLE
+                windowProtection == WindowProtection.Clear && (r.anyAppWindow || foreground != null) &&
+                    frameServable() && frameBlack() == true -> ScreenDiagnosis.DISPLAY_CAPTURE_UNAVAILABLE
+                else -> null
+            },
             activity = activity,
             screenSig = screenSig,
         )
@@ -271,8 +288,88 @@ class AndroidScreen(
 
     override suspend fun screenshotPng(): ByteArray? = withContext(Dispatchers.IO) {
         // 黑图没有可用画面信息,也不能凭它区分安全窗口和合成失败;不要交给模型或 OCR。
+        if (currentWindowProtection() != WindowProtection.Clear) return@withContext null
         if (!frameServable() || frameBlack() == true) return@withContext null
         display.current?.latestFramePng()
+    }
+
+    override suspend fun findLocalIcon(icon: LocalIcon, region: LocalIconRegion): LocalIconResult = withContext(Dispatchers.IO) {
+        if (!supportsLocalIcons) return@withContext LocalIconResult.Miss.Unavailable
+        val current = display.current ?: return@withContext LocalIconResult.Miss.NoApp
+        val generation = ScreenAccessibility.windowGeneration()
+        val page = read()
+        if (page.passwordField) return@withContext LocalIconResult.Miss.Protected
+        if (!page.anyAppWindow || page.topPackage == null) return@withContext LocalIconResult.Miss.NoApp
+        when (protectedWindow(page.topPackage)) {
+            WindowProtection.Protected -> return@withContext LocalIconResult.Miss.Protected
+            WindowProtection.Unknown -> return@withContext LocalIconResult.Miss.NoFrame
+            WindowProtection.Clear -> Unit
+        }
+        // A black frame may be protected content or a display-composition failure. Never
+        // send it through the detector, and don't claim which cause produced the black frame.
+        if (frameBlack() == true) return@withContext LocalIconResult.Miss.NoFrame
+        val frame = localIconFrame() ?: return@withContext LocalIconResult.Miss.NoFrame
+        if (frame.windowGeneration != generation || display.current !== current) return@withContext LocalIconResult.Miss.Changed
+        val bitmap = current.latestFrameBitmap() ?: return@withContext LocalIconResult.Miss.NoFrame
+        try {
+            if (bitmap.width != frame.width || bitmap.height != frame.height) {
+                return@withContext LocalIconResult.Miss.Changed
+            }
+            val result = try {
+                withContext(localIconWorker) {
+                    localIcons.value?.find(bitmap, icon, region, frame) ?: LocalIconResult.Miss.Unavailable
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                LocalIconResult.Miss.Unavailable
+            } catch (_: LinkageError) {
+                LocalIconResult.Miss.Unavailable
+            }
+            if (result is LocalIconResult.Found) {
+                when (currentWindowProtection()) {
+                    WindowProtection.Protected -> LocalIconResult.Miss.Protected
+                    WindowProtection.Unknown -> LocalIconResult.Miss.NoFrame
+                    WindowProtection.Clear -> {
+                        val x = (result.left + result.right) / 2
+                        val y = (result.top + result.bottom) / 2
+                        if (!localIconFrameMatches(result.frame, x, y)) LocalIconResult.Miss.Changed else result
+                    }
+                }
+            } else result
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun localIconFrame(): LocalIconFrame? {
+        val d = display.current ?: return null
+        val generation = ScreenAccessibility.windowGeneration()
+        if (!frameServable() || frameBlack() != false) return null
+        val stamp = d.visibleFrameStamp() ?: return null
+        if (display.current !== d || generation != ScreenAccessibility.windowGeneration()) return null
+        return LocalIconFrame(d.displayId, stamp.timestampNanos, generation,
+            stamp.geometry.logicalWidth, stamp.geometry.logicalHeight, stamp.geometry.rotation)
+    }
+
+    /** Ignore producer timestamps; compare full-frame and target hashes to detect visible changes. */
+    private fun localIconFrameMatches(frame: LocalIconFrame, x: Int, y: Int): Boolean {
+        val stamp = localIconFrame() ?: return false
+        if (stamp.displayId != frame.displayId || stamp.windowGeneration != frame.windowGeneration ||
+            stamp.width != frame.width || stamp.height != frame.height || stamp.rotation != frame.rotation) return false
+        val displayNow = display.current ?: return false
+        val bitmap = displayNow.latestFrameBitmap() ?: return false
+        return try {
+            if (bitmap.width != frame.width || bitmap.height != frame.height) return false
+            val (whole, target) = LocalIconFingerprint.hashes(bitmap,
+                x * (bitmap.width - 1) / 999, y * (bitmap.height - 1) / 999)
+            val after = localIconFrame() ?: return false
+            after.displayId == frame.displayId && after.windowGeneration == frame.windowGeneration &&
+                java.lang.Long.bitCount(whole xor frame.frameHash) <= LOCAL_ICON_HASH_CHANGE &&
+                java.lang.Long.bitCount(target xor frame.targetHash) <= LOCAL_ICON_HASH_CHANGE
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     /** 最近一次启动开始的单调时钟时刻（纳秒），与虚拟屏生产者的帧时间戳比较。 */
@@ -304,14 +401,17 @@ class AndroidScreen(
      * (规则见 [StillFrameRead])。局部在动(动图头像、光标)不影响字的位置,照用,不再整个丢掉。
      */
     override suspend fun readVisibleText(): List<VisibleTextLine>? = withContext(Dispatchers.IO) {
-        if (!hasDisplay || !frameServable() || frameBlack() == true) return@withContext null
+        if (!hasDisplay || currentWindowProtection() != WindowProtection.Clear ||
+            !frameServable() || frameBlack() == true) return@withContext null
         StillFrameRead.read(SystemClock::uptimeMillis, { delay(it) }, ::frameSignature) {
             display.current?.latestFrameBitmap()?.let { PhoneOcr.read(it) }
         }
     }
 
     override suspend fun frameGrid(): FrameGrid? = withContext(Dispatchers.IO) {
-        if (!frameServable()) return@withContext null
+        if (currentWindowProtection() != WindowProtection.Clear || !frameServable() || frameBlack() == true) {
+            return@withContext null
+        }
         val bmp = display.current?.frames?.value ?: return@withContext null
         runCatching { FrameGrid.sample(bmp.width, bmp.height, bmp::getPixel) }.getOrNull()
     }
@@ -322,14 +422,25 @@ class AndroidScreen(
         )
         // 先看界面会不会安静下来:一直有变化就是还在加载
         val quiet = withEventClock { clock -> clock.awaitQuiet(QUIET_MS, CHECK_CAP_MS) }
+        var r = read()
+        var foreground = if (r.topPackage == null) foregroundTaskPackage() else null
+        var protection = if (r.anyAppWindow || foreground != null) {
+            protectedWindow(r.topPackage ?: foreground)
+        } else WindowProtection.Clear
+        blockedDiagnosis(r, foreground, protection)?.let { return@withContext it }
         // 安静时看两次;持续全黑只报画面不可用,不把黑像素当成防截屏的证据
         val black = mutableListOf<Boolean>()
         frameBlack()?.let(black::add)
         if (quiet) {
             withEventClock { clock -> clock.awaitQuiet(SECOND_LOOK_QUIET_MS, SECOND_LOOK_CAP_MS) }
+            r = read()
+            foreground = if (r.topPackage == null) foregroundTaskPackage() else null
+            protection = if (r.anyAppWindow || foreground != null) {
+                protectedWindow(r.topPackage ?: foreground)
+            } else WindowProtection.Clear
+            blockedDiagnosis(r, foreground, protection)?.let { return@withContext it }
             frameBlack()?.let(black::add)
         }
-        val r = read()
         ScreenDiagnosis.classify(
             ScreenFacts(
                 currentApp = r.topPackage,
@@ -340,9 +451,98 @@ class AndroidScreen(
                 blackFrames = black,
                 texts = r.texts,
                 passwordField = r.passwordField,
-                foregroundApp = if (r.topPackage == null) foregroundTaskPackage() else null,
+                foregroundApp = foreground,
+                protectedWindow = protection == WindowProtection.Protected,
             ),
         )
+    }
+
+    /** Fail closed before reading pixels; accessibility text remains available for tree-only fallback. */
+    private fun blockedDiagnosis(
+        page: ScreenRead,
+        foreground: String?,
+        protection: WindowProtection,
+    ): ScreenCheck? {
+        val readable = page.entries.count { it.element.meaningful }
+        val currentApp = page.topPackage ?: foreground
+        val facts = ScreenFacts(
+            currentApp = page.topPackage,
+            hasWindow = page.hasAppWindow,
+            anyWindow = page.anyAppWindow,
+            readableElements = readable,
+            changing = false,
+            blackFrames = emptyList(),
+            texts = page.texts,
+            passwordField = page.passwordField,
+            foregroundApp = if (page.topPackage == null) foreground else null,
+            protectedWindow = protection == WindowProtection.Protected,
+        )
+        return when {
+            page.passwordField || protection == WindowProtection.Protected -> ScreenDiagnosis.classify(facts)
+            protection == WindowProtection.Unknown -> ScreenCheck(
+                state = com.wangzan101.mika.core.uistate.ScreenState.CAPTURE_UNAVAILABLE,
+                currentApp = currentApp,
+                needsHuman = readable == 0,
+                takeoverReason = if (readable == 0) ScreenDiagnosis.DISPLAY_CAPTURE else null,
+                cause = "window protection could not be verified; frame capture was withheld",
+            )
+            else -> null
+        }
+    }
+
+    /** Explicitly inspect the current app window's flags; never infer protection from pixels. */
+    override suspend fun isProtected(): Boolean = withContext(Dispatchers.IO) {
+        currentWindowProtection() == WindowProtection.Protected
+    }
+
+    private fun currentWindowProtection(): WindowProtection {
+        if (!hasDisplay) return WindowProtection.Unknown
+        val page = read()
+        if (page.passwordField) return WindowProtection.Protected
+        return protectedWindow(page.topPackage ?: foregroundTaskPackage())
+    }
+
+    private fun protectedWindow(packageName: String?): WindowProtection {
+        if (packageName.isNullOrBlank() || !hasDisplay || !packageNamePattern.matches(packageName)) {
+            return WindowProtection.Unknown
+        }
+        // Return a small verdict only. A failed/missing window record is Unknown, not safe.
+        val awk = """
+            function finishWindow() {
+              if (screenId == wantedDisplay && screenPackage == wantedPackage) {
+                found = 1
+                if (screenSecure) hasSecure = 1
+              }
+            }
+            /^[[:space:]]*Window #[0-9]+/ {
+              finishWindow()
+              screenId = -1
+              screenPackage = ""
+              screenSecure = 0
+              next
+            }
+            {
+              if (match(${ '$' }0, /mDisplayId=[0-9]+/)) screenId = substr(${ '$' }0, RSTART + 11, RLENGTH - 11) + 0
+              if (match(${ '$' }0, /package=[^ ]+/)) screenPackage = substr(${ '$' }0, RSTART + 8, RLENGTH - 8)
+              if (${ '$' }0 ~ /^[[:space:]]*fl=.*[[:space:]]SECURE([[:space:]]|${ '$' })/) screenSecure = 1
+            }
+            END {
+              finishWindow()
+              if (!found) print "unknown"
+              else if (hasSecure) print "protected"
+              else print "clear"
+            }
+        """.trimIndent()
+        val command = "set -o pipefail || exit 125; dumpsys -t 2 window visible | awk -v wantedPackage='$packageName' " +
+            "-v wantedDisplay=$displayId '$awk'"
+        val result = runCatching { shell.runSystemCommand(displayId, command) }.getOrNull()
+            ?: return WindowProtection.Unknown
+        if (result.getInt("exitCode", -1) != 0) return WindowProtection.Unknown
+        return when (result.getString("output")?.trim()) {
+            "clear" -> WindowProtection.Clear
+            "protected" -> WindowProtection.Protected
+            else -> WindowProtection.Unknown
+        }
     }
 
     override suspend fun waitStable(timeoutMs: Long): Boolean = withContext(Dispatchers.IO) {
@@ -463,6 +663,29 @@ class AndroidScreen(
     override suspend fun tapXY(x: Int, y: Int): ActionResult = withContext(Dispatchers.IO) {
         if (!hasDisplay) return@withContext NO_APP_OPEN
         verified(fallback = { clock -> clickNodeAt(x, y, clock) }) { tapAt(x, y) }
+    }
+
+    override suspend fun tapLocalIcon(x: Int, y: Int, frame: LocalIconFrame): ActionResult = withContext(Dispatchers.IO) {
+        if (currentWindowProtection() != WindowProtection.Clear || !localIconFrameMatches(frame, x, y)) {
+            return@withContext ActionResult.Failed("located_stale")
+        }
+        var stale = false
+        val r = verified {
+            delay(pacing.approach())
+            val page = read()
+            val pkg = page.topPackage
+            if (pkg == null || page.passwordField || protectedWindow(pkg) != WindowProtection.Clear ||
+                appAccess.current().denial(pkg) != null ||
+                !localIconFrameMatches(frame, x, y)) {
+                stale = true
+                return@verified false
+            }
+            val px = x * (frame.width - 1) / 999f
+            val py = y * (frame.height - 1) / 999f
+            // Strict reference: no second gesture or fallback on a possibly changed frame.
+            a11y.gesture(frame.displayId, Path().apply { moveTo(px, py) }, pacing.press())
+        }
+        if (stale) ActionResult.Failed("located_stale") else r
     }
 
     override suspend fun doubleTapRef(ref: String, snapshotId: String): ActionResult = withContext(Dispatchers.IO) {
@@ -1741,6 +1964,7 @@ class AndroidScreen(
 
     override fun close() {
         custodian.close()
+        if (localIcons.isInitialized()) localIcons.value?.close()
     }
 
     init {
@@ -2248,6 +2472,8 @@ class AndroidScreen(
 
     private companion object {
         const val TAG = "MikaScreen"
+        /** Match the existing vision locator's small-change tolerance. */
+        const val LOCAL_ICON_HASH_CHANGE = 8
         /** 刚冒出来的窗口可能还在开场动画里,以及弹窗匹配时的全屏阈值。 */
         const val FULL_SCREEN_SHARE = 0.8f
         val NO_APP_OPEN = ActionResult.Failed("no_app_open")

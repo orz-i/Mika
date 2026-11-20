@@ -12,6 +12,8 @@ val gitHash: String = runCatching {
     providers.exec { commandLine("git", "rev-parse", "--short=7", "HEAD") }.standardOutput.asText.get().trim()
 }.getOrNull()?.takeIf { it.isNotEmpty() } ?: "dev"
 
+val aauVisionEnabled = providers.gradleProperty("aauVisionBackend").orElse("off").get() != "off"
+
 android {
     namespace = "com.wangzan101.mika"
     compileSdk = 36
@@ -45,7 +47,10 @@ android {
         }
     }
     // 自带的运行环境(assets/runtime/rootfs.tar.xz,tools/sandbox/build-runtime.py 生成)已是 xz,不再压一遍
-    androidResources { noCompress += "xz" }
+    androidResources {
+        noCompress += "xz"
+        if (aauVisionEnabled) noCompress += setOf("tflite", "mnn")
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -58,6 +63,8 @@ android {
 
     // 评测任务集(仓库根目录 eval/tasks)打进测试包的 assets,真机评测跑器从那里读题
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("eval/tasks"))
+    sourceSets.getByName("main").java.srcDir(if (aauVisionEnabled) "src/localVision/java" else "src/noLocalVision/java")
+    if (aauVisionEnabled) sourceSets.getByName("androidTest").java.srcDir("src/localVisionTest/java")
     // IMikaShell.aidl 引用了 aau-common 的 IAgentCustodyListener；仅暂存该接口 .aidl（避开与
     // aidl_parcelable 中 DisplayConfig.aidl 等冲突），并在 AidlCompile 后移除重复生成的 Java 源码。
     sourceSets.getByName("main").aidl.srcDir(layout.buildDirectory.dir("generated/aidl_imports/custody"))
@@ -159,6 +166,7 @@ dependencies {
     implementation(project(":aau-client"))
     implementation(project(":aau-a11y"))
     implementation(project(":aau-setup"))
+    if (aauVisionEnabled) implementation(project(":aau-vision"))
     implementation(libs.protobuf.lite)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

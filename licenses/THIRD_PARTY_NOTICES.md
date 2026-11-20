@@ -1,5 +1,30 @@
 # Third-party notices
 
+## LiteRT（可选）
+
+- Project: https://github.com/google-ai-edge/LiteRT/tree/v2.3.2
+- Artifact: `com.google.ai.edge.litert:litert:2.3.2`.
+- License: Apache-2.0; https://github.com/google-ai-edge/LiteRT/blob/v2.3.2/LICENSE
+- Usage: 仅 `-PaauVisionBackend=litert` 试验构建，端侧识别虚拟屏图标。
+
+## MNN（可选）
+
+- Project: https://github.com/alibaba/MNN/tree/3.6.2
+- License: Apache-2.0; https://github.com/alibaba/MNN/blob/3.6.2/LICENSE.txt
+- Usage: 仅 `-PaauVisionBackend=mnn` 试验构建，由源码静态链接 CPU 核心到 AAU 的 JNI 库。
+
+## FlatBuffers（MNN 可选依赖）
+
+- Project: https://github.com/google/flatbuffers
+- License: Apache-2.0; 随 MNN 3.6.2 CPU 源码提供。
+- Usage: MNN 运行时读取本试点的 `.mnn` 模型。
+
+## half（MNN 可选依赖）
+
+- Project: http://half.sourceforge.net
+- License: MIT; Copyright 2012-2017 Christian Rau。
+- Usage: 随 MNN 3.6.2 CPU 核心静态编译。
+
 ## scrcpy
 
 - Project: https://github.com/Genymobile/scrcpy

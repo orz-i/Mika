@@ -4,6 +4,10 @@ import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.AfterTaskMarks
 import com.wangzan101.mika.core.uistate.AppCopy
 import com.wangzan101.mika.core.uistate.AppWait
+import com.wangzan101.mika.core.uistate.LocalIcon
+import com.wangzan101.mika.core.uistate.LocalIconFrame
+import com.wangzan101.mika.core.uistate.LocalIconRegion
+import com.wangzan101.mika.core.uistate.LocalIconResult
 import com.wangzan101.mika.core.uistate.ScreenCheck
 import com.wangzan101.mika.core.uistate.ScreenPort
 import com.wangzan101.mika.core.uistate.ScreenSnapshot
@@ -76,9 +80,14 @@ class LazyPhoneScreen(
     override suspend fun snapshot(): ScreenSnapshot = port?.snapshot() ?: empty()
     override suspend fun peek(): ScreenSnapshot = port?.peek() ?: empty()
     override suspend fun screenshotPng(): ByteArray? = port?.screenshotPng()
+    override val supportsLocalIcons get() = LocalIcons.supported
+    override suspend fun findLocalIcon(icon: LocalIcon, region: LocalIconRegion) =
+        port?.findLocalIcon(icon, region) ?: LocalIconResult.Miss.NoApp
     override suspend fun readVisibleText(): List<VisibleTextLine>? = port?.readVisibleText()
     override suspend fun tapRef(ref: String, snapshotId: String) = port?.tapRef(ref, snapshotId) ?: NO_APP_OPEN
     override suspend fun tapXY(x: Int, y: Int) = port?.tapXY(x, y) ?: NO_APP_OPEN
+    override suspend fun tapLocalIcon(x: Int, y: Int, frame: LocalIconFrame) =
+        port?.tapLocalIcon(x, y, frame) ?: ActionResult.Failed("located_stale")
     override suspend fun doubleTapRef(ref: String, snapshotId: String) = port?.doubleTapRef(ref, snapshotId) ?: NO_APP_OPEN
     override suspend fun doubleTapXY(x: Int, y: Int) = port?.doubleTapXY(x, y) ?: NO_APP_OPEN
     override suspend fun typeText(ref: String?, snapshotId: String?, text: String) = port?.typeText(ref, snapshotId, text) ?: NO_APP_OPEN

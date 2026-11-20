@@ -43,6 +43,8 @@ class AgentDisplay(
     /** OCR 使用原始尺寸的画面副本，避免 PNG 编码和解码；调用方负责 recycle。 */
     fun latestFrameBitmap(): Bitmap? = delegate.latestFrameBitmap()
 
+    fun visibleFrameStamp() = delegate.visibleFrameStamp()
+
     fun release() {
         delegate.release()
     }

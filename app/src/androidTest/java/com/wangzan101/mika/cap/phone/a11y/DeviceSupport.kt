@@ -17,7 +17,9 @@ import com.wangzan101.mika.a11y.MikaAccessibilityService
 /** 真机测试共用:shell 连接、无障碍服务、虚拟屏上的 AndroidScreen。需要内置助手在运行(已配对、无线调试开着)且 Mika 无障碍服务已开启。 */
 object DeviceSupport {
     const val SETTINGS = "com.android.settings"
-    const val TEST_PACKAGE = "com.wangzan101.mika.test"
+    /** The test APK inherits the app's optional .dev suffix; never hard-code the package here. */
+    val TEST_PACKAGE: String
+        get() = InstrumentationRegistry.getInstrumentation().context.packageName
     private var connection: ShellBinding? = null
     private val phone get() = PhoneServices.of(InstrumentationRegistry.getInstrumentation().targetContext)
 
