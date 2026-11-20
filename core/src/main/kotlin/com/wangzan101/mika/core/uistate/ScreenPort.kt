@@ -236,6 +236,14 @@ interface ScreenPort {
     /** 仅核对窗口归属,不读取屏幕内容。空屏可用;有窗口但归属未知时拒绝。 */
     suspend fun checkAppAccess() {}
 
+    /** 固定的能力声明；问它不连接助手、不建屏，也不加载模型。 */
+    val supportsLocalIcons: Boolean get() = false
+
+    suspend fun findLocalIcon(icon: LocalIcon, region: LocalIconRegion): LocalIconResult = LocalIconResult.Miss.Unavailable
+
+    /** 仅用于已有的点击执行入口。端口必须在落指前核对帧；不支持时绝不能退回普通坐标点击。 */
+    suspend fun tapLocalIcon(x: Int, y: Int, frame: LocalIconFrame): ActionResult = ActionResult.Failed("located_stale")
+
     suspend fun snapshot(): ScreenSnapshot
 
     /** 读一屏但不登记编号(模型手里的 ref 不受影响);不可逆判定用。 */

@@ -41,6 +41,8 @@ data class ScreenFacts(
     val passwordField: Boolean,
     val anyWindow: Boolean = hasWindow,
     val foregroundApp: String? = null,
+    /** Explicit window-manager evidence that the visible app window declares FLAG_SECURE. */
+    val protectedWindow: Boolean = false,
 )
 
 object ScreenDiagnosis {
@@ -72,6 +74,12 @@ object ScreenDiagnosis {
         val text = Hant.fold(f.texts.joinToString("\n")).lowercase()
         fun hit(words: List<String>) = words.firstOrNull { it in text }
         fun human(reason: String, cause: String) = ScreenCheck(ScreenState.NEEDS_HUMAN, f.currentApp, true, reason, cause)
+
+        // Unlike black pixels, an explicit window-manager FLAG_SECURE signal is sufficient
+        // evidence to classify the page as protected.
+        if (f.protectedWindow) {
+            return ScreenCheck(ScreenState.PROTECTED, f.currentApp ?: f.foregroundApp, true, cause = "window declares FLAG_SECURE")
+        }
 
         // 页面切换时画面也可能短暂全黑:界面还在变就按加载中处理
         if (f.changing && f.blackFrames.any { it }) {

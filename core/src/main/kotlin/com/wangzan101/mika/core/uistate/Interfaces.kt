@@ -171,7 +171,12 @@ internal class Interfaces(
 
     private suspend fun prepare(tool: AgentTool, o: JsonObject): Prep {
         val session = this.session
-        gateView.capture = if (captureTargets && tool.routable) gateView.captureTarget(session, tool.verb, o) else null
+        val ref = o.argStr("ref")
+        val snapshotId = o.argStr("snapshotId")
+        val localIconTap = tool.verb == Verb.Tap && ref != null && snapshotId != null &&
+            session.located.get(ref, snapshotId)?.localFrame != null
+        // A local glyph is an ephemeral visual target, not a reusable user-confirmed route.
+        gateView.capture = if (captureTargets && tool.routable && !localIconTap) gateView.captureTarget(session, tool.verb, o) else null
         // 改变界面的动作:动作前先看一眼(元素表 + 画面),动作后比出实际效果
         val probe = if (tool.reportsEffect) session.probe(o.argStr("snapshotId")) else null
         val aimed = probe?.let { effectTarget(session, tool.verb, o, it.before) }
@@ -217,9 +222,11 @@ internal class Interfaces(
                 )
             }
         }
-        if (inlineScreen && tool.showsScreenAfter && ok) result = session.withScreen(result)
+        // Local icon taps have their own frame guard and do not attach a post-action image.
+        val localIconTap = tool.verb == Verb.Tap && session.located.get(o.argStr("ref").orEmpty(), o.argStr("snapshotId").orEmpty())?.localFrame != null
+        if (!localIconTap && inlineScreen && tool.showsScreenAfter && ok) result = session.withScreen(result)
         // 旧模式的视觉主模型直接看动作后画面；分级模式只在界面差异或下次 observe 需要时补图。
-        if (tool.showsScreenAfter && ok && !config.adaptiveVision && result.images.isEmpty() && "screen" !in result.content) result = session.withFrame(result)
+        if (!localIconTap && tool.showsScreenAfter && ok && !config.adaptiveVision && result.images.isEmpty() && "screen" !in result.content) result = session.withFrame(result)
         val probe = prep.probe
         val aimed = prep.aimed
         if (ok && probe != null && aimed != null) {

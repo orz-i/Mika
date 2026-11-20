@@ -52,6 +52,13 @@ class ScreenDiagnosisTest {
         assertTrue(unavailable.needsHuman)
     }
 
+    @Test fun explicitSecureWindowEvidenceIsProtected() {
+        val result = ScreenDiagnosis.classify(facts().copy(protectedWindow = true))
+        assertEquals(ScreenState.PROTECTED, result.state)
+        assertTrue(result.needsHuman)
+        assertTrue(result.cause.orEmpty().contains("FLAG_SECURE"))
+    }
+
     @Test fun oneBlackFrameIsNotPersistentCaptureFailure() {
         assertEquals(ScreenState.NORMAL, ScreenDiagnosis.classify(facts(black = listOf(true))).state)
         assertEquals(ScreenState.NORMAL, ScreenDiagnosis.classify(facts(black = listOf(false, true))).state)

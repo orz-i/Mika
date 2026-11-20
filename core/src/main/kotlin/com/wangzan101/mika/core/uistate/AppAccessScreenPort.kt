@@ -93,6 +93,8 @@ class AppAccessScreenPort(
     override suspend fun snapshot() = observed { inner.snapshot() }
     override suspend fun peek() = observed { inner.peek() }
     override suspend fun screenshotPng() = checked { inner.screenshotPng() }
+    override val supportsLocalIcons get() = inner.supportsLocalIcons
+    override suspend fun findLocalIcon(icon: LocalIcon, region: LocalIconRegion) = checked { inner.findLocalIcon(icon, region) }
     override suspend fun readVisibleText() = checked { inner.readVisibleText() }
     override suspend fun frameGrid() = checked { inner.frameGrid() }
     override suspend fun isProtected() = checked { inner.isProtected() }
@@ -102,6 +104,7 @@ class AppAccessScreenPort(
     // ---------- 在当前屏上的动作 ----------
     override suspend fun tapRef(ref: String, snapshotId: String) = checked { inner.tapRef(ref, snapshotId) }
     override suspend fun tapXY(x: Int, y: Int) = checked { inner.tapXY(x, y) }
+    override suspend fun tapLocalIcon(x: Int, y: Int, frame: LocalIconFrame) = checked { inner.tapLocalIcon(x, y, frame) }
     override suspend fun doubleTapRef(ref: String, snapshotId: String) = checked { inner.doubleTapRef(ref, snapshotId) }
     override suspend fun doubleTapXY(x: Int, y: Int) = checked { inner.doubleTapXY(x, y) }
     override suspend fun typeText(ref: String?, snapshotId: String?, text: String) = checked { inner.typeText(ref, snapshotId, text) }

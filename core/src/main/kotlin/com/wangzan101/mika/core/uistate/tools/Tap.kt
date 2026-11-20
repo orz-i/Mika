@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.uistate.tools
 
+import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenFamily
 import com.wangzan101.mika.core.risk.GateTarget
 import com.wangzan101.mika.core.prompt.Feedback
@@ -88,10 +89,21 @@ internal class Tap(f: ScreenFamily) : ScreenTool(f, "tap") {
 
     /** 点 find_visually 找到的点:先重新截图,和找到时的画面差太多(或截不到)就不点。 */
     private suspend fun tapLocated(ref: String, snapshotId: String, twice: Boolean, ctx: ToolContext): ToolExecution {
-        val (x, y) = locatedPixel(ctx, ref, snapshotId) ?: return refExpired(Feedback["located_stale"], "located_stale")
+        val entry = ctx.located.get(ref, snapshotId) ?: return refExpired(Feedback["located_stale"], "located_stale")
+        val local = entry.localFrame
+        val action = if (local == null) {
+            val (x, y) = locatedPixel(ctx, ref, snapshotId) ?: return refExpired(Feedback["located_stale"], "located_stale")
+            tapAt(ctx, x, y, twice)
+        } else {
+            if (twice) throw ArgError("clicks", "only a single tap is supported for a local icon reference")
+            ctx.screen.tapLocalIcon(entry.point.x, entry.point.y, local)
+        }
+        if (action is ActionResult.Failed && action.reason == "located_stale") {
+            return refExpired(Feedback["located_stale"], "located_stale")
+        }
         val info = ctx.locatedInfo[ref]
         val target = info?.target
-        val r = ctx.action(tapAt(ctx, x, y, twice))
+        val r = ctx.action(action)
         if (target == null || r.content["ok"] != JsonPrimitive(true)) return r
         // 没佐证的点:点了有没有用只能看效果,提示里先说清楚
         val hint = listOfNotNull(Feedback["located.unverified"].takeIf { info.unverified }, (r.content["hint"] as? JsonPrimitive)?.content)
@@ -111,9 +123,12 @@ internal class Tap(f: ScreenFamily) : ScreenTool(f, "tap") {
  */
 internal suspend fun locatedPixel(ctx: ToolContext, ref: String, snapshotId: String): Pair<Int, Int>? {
     val (p, hash) = ctx.located.get(ref, snapshotId) ?: return null
+    // 本地图标只供点击，不能拿去打字/清空；它的严格帧核对在 tapLocalIcon。
+    if (hash == null) return null
+    val ops = ctx.config.vision?.ops ?: return null
     val screen = ctx.screen
     val png = if (screen.isProtected()) null else screen.screenshotPng()
-    if (png == null || hamming(ctx.config.vision!!.ops.aHash(png), hash) > LOCATE_SCREEN_CHANGE) return null
+    if (png == null || hamming(ops.aHash(png), hash) > LOCATE_SCREEN_CHANGE) return null
     val s = ctx.session.peek() ?: ctx.lastOrSnapshot()
     return toPx(p.x, s.width) to toPx(p.y, s.height)
 }

@@ -137,7 +137,11 @@ class AppAccessScreenPortTest {
     private fun recordingPort(reached: MutableSet<String>): ScreenPort =
         Proxy.newProxyInstance(ScreenPort::class.java.classLoader, arrayOf(ScreenPort::class.java)) { _, m, _ ->
             reached += m.name
-            if (m.name == "snapshot" || m.name == "peek") ScreenSnapshot("s", "bank", emptyList(), 1, 1) else null
+            when (m.name) {
+                "snapshot", "peek" -> ScreenSnapshot("s", "bank", emptyList(), 1, 1)
+                "getSupportsLocalIcons" -> true
+                else -> null
+            }
         } as ScreenPort
 
     /** 按参数类型给样例值调一次(挂起函数最后一个参数是续体,这里的调用都不会真挂起);抛出的异常原样抛出。 */
@@ -152,6 +156,9 @@ class AppAccessScreenPortTest {
                 Int::class.javaObjectType -> null
                 List::class.java -> emptyList<Any>()
                 SystemAction::class.java -> SystemAction.ShowAlarms
+                LocalIcon::class.java -> LocalIcon.Search
+                LocalIconRegion::class.java -> LocalIconRegion.Whole
+                LocalIconFrame::class.java -> LocalIconFrame(2, 1L, 1L, 1, 1, 0)
                 Continuation::class.java -> Continuation<Any?>(EmptyCoroutineContext) {}
                 else -> error("no sample for ${t.name} in ${m.name}: add one")
             }
@@ -253,7 +260,7 @@ class AppAccessScreenPortTest {
         val PASS_THROUGH = setOf(
             "systemAction", "systemCommand", "bulkCalendarInsert", "listApps", "otherProfiles", "appCopies", "getAfterTask",
             // 抓包端口读的是旁路流量,不驱动任何 App 的界面,也没有目标 App 这一说
-            "getNetwork",
+            "getNetwork", "getSupportsLocalIcons",
         )
     }
 }
