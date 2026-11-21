@@ -63,3 +63,6 @@ reverse/**/shot*.png
 
 # 提交拆分用的临时目录
 .tmp-split/
+
+# gallery3d 是另一个逆向项目的 jadx 源码树(1.1G,与 Mika 无关)
+reverse/gallery3d/
