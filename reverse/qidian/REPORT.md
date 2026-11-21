@@ -752,3 +752,174 @@ GET  /argus/api/v1/reddot/getdot、message/totalcount、freshman/* ...
 | `wv/wv1.bin` ~ `wv3.bin` | 三次 WebView 实测 AAUE 流（wv3 为自动模式回归） |
 | `wv/decode_wv.py` | 解码器的早期草稿，已被 `tools/aaue_http.py` 取代 |
 
+
+# 附录 E：手机端 Mika 抓不到——三个真实缺陷（2026-11-21 实证）
+
+附录 D 证明的是「手工在 `/data/local/tmp` 跑 loader、显式传 `--lib <apk>`」可行。
+但在手机端 Mika 里执行抓取时仍然拿不到福利中心的数据。逐个排查后，是三个独立问题叠加。
+
+## E.1 缺陷一：自动扫描只认 `.so`，APK 内嵌的 Chromium 被整条过滤
+
+Mika 启动 helper 用的是 `--uid` + `--lib-dir`，不是 `--lib <apk>`：
+
+```
+libaau_ebpf.so --uid 10434 --lib-dir <目标app>/lib/arm64 \
+  --ssl-offsets libssl.so:0x3d364:0x3d2b8:0x0
+```
+
+于是走的是自动扫描。`scan_and_attach_proc_maps` 里原作只接受以 `.so` 结尾的映射：
+
+```c
+if (slen < 3 || strcmp(slash + slen - 3, ".so") != 0) continue;
+```
+
+而 WebView 代码页的 inode 是 `base.apk`（见 D.1），于是 `r-xp ... base.apk` 这一行
+在第一步就被丢掉了。手工路径能用、Mika 路径不能用，差别就在这里。
+
+修复：除了 `.so`，也接受**可执行段**的 `.apk`。
+
+```c
+int is_so = (slen > 3 && strcmp(slash + slen - 3, ".so") == 0);
+int is_exec_apk = 0;
+if (!is_so && slen > 4 && strcmp(slash + slen - 4, ".apk") == 0) {
+    char *perms = strchr(line, ' ');
+    while (perms && *perms == ' ') perms++;
+    /* perms 形如 "r-xp"，第 3 个字符才是可执行位 */
+    is_exec_apk = (perms && strlen(perms) >= 4 && perms[2] == 'x');
+}
+```
+
+用「可执行段」做筛子，是因为普通 APK 的 dex/资源都是 `r--p`、`r--s`，
+只有真正承载 native 代码的段才是 `r-xp`，这样不会把每个 APK 都拿去做 ELF 解析。
+
+> 踩过的坑：第一版把可执行位写成 `perms[3] == 'x'`，而 `perms` 是 `"r-xp"`，
+> index 3 是 `p`/`s`，条件永远为假——日志看起来一切正常，就是不挂 APK。
+
+## E.2 缺陷二：WebView 与抓包进程的启动顺序——首屏请求会漏
+
+即使修好 E.1，`/proc/<pid>/maps` 也要等目标 app **真的用上 WebView** 才有那条映射。
+Mika 的用法通常是「先开始抓包，再去操作 app」，于是：
+
+1. 抓包启动时 chromium 还没映射 → 扫不到；
+2. 用户打开 H5，首屏那批 XHR 在 2 秒一次的重扫挂上之前就发完了。
+
+修复：主动向系统查当前 WebView provider，把探针**预挂**在它的 APK 上，
+等 chromium 一被映射立即生效，不依赖「先出现在 maps 里」。
+
+```c
+popen("/system/bin/dumpsys webviewupdate")   // Current WebView package (name, version): (pkg, ver)
+popen("/system/bin/pm path <pkg>")           // package:/data/app/.../base.apk
+try_attach_library(apk, ...)
+```
+
+日志新增一行：
+
+```
+INFO:webview-prewarm /data/app/.../com.google.android.webview-.../base.apk (com.google.android.webview)
+```
+
+> 踩过的坑：解析包名时先写成「取第一个 `(` 到逗号」，而该行是
+> `Current WebView package (name, version): (com.google..., 157...)`，
+> 第一个括号里是字段说明，取到的包名是字面量 `name`。改成在 `"): ("` 之后取。
+
+## E.3 缺陷三：插件规则按路径子串匹配，把别的库挂到了错误地址
+
+Mika 的 `aau_capture_plugins.json` 会传 `--ssl-offsets libssl.so:0x3d364:0x3d2b8`。
+原实现里规则**先于**符号表判定，且匹配方式是 `strstr(path, "libssl.so")`，
+于是一条起点专用规则同时命中了：
+
+```
+/apex/com.android.conscrypt/lib64/libssl.so  → 用了 0x3d364（真实 0x71470）
+/system/lib64/libssl.so                      → 用了 0x3d364（真实 0x6f594）
+```
+
+这会把探针挂到完全无关的代码上——要么抓不到，要么抓到垃圾。修复后顺序改为
+**WebView APK → 符号表 → 显式规则 → 启发式**，规则只作为「没有符号表」时的兜底：
+
+```
+INFO:ssl-offsets /apex/com.android.conscrypt/lib64/libssl.so source=dynsym write=0x71470 read=0x71044
+INFO:ssl-offsets /system/lib64/libssl.so                  source=dynsym write=0x6f594 read=0x6f190
+```
+
+## E.4 还有一个不是抓包问题的问题：H5 缓存会让 mainPage 返回空壳
+
+排查中发现的重要现象：同一个账号、同一页面，两次抓取结果差别极大。
+
+| 场景 | 页面 HTML | mainPage | TaskList |
+|---|---|---|---|
+| WebView HTTP 缓存命中 | `304` | `73` 字节 `{"Data":{"ConfigId":0,"DialogType":0,"TaskId":0}}` | 无 |
+| 清缓存后全新加载 | `200`，573696 字节 | `19939` 字节 | 9 条 |
+
+也就是说，**缓存的 H5 页面不会重新拉取完整聚合数据**，`mainPage` 只回一个空壳。
+页面上的任务卡片此时显示的是上一次的 DOM/数据，看起来「有内容」，但接口层面什么都没有。
+
+排查时清掉的是（可重建的纯缓存，不涉及登录态）：
+
+```
+/data/data/com.qidian.QDReader/cache/WebView/Default/HTTP Cache   (497MB)
+```
+
+这条对使用者很重要：**如果 Mika 抓到了 mainPage 却是 73 字节空壳，先清 WebView 缓存再试**，
+不要误判成抓包失败。
+
+## E.5 修复后的端到端结果（手机端 Mika 参数，缓存已清）
+
+Mika 实际下发的完整参数（从设备 `ps` 里读到的，含插件规则）：
+
+```
+libaau_ebpf.so --uid 10434 --lib-dir <qidian>/lib/arm64 \
+  --ssl-offsets libssl.so:0x3d364:0x3d2b8:0x0 \
+  --cronet-abi 0x20,0x10,0 --cronet-slots 3,4,5 \
+  --cronet-sig '(Ljava/lang/Object;JLjava/lang/String;IZZZIZIIJ)J'
+```
+
+挂载结果：
+
+```
+INFO:ssl-offsets .../qidian/lib/arm64/libssl.so source=dynsym write=0x3d364 read=0x3d2b8
+INFO:ssl-offsets /apex/com.android.conscrypt/lib64/libssl.so source=dynsym write=0x71470 read=0x71044
+INFO:ssl-offsets /system/lib64/libssl.so source=dynsym write=0x6f594 read=0x6f190
+INFO:webview-prewarm .../com.google.android.webview-.../base.apk (com.google.android.webview)
+INFO:ssl-offsets .../base.apk source=webview_apk write=0x404ea14 read=0x40544dc
+ATTACHED:.../base.apk
+```
+
+抓到的 H5 交换（`mika6.bin`，1129 帧 / 85 连接）：
+
+```
+GET /new/welfareCenter/?_viewmode=0&_smode=1        200  92314 → 573696 (HTML)
+GET /argus/api/v2/video/adv/mainPage                200   5389 →  19939 (JSON)
+GET /argus/api/v3/checkin/getcurrentweekcheckininfo 200    945 →   3732
+GET /argus/api/v2/readtime/readpage                 200   1139 →   2703
+GET /argus/api/v1/user/getlogininfo                 200    102 →    102
+GET /argus/api/v2/video/adv/mainPageDialog          200     73 →     73
+```
+
+`mainPage` 解出的任务完成情况（与本轮 E.4 中「清缓存后」一致）：
+
+```json
+"DailyBenefitModule": {"Process": 1, "Count": 46, "TaskList": [ ... 9 条 ... ]}
+```
+
+9 条逐轮状态：第 1 条 `IsFinished=1`（10-3点订阅券），其余 8 条为 0。
+
+## E.6 本轮改动清单
+
+`aau-client/src/main/cpp/aau_ebpf_loader.c`：
+
+1. `scan_and_attach_proc_maps` 接受可执行段 `.apk`（E.1）；
+2. 新增 `preattach_webview_provider`，启动时预挂当前 WebView provider（E.2）；
+3. `inspect_library_offsets` 判定顺序改为 符号表 > 显式规则（E.3）；
+4. 新增 `g_rejected_paths` 负缓存：判定过且无 TLS 的路径不再每 2 秒重解析一次
+   （maps 每 2 秒重扫，`libsqlite.so` 这类常驻库原本会被反复读文件、扫字符串）。
+
+Mika 侧无需改代码，`--lib-dir` 的行为不变。
+
+## E.7 证据文件
+
+| 文件 | 说明 |
+|---|---|
+| `mika1.bin` | 修复前（`.so` 过滤未改）Mika 模式抓取：H5 只有 6 个接口，无 base.apk |
+| `mika5.bin` | 清缓存 + 预挂载：mainPage 19939 字节，9 条任务 |
+| `mika6.bin` | 完整 Mika 参数（含插件规则）+ 规则修复后回归，结果同上 |
+| `mika6_dump/` | 上述抓包的逐响应解码结果 |
