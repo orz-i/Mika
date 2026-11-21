@@ -154,6 +154,13 @@ class EvalRunTest {
             "false" -> false
             else -> throw IllegalArgumentException("evalAtlasLearn must be true or false, got $raw")
         }
+        // 接口图谱影子采集：默认关（和设置里的默认一致），只在显式要求时打开
+        testTasks.evalHooks.apiGraphLearn = when (val raw = args.getString("evalApiGraphLearn")?.trim()?.lowercase()) {
+            null, "" -> false
+            "true" -> true
+            "false" -> false
+            else -> throw IllegalArgumentException("evalApiGraphLearn must be true or false, got $raw")
+        }
         testTasks.evalHooks.operatingPace = OperatingPace.parse(args.getString("evalPace")) ?: OperatingPace.FAST
         val allowIrreversible = args.getString("evalAllowIrreversible") == "true"
         val prices = prices()

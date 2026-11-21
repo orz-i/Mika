@@ -111,6 +111,15 @@ class PhoneNetworkManager(
 
     private val subscriptionHandles = CopyOnWriteArrayList<AutoCloseable>()
 
+    /**
+     * 交换级回调：请求事件、合并后的条目、以及**已解压**的响应体。
+     *
+     * 与 `responseFlow` 的区别是时机：这里在 body 拼完、chunked 与 gzip 都处理完之后才触发，
+     * 订阅方能直接拿到明文。接口图谱的影子采集依赖这个时机。
+     */
+    private val exchangeSinks =
+        CopyOnWriteArrayList<(HttpRequestEvent?, CapturedTrafficEntry, ByteArray?) -> Unit>()
+
     // 环形缓存与在途请求追踪
     private val trafficHistory = ConcurrentLinkedDeque<CapturedTrafficEntry>()
     private val inFlightRequests = ConcurrentHashMap<String, HttpRequestEvent>()
@@ -243,6 +252,30 @@ class PhoneNetworkManager(
             hasResponseBody = bodyBytes != null && bodyBytes.isNotEmpty()
         )
         recordEntry(updated)
+        dispatchExchange(request, updated, bodyBytes)
+    }
+
+    /**
+     * 注册交换级回调，返回的句柄用来卸载。
+     *
+     * 回调抛异常不会影响抓包主链路——采集是旁路，坏一个订阅方不该让工具看不到网络。
+     */
+    fun addExchangeSink(
+        sink: (request: HttpRequestEvent?, entry: CapturedTrafficEntry, body: ByteArray?) -> Unit
+    ): AutoCloseable {
+        exchangeSinks += sink
+        return AutoCloseable { exchangeSinks -= sink }
+    }
+
+    private fun dispatchExchange(request: HttpRequestEvent?, entry: CapturedTrafficEntry, body: ByteArray?) {
+        if (exchangeSinks.isEmpty()) return
+        for (sink in exchangeSinks) {
+            try {
+                sink(request, entry, body)
+            } catch (t: Throwable) {
+                Log.w(TAG, "exchange sink failed for ${entry.url}", t)
+            }
+        }
     }
 
     @Synchronized

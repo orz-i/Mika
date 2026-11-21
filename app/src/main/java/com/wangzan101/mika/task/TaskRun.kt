@@ -98,6 +98,8 @@ import com.wangzan101.mika.core.resource.ResourceScope
 import com.wangzan101.mika.core.tool.HandBack
 import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.vision.VisionService
+import com.wangzan101.mika.api.ApiTraceCollector
+import com.wangzan101.mika.api.ApiTraceStore
 import com.wangzan101.mika.cap.phone.display.AgentDisplay
 import com.wangzan101.mika.cap.phone.display.LazyAgentDisplay
 import com.wangzan101.mika.record.RunHandle
@@ -233,6 +235,21 @@ class TaskRun(
     /** 静音等恢复记录按它分开,几个任务各记各的。 */
     val key: String = UUID.randomUUID().toString()
     private val inbox = RunInbox()
+
+    /**
+     * 接口图谱的影子采集（见 `docs/dev/app-api-graph.md`）。
+     *
+     * 开关关着、或还没确定目标包时为空；确定目标包后挂上 sink，收尾时卸下并写 trace。
+     * 采集只留结构与键名，响应体原文在采集器里就丢掉了。
+     */
+    @Volatile
+    private var apiCollector: ApiTraceCollector? = null
+
+    @Volatile
+    private var apiSink: AutoCloseable? = null
+
+    /** 起停采集器要互斥：目标包切换与任务收尾可能同时发生，不能留下两个 sink。 */
+    private val apiCaptureLock = Any()
 
     private val _runId = Mirrored<String?>(null, service.taskState._runId)
     private val _sharedFiles = Mirrored<List<SharedFile>>(emptyList(), service.taskState._sharedFiles)
@@ -1111,6 +1128,7 @@ class TaskRun(
             return end.also { usedGroups = agent.usedGroups.toList() }.let(::withRetestHint)
         } finally {
             if (resultReadyAtMs == 0L) resultReadyAtMs = SystemClock.elapsedRealtime()
+            finishApiCapture()
             handoffUnconsumed()
             side.cancel()
             _frames.value = null
@@ -1253,6 +1271,54 @@ class TaskRun(
     }
 
     /**
+     * 目标 App 确定了才开始接口影子采集。
+     *
+     * 时机跟网络抓包一致：抓包本身是按目标包 uid 过滤的，采集器挂在同一个管理器上，
+     * 所以只要是抓到的交换就属于这个 App，不需要再猜来源。
+     * 一个任务里换了目标 App 也只建一份采集器，主包名记第一次那个，交换本身用 host 区分。
+     */
+    private fun startApiCapture(packageName: String, flags: FeatureFlags) {
+        synchronized(apiCaptureLock) {
+            if (apiCollector != null) return
+            if (!flags.effectiveApiGraphLearn(env.evalHooks.apiGraphLearn)) return
+            val collector = ApiTraceCollector(packageName)
+            apiSink = runCatching { collector.attach(phoneServices.network) }
+                .onFailure { Log.w(TAG, "api capture not attached for $packageName", it) }
+                .getOrNull()
+            if (apiSink != null) {
+                apiCollector = collector
+                Log.i(TAG, "api capture attached for $packageName")
+            }
+        }
+    }
+
+    /**
+     * 收尾：卸下回调，把这次运行的 trace 写盘。
+     *
+     * 只要开关打开过、采集器挂上了，**空 trace 也写**：文件里的 `dropped` / `droppedBy`
+     * 正是「这个接口是没抓到，还是被规则丢了」的唯一凭据。曾经按「空就不写」处理，
+     * 结果一次真机验收里 trace 目录空空如也，分不清是探针没挂上、页面没发请求，还是全被过滤网掉了。
+     * 开关关闭时根本不挂采集器，所以「关掉时无 trace、无目录、无磁盘写」这条仍然成立。
+     */
+    private fun finishApiCapture() {
+        synchronized(apiCaptureLock) {
+            apiSink?.let { handle -> runCatching { handle.close() }.onFailure { Log.w(TAG, "api sink close failed", it) } }
+            apiSink = null
+            val collector = apiCollector ?: return
+            apiCollector = null
+            val trace = collector.snapshot()
+            Log.i(TAG, "api trace: kept=${trace.observations.size} dropped=${trace.dropped} by=${trace.droppedBy}")
+            val runId = _runId.value
+            if (runId == null) {
+                Log.w(TAG, "api trace has no runId, not saved")
+                return
+            }
+            runCatching { ApiTraceStore(service).write(runId, trace) }
+                .onFailure { Log.w(TAG, "api trace not saved for $runId", it) }
+        }
+    }
+
+    /**
      * 目标 App 换了就静音(启动前多半已静上,这里补上没静成的),并盯着它有没有被用户挪到主屏。
      * Mika 屏上冒出别的 App(从目标 App 里点开的、另一份顶上来的)也是第一次看到就静;静音按「包 + 用户」,另一份单独静。
      * 用户接管期间屏上的事归用户,不去静。
@@ -1288,6 +1354,8 @@ class TaskRun(
                     val attached = phoneServices.network.attachToPackage(t.packageName, netFlags.networkCaptureMode())
                     if (!attached) {
                         Log.w(TAG, "network capture failed to attach for ${t.packageName}: ${phoneServices.network.lastCaptureError()}")
+                    } else {
+                        startApiCapture(t.packageName, netFlags)
                     }
                 } else {
                     phoneServices.network.detach()

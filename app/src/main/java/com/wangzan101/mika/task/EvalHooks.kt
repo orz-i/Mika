@@ -39,6 +39,9 @@ class EvalHooks {
     /** 覆盖「记录页面经验（学习）」开关;null 用设置里的。 */
     @Volatile var atlasLearn: Boolean? = null
 
+    /** 覆盖「采集接口交换（接口图谱影子采集）」开关;null 用设置里的（默认关）。 */
+    @Volatile var apiGraphLearn: Boolean? = null
+
     /** 覆盖设置里的操作节奏;null 用设置里的。评测和真机验收默认用「快」,按参数才换成别的。 */
     @Volatile var operatingPace: OperatingPace? = null
 
@@ -49,6 +52,7 @@ class EvalHooks {
         rememberMemory = null
         atlasHints = null
         atlasLearn = null
+        apiGraphLearn = null
         autoAnswer = null
         onTakeover = "cancel"
         maxSteps = null

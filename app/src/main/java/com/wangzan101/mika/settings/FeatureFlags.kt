@@ -124,6 +124,21 @@ class FeatureFlags(private val prefs: SharedPreferences) {
     /** 本次运行是否记录页面经验；与提示开关无关。 */
     fun effectiveAtlasLearn(override: Boolean? = null): Boolean = override ?: atlasLearnEnabled()
 
+    /**
+     * 接口图谱：本次运行是否采集 API 交换（影子采集）。
+     *
+     * 默认关。P0 阶段只写 trace 不建图，默认关才能保证「开关没开时无 trace、无目录、无磁盘写」；
+     * 等学习与存储做完、界面能看见结果了，再考虑默认开。
+     */
+    fun apiGraphLearnEnabled(): Boolean = prefs.getBoolean(API_GRAPH_LEARN_ENABLED, false)
+
+    fun setApiGraphLearnEnabled(on: Boolean) {
+        prefs.edit().putBoolean(API_GRAPH_LEARN_ENABLED, on).commit()
+    }
+
+    /** 本次运行是否采集 API 交换；评测跑器可用参数覆盖。 */
+    fun effectiveApiGraphLearn(override: Boolean? = null): Boolean = override ?: apiGraphLearnEnabled()
+
     /** 端侧网络抓包模式（默认 [CaptureMode.AUTO] 优先 Root eBPF，非 Root 自动回退 VpnService）。 */
     fun networkCaptureMode(): CaptureMode = prefs.getString(NETWORK_CAPTURE_MODE, null)
         ?.let { raw -> CaptureMode.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) } }
@@ -283,6 +298,7 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val NETWORK_CAPTURE_MODE = "network_capture_mode"
         private const val ATLAS_HINTS_ENABLED = "atlas_hints_enabled"
         private const val ATLAS_LEARN_ENABLED = "atlas_learn_enabled"
+        private const val API_GRAPH_LEARN_ENABLED = "api_graph_learn_enabled"
 
         fun get(context: Context) = FeatureFlags(context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE))
     }
