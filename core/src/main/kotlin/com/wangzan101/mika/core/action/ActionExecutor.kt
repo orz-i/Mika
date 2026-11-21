@@ -305,7 +305,7 @@ class ActionExecutor(
         val subVerdicts = mutableListOf<GuardVerdict>()
         val sub = if (tools.composite(call.name)) {
             val replayOrigin = tools.replaySubActions(call.name)
-            val subOrigin = if (replayOrigin) Origin.Replay else Origin.Script(n)
+            val subOrigin = if (replayOrigin) Origin.Replay else Origin.Script(n, parent = call.name)
             val window = if (!replayOrigin && subOrigin.policy.isolatedReads) GuardScope(canStop = false) else null
             SubActions { c ->
                 if (replayOrigin && tools.verb(c.name) == Verb.ListElements) gate()
@@ -417,6 +417,8 @@ class ActionExecutor(
         val args = Redactor.args(verb, call.argsJson, secret)
         val effective = effectiveWrite(verb, exec.content)
         val source = origin.policy.source
+        // 组合工具的子步带着发起它的工具名：图谱据此把「这一页能整段干这件事」记下来
+        val parentTool = (origin as? Origin.Script)?.parent
         val none = Anchors(null, emptyList())
         val ui = tools.interfaces
         // 启动 App 走自己的前后签名,不拿上一次写操作残留的目标与快照
@@ -424,7 +426,7 @@ class ActionExecutor(
         val beforeSnap = beforeFallback ?: ui.lastActionSnapshot()
         if (captured == null && beforeSnap == null) {
             if (effective) recorder.event(RunEvent.ActionTarget(recorder.now(), origin.step, call.name, args, null, none, none, true,
-                callId = call.id, source = source, incomplete = true))
+                callId = call.id, source = source, parentTool = parentTool, incomplete = true))
             return null
         }
         val beforeProtected = beforeSnap?.protected == true
@@ -436,7 +438,7 @@ class ActionExecutor(
         val afterActivity = if (afterProtected) null else seen?.let { it.activity ?: it.screenSig?.activity }
         val afterSig = if (afterProtected) null else seen?.resolvedScreenSig()
         recorder.event(RunEvent.ActionTarget(recorder.now(), origin.step, call.name, args, captured?.first, captured?.second ?: beforeSnap?.let { Anchors(it.packageName, emptyList()) } ?: none, after, effective,
-            callId = call.id, protected = beforeProtected, source = source,
+            callId = call.id, protected = beforeProtected, source = source, parentTool = parentTool,
             beforeActivity = beforeActivity, beforeSig = beforeSig, afterActivity = afterActivity, afterSig = afterSig))
         return seen
     }

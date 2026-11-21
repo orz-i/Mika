@@ -120,8 +120,13 @@ sealed interface RunEvent {
         val effective: Boolean,
         val callId: String? = null,
         val protected: Boolean = false,
-        /** model | batch */
+        /** model | batch | script | replay | mcp_tool */
         val source: String = "model",
+        /**
+         * 组合工具自己发起的子步（[source] 为 `script`）记的是哪个工具。
+         * 这类子步不能当图谱里的一步，只能用来记「这一页上用过这个工具」。
+         */
+        val parentTool: String? = null,
         /** 取不到这一步的目标和锚点(批里的子步);路线不能缺步,整条不记。 */
         val incomplete: Boolean = false,
         /** 动作前屏幕 Activity 与结构签名（向后兼容旧记录，默认 null）。 */

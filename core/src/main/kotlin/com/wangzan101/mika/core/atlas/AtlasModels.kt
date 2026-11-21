@@ -22,6 +22,7 @@ const val MAX_ATLAS_SHORTCUTS = 50
 const val MAX_SHORTCUT_CANDIDATES = 40
 const val MAX_SHORTCUT_STEPS = 10
 const val MAX_SHORTCUT_CONSECUTIVE_MISSES = 3
+const val MAX_ATLAS_CAPABILITIES = 8
 
 /**
  * 虚拟入口节点 ID：表示「还没进入这个 App」的状态（桌面、另一个 App、或刚启动）。
@@ -66,6 +67,11 @@ data class AtlasScreen(
     val lastSeenMs: Long = 0L,
     val unverifiedAfterUpgrade: Boolean = false,
     val controls: List<AtlasControl> = emptyList(),
+    /**
+     * 在这一页上整段跑成功过的自动化工具名（`phone_watch_reward_videos` 这类），只记工具名，
+     * 不记参数、不记页面内容。与 [controls] 不同：控件是「能点哪儿」，这里是「这一页有整段做法」。
+     */
+    val capabilities: List<String> = emptyList(),
 ) {
     /** 优先展示已有标题；空白时退回 Activity 短名或 `#<短哈希>`。 */
     fun displayTitle(): String = title.ifBlank { fallbackTitle() }
@@ -103,10 +109,29 @@ data class AtlasScreen(
         return copy(controls = kept)
     }
 
+    /**
+     * 记下「这一页上，[tool] 整段跑成功过」。只收形如 `phone_xxx` 的工具名（图谱存的是工具本身的
+     * 身份，不是某次调用的参数），重复记只刷新时间，超过 [limit] 个时丢掉最旧的。
+     */
+    fun withCapability(tool: String, atMs: Long = 0L, limit: Int = MAX_ATLAS_CAPABILITIES): AtlasScreen {
+        val clean = tool.trim()
+        if (clean.length !in 3..40 || !CAPABILITY_NAME.matches(clean)) return this
+        val bumped = copy(lastSeenMs = maxOf(lastSeenMs, atMs))
+        if (clean in capabilities) return bumped
+        return bumped.copy(capabilities = (capabilities + clean).takeLast(limit))
+    }
+
+    /** 图谱裁剪时同一条规则：能力列表也有上限，导入进来的超长列表在这里削掉。 */
+    fun compactedCapabilities(limit: Int = MAX_ATLAS_CAPABILITIES): AtlasScreen =
+        if (capabilities.size <= limit) this else copy(capabilities = capabilities.takeLast(limit))
+
     companion object {
         const val TITLE_LLM = "llm"
         const val TITLE_ACTIVITY = "activity"
         const val TITLE_USER = "user"
+
+        /** 工具名：小写字母开头，只含小写字母、数字和下划线。挡掉任何像用户原文的东西。 */
+        private val CAPABILITY_NAME = Regex("^[a-z][a-z0-9_]{2,39}$")
     }
 }
 
@@ -291,7 +316,7 @@ data class AppAtlas(
         maxShortcuts: Int = MAX_ATLAS_SHORTCUTS,
         maxCandidates: Int = MAX_SHORTCUT_CANDIDATES,
     ): AppAtlas {
-        val compactedScreens = screens.map { it.compactedControls(maxControls) }
+        val compactedScreens = screens.map { it.compactedControls(maxControls).compactedCapabilities() }
         val keptScreens = if (compactedScreens.size <= maxScreens) compactedScreens else {
             AtlasEviction.evict(
                 items = compactedScreens,

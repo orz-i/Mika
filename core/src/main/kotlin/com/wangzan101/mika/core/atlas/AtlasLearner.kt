@@ -20,6 +20,9 @@ object AtlasLearner {
     const val DEFAULT_SELF_PACKAGE = "com.wangzan101.mika"
     const val DEFAULT_MATCH_THRESHOLD = ScreenSig.DEFAULT_MATCH_THRESHOLD
 
+    /** 组合工具子步的 source（见 `Origin.Script`）；这类事件只用来记页面能力，不进图谱结构。 */
+    private const val SOURCE_SCRIPT = "script"
+
     data class LearnResult(
         /** 本次更新后各包的最新页面图谱（已写回 store）。 */
         val updatedByPackage: Map<String, AppAtlas>,
@@ -42,6 +45,13 @@ object AtlasLearner {
     private data class EntryObservation(
         val atMs: Long,
         val sig: ScreenSig,
+    )
+
+    /** 一次「在这一页上整段用过某个工具」的观测；子步不建节点和边，只落成页面上的能力。 */
+    private data class CapabilityObservation(
+        val sig: ScreenSig,
+        val tool: String,
+        val atMs: Long,
     )
 
     /** 按 [LearnGate.done] 语义从运行事件序列推断本次任务是否算「真正办成」。 */
@@ -112,6 +122,7 @@ object AtlasLearner {
         val stepsByPkg = linkedMapOf<String, MutableList<StepObservation>>()
         val afterOnlyByPkg = linkedMapOf<String, MutableList<Pair<Long, ScreenSig>>>()
         val entryByPkg = linkedMapOf<String, MutableList<EntryObservation>>()
+        val capabilitiesByPkg = linkedMapOf<String, MutableList<CapabilityObservation>>()
 
         for (event in events) {
             if (event !is RunEvent.ActionTarget) continue
@@ -127,6 +138,18 @@ object AtlasLearner {
             val beforeSig = if (rawBeforeSig != null && beforePkg != null) {
                 normalizeSig(rawBeforeSig, beforePkg, event.beforeActivity ?: rawBeforeSig.activity, inputValues)
             } else null
+
+            // 组合工具自己发起的子步（看广告那类整段工具里的每一次点击）不是模型走的路：
+            // 拿它建节点和边，图谱里就会长出「福利中心 --gesture--> 广告页」这种一步一变的废料。
+            // 但它是唯一能说明「这一页有整段做法」的证据，所以只记能力，不进步骤。
+            if (event.source == SOURCE_SCRIPT) {
+                val parent = event.parentTool?.takeIf { it.isNotBlank() }
+                if (parent != null && event.effective && beforeSig != null && beforePkg != null) {
+                    capabilitiesByPkg.getOrPut(beforePkg) { mutableListOf() } +=
+                        CapabilityObservation(beforeSig, parent, event.atMs)
+                }
+                continue
+            }
 
             val rawAfterSig = if (event.effective) event.afterSig?.takeUnless { it.isBlank } else null
             val afterPkg = AtlasSanitizer.cleanPackage(
@@ -189,6 +212,7 @@ object AtlasLearner {
                     steps = steps,
                     extraVisits = extraVisits,
                     entries = entries,
+                    capabilities = capabilitiesByPkg[pkg].orEmpty(),
                     learnDone = learnDone,
                     succeeded = succeeded,
                     matchThreshold = matchThreshold,
@@ -232,6 +256,7 @@ object AtlasLearner {
         steps: List<StepObservation>,
         extraVisits: List<Pair<Long, ScreenSig>>,
         entries: List<EntryObservation>,
+        capabilities: List<CapabilityObservation>,
         learnDone: Boolean,
         succeeded: Boolean,
         matchThreshold: Double,
@@ -338,6 +363,14 @@ object AtlasLearner {
                 learnDone -> upsertEdge(edges, ENTRY_SIG_ID, home.sigId, ATLAS_ENTRY_TOOL, null, entry.atMs, version, strong = true)
                 succeeded -> upsertEdge(edges, ENTRY_SIG_ID, home.sigId, ATLAS_ENTRY_TOOL, null, entry.atMs, version, strong = false)
             }
+        }
+
+        // 子步给出的「这一页整段用过哪个工具」。只贴到认得出的页面上；认不出来就不贴，
+        // 也不为它新造页面——能力不是造节点的理由，否则广告页那种一次性的屏会混进来。
+        for (cap in capabilities) {
+            val idx = AtlasEviction.findMatchingScreenIndex(screens, pkg, cap.sig, matchThreshold)
+            if (idx < 0) continue
+            screens[idx] = screens[idx].withCapability(cap.tool, cap.atMs)
         }
 
         val versionsSeen = buildList {

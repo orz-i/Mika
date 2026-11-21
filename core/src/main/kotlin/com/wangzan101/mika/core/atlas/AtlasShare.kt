@@ -359,7 +359,9 @@ data class AtlasShare(
         private fun sanitizeAtlasForImport(atlas: AppAtlas, nowMs: Long): AppAtlas {
             val clean = sanitizeAtlasForExport(atlas.privacyCleaned())
             return clean.copy(
-                screens = clean.screens.map { it.copy(lastSeenMs = nowMs) },
+                // 别人机器上整段跑过，不等于这台机器上跑得通：能力算执行证据，导入时一并清掉，
+                // 与本机的边计数同一个口径（保留页面和标题，不保留「这页能干这件事」的说法）。
+                screens = clean.screens.map { it.copy(lastSeenMs = nowMs, capabilities = emptyList()) },
                 // 外部宣称的次数不是本机验证。保留图结构，执行证据等实际观测后再积累。
                 edges = clean.edges.map { it.copy(ok = 0, weakOk = 0, miss = 0, launchObserved = false) },
                 shortcuts = clean.shortcuts.map { it.copy(disabled = true) },

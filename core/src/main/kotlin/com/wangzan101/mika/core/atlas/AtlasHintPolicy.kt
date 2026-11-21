@@ -129,6 +129,13 @@ class AtlasHintPolicy(
             out += "- $actionPart → $dest $stats"
         }
 
+        // 这一页上有整段自动化时，它比一串点击步骤有用得多：说一次「这页能这么干」，
+        // 模型就不用自己拆成十几次 phone_tap（看广告那类流程拆开一定卡住）。
+        for (tool in matched.capabilities) {
+            if (out.size >= maxDetails) break
+            out += "- 可用工具 $tool：这一页能整段做完，不必一步步点"
+        }
+
         // 有边时也补一条关键控件：告诉模型这一页还能点什么，而不是只给出口
         if (out.size < maxDetails) {
             val reliableControls = matched.controls

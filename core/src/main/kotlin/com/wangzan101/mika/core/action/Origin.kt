@@ -49,8 +49,12 @@ sealed interface Origin {
         override val policy get() = BATCH
     }
 
-    /** web_script 里的一个 `mika.*` 动作。 */
-    data class Script(override val step: Int) : Origin {
+    /**
+     * 页面脚本里的一个 `mika.*` 动作，或者一个整段工具（组合工具）自己发起的子步。
+     * [parent] 是发起它的那个工具名（`phone_watch_reward_videos` 这类）；网页脚本里直接的动作为 null。
+     * 子步不是「模型走的一步」：图谱不能拿它建节点和边，只能拿它记「这一页能干这件事」。
+     */
+    data class Script(override val step: Int, val parent: String? = null) : Origin {
         override val policy get() = SCRIPT
     }
 
