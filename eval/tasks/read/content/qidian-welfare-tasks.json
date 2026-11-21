@@ -1,0 +1,23 @@
+{
+  "id": "qidian-welfare-tasks",
+  "goal": "用 App 打开起点读书（不要用网页版），进入「福利中心」里的「激励任务」模块，告诉我这个模块里一共有几项任务、其中已完成几项，以及第一项任务给的奖励叫什么。只回答这三项，不要领取奖励、不要做任务、不要订阅章节、不要付费",
+  "apps": [
+    "com.qidian.QDReader"
+  ],
+  "category": "read",
+  "channel": "app",
+  "partition": "tune",
+  "requires": [
+    "installed:com.qidian.QDReader"
+  ],
+  "expect": "succeeded",
+  "checks": [
+    {
+      "type": "answer_grounded",
+      "minItems": 1
+    }
+  ],
+  "maxSteps": 30,
+  "timeoutSec": 480,
+  "note": "接口图谱 P0 验收题:福利中心的完成度在 GET h5.if.qidian.com/argus/api/v2/video/adv/mainPage 的 Data.DailyBenefitModule.TaskList[].IsFinished 里(9 条任务,1 条已完成),屏幕上看不全。题本身只要求报三项,minItems 取 1 是因为任务名(如「10-3点订阅券」)一定在屏上,而条数与完成数可能只在接口里,不该因为读不到就整题判死。"
+}
