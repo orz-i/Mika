@@ -31,3 +31,35 @@ __pycache__/
 output/
 # 解包 APK 的分析产物
 apk_analysis/
+
+# 逆向工程的解包产物、抓包与提取的二进制(体积大,只留本机)
+reverse/**/apk/
+reverse/**/dex/
+reverse/**/lib/
+reverse/**/manifest/
+reverse/**/jadx/
+reverse/**/x/
+reverse/**/ebpf-build/
+reverse/**/ebpf-out/
+reverse/**/wv3_dump/
+reverse/**/*.apk
+reverse/**/*.so
+reverse/**/*.dex
+reverse/**/*.jar
+reverse/**/*.zip
+reverse/**/*.class
+reverse/**/*.bin
+reverse/**/*.ndjson
+reverse/**/s_all.txt
+reverse/**/s[0-9].txt
+reverse/**/maps_*.txt
+reverse/**/decoded.txt
+# UI dump、截图、日志属于一次性中间产物
+reverse/**/*.db
+reverse/**/jadx.log
+reverse/**/u[0-9]*.xml
+reverse/**/ui*.xml
+reverse/**/shot*.png
+
+# 提交拆分用的临时目录
+.tmp-split/
