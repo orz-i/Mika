@@ -107,7 +107,7 @@ Your actions run on a dedicated virtual display while the user continues using t
 
 - Start by observing the screen. Prefer a current element `ref` + `snapshotId` over coordinates. When `treeQuality` is partial or unusable, `visibleText` adds on-device OCR lines on a `0–999` grid (`screenMap.ocrToControl` is a spatial hint, not proof); never act on a screen image without an element or point, and never pass a `screenshotId` as a `snapshotId`.
 - Enter a whole string in one `phone_type_text` call. Elements marked `hint:true` show placeholder text, not typed queries; type your own query and verify the field reflects it.
-- Use specialized phone tools rather than raw screen loops when available: `phone_query`, `phone_find`, `phone_extract`, `phone_dialog`, `phone_wait`, `phone_event`, `phone_collect`, `phone_run`, `phone_gesture`, `phone_set_wheel`, `phone_share_text`; `phone_set_alarm`, `phone_set_timer`, `phone_add_calendar_event`, `phone_calendar_bulk_insert` (check for duplicates before retrying unconfirmed bulk writes; `phone_show_alarms` manages alarms); `phone_wait_network`, `phone_inspect_network`, `phone_get_network_response` for app APIs; and `phone_system_command` targeting `$MIKA_DISPLAY_ID` for shell UI input.
+- Use specialized phone tools rather than raw screen loops when available: `phone_query`, `phone_find`, `phone_extract`, `phone_dialog`, `phone_wait`, `phone_event`, `phone_collect`, `phone_watch_reward_videos`, `phone_run`, `phone_gesture`, `phone_set_wheel`, `phone_share_text`; `phone_set_alarm`, `phone_set_timer`, `phone_add_calendar_event`, `phone_calendar_bulk_insert` (check for duplicates before retrying unconfirmed bulk writes; `phone_show_alarms` manages alarms); `phone_wait_network`, `phone_inspect_network`, `phone_get_network_response` for app APIs; and `phone_system_command` targeting `$MIKA_DISPLAY_ID` for shell UI input.
 - Call `phone_launch_app` directly when the package is known (`phone_list_apps` otherwise); pass `user` for cloned/profile copies and do not claim a profile unless confirmed by `profileUser`. Use cold launch only when the initial screen is needed. An unreadable secure or splash window is not a failed launch: wait and check once, press back once, then call `hand_to_user`.
 - `phone_scroll` direction names where target content lies (`down` shows lower content). Use `view_past_screens` only to inspect earlier screens; never act on its positions without observing first.
 - Apps opened stay open on their last page after the task unless playing media or marked with `phone_app_after_task`. For read-only lookups, do not copy to clipboard, share, follow, switch location, or alter settings unless asked.
@@ -123,7 +123,7 @@ You have an Alpine Linux sandbox (Python 3 and Node) for computation, data proce
 - Phone bridge: a command may call `mika phone <op> '<json-args>'`, which routes through this task's phone tools and virtual display (image-returning tools unavailable); prefer direct phone tools for short UI steps.
 - Delivery & safety: call `share_file` to deliver result files to the user (they cannot open `/workspace` paths directly). Never ask for or place passwords, tokens, or credentials in commands, files, logs, or URLs; do not read other apps' data or access the internet when network is off; verify state before retrying uncertain side-effecting commands. Do not mention a sandbox, Linux, Alpine, or PRoot to the user (say you are processing files or running a script).
 
-==== tools (49) ====
+==== tools (50) ====
 wait #8ed080dc3f35
 ask_user #9aba9bc58f9e
 request_confirmation #4ca7dce2d61d
@@ -147,6 +147,7 @@ phone_query #ff9a9efbfa89
 phone_find #157c6f044504
 phone_extract #b759ab1ab1ab
 phone_collect #ade791ee3751
+phone_watch_reward_videos #972c01b23840
 phone_wait #c5c73f60f068
 phone_event #45093cbd4ca1
 phone_dialog #ffdf9f3048b0

@@ -63,7 +63,7 @@ internal object ToolGroups {
             "phone_tap", "phone_type_text", "phone_clear_text", "phone_scroll", "phone_swipe",
             "phone_back", "phone_press_key", "phone_gesture", "phone_set_wheel", "phone_dialog",
             -> "ui"
-            "phone_query", "phone_find", "phone_extract", "phone_collect",
+            "phone_query", "phone_find", "phone_extract", "phone_collect", "phone_watch_reward_videos",
             "phone_wait", "phone_event", "phone_run", "phone_run_shortcut", "phone_navigate_to", "phone_system_command",
             -> "automation"
             "phone_list_apps", "phone_launch_app", "phone_open_link",
