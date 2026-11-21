@@ -54,3 +54,55 @@
 - 可恢复/幂等的历史学习作业、受控探索、页面合并/拆分和拓扑 UI。
 
 下一阶段先补可信评测与效果度量，再投入新的自动执行能力。现有实验见 [app-atlas-eval-report.md](app-atlas-eval-report.md)；历史审计见 [app-atlas-audit.md](app-atlas-audit.md)。
+
+---
+
+# 2026-11-21：工具子步与页面能力
+
+起因是看广告领奖那个整段工具（`docs/dev/reward-video-tool.md`）——它内部点「去完成」、点 CTA、
+按返回，这些子步也会走到同一个执行入口，被记成 `ActionTarget`。
+
+## 子步不是路，不能进图谱结构
+
+`ActionTarget.source` 一直记着来源（`model | batch | script | replay | mcp_tool`），
+组合工具的子步是 `Origin.Script`，`source == "script"`。学习器以前不看这个字段，
+于是子步会被当成模型走的一步：建节点、建边、记控件。
+
+现在 `AtlasLearner` 遇到 `source == "script"` 直接跳过结构部分。之前没出事纯属运气——
+广告页本来就读不到无障碍节点，`afterSig` 是空白被丢掉；换一个有节点的广告素材，
+图谱里就会长出 `福利中心 --phone_gesture--> 广告页` 这种一步一变的废料。
+
+## 能力：这一页能整段干什么
+
+新增 `AtlasScreen.capabilities`（最多 8 个）。只收工具名本身（例如 `phone_watch_reward_videos`），
+不收调用参数、不收页面文字、不收用户原文。
+子步事件带 `ActionTarget.parentTool`（发起它的工具名，由 `Origin.Script(parent = ...)` 一路带下来），
+学习器拿它给**当前页**记一条能力：
+
+- 只贴到认得出的页面上，认不出来就不贴，也不为它造节点——能力和边一样，不是造节点的理由；
+- 只认 `effective == true` 的子步，失败的动作不算「这一页能干这件事」；
+- 网页脚本的 `mika.*` 动作 `parentTool` 为 null，因此不会被误记成能力。
+
+产物是提示词里的一行，排在边之后、控件之前：
+
+```
+- 可用工具 phone_watch_reward_videos：这一页能整段做完，不必一步步点
+```
+
+这行的价值在真机上很直接：模型见到这一页就不会自己拆成十几次 `phone_tap`（拆开一定卡在广告上）。
+
+## 导入带不走能力
+
+`sanitizeAtlasForImport` 里和边计数同一个口径：外部导入的 `capabilities` 一律清空，
+页面与标题保留。别人机器上整段跑通，不等于这台机器上跑得通，不能凭导入就告诉模型「这页能干这件事」。
+
+## 兼容性
+
+`AtlasScreen.capabilities` 是有默认值的序列化字段，旧图谱文件解码得到空列表，本机存储不需要迁移；
+分享格式仍是 schema 2（旧导出包里的摘要按它自己的内容算，仍能校验通过）。
+
+## 验证
+
+`AtlasCapabilityTest` 6 条：子步不进结构但记能力、陌生页不因能力造节点、无 `parentTool` 不记、
+工具名校验与上限、提示里出现能力行、导入后能力为空。图谱包 84 条测试全部通过。
+
