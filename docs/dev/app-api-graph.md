@@ -4,8 +4,10 @@
 > 现有的抓包能力只在任务进行中活着（`phone_wait_network` / `phone_get_network_response` / `phone_inspect_network`），任务一结束就全部丢掉，
 > 于是同一个 App 每次都要重新猜接口。这份方案把抓到的流量沉淀成按包名的图谱，与 `AppAtlas` 平行，不改动现有页面图谱、分享格式与回放链路。
 
-- 目标版本：Mika 当前主线（`core/atlas` 已落地，`aau` 已支持 WebView 内嵌库偏移）
+- 目标版本：Mika 当前主线（`core/src/main/kotlin/com/wangzan101/mika/core/atlas` 已落地，`aau` 已支持 WebView 内嵌库偏移）
 - 2026-11-21
+- **P0 已实施并真机验收**（2026-11-21）：`core/api/` 纯函数层、交换级 sink、影子采集器、trace 落盘，
+  83 例单测通过；起点福利中心实跑三轮，`mainPage` 端点与 220 条字段路径全部抓到。见 §11.1、§11.2。
 
 ---
 
@@ -41,14 +43,14 @@
 
 ---
 
-## 3. 数据模型
+## 3 目标设计：数据模型
 
 新增包 `core/src/main/kotlin/com/wangzan101/mika/core/api/`，与 `core/atlas/` 平行。
 
 ```kotlin
 const val MAX_API_ENDPOINTS = 200          // 每 App 上限
 const val MAX_API_EDGES = 1000
-const val MAX_API_FIELDS = 80              // 每端点保留的字段路径
+const val MAX_API_FIELDS = 240            // 每端点保留的字段路径
 const val MAX_API_SHAPE_DEPTH = 6
 const val MAX_API_TRACE_ENTRIES = 500      // 每次运行最多记多少条交换
 const val MAX_API_QUERY_KEYS = 24
@@ -121,15 +123,16 @@ data class ApiAtlas(
 | --- | --- | --- |
 | 1 | 带 Cookie | 请求头有 `cookie` 且非空 |
 | 2 | 带 Authorization | 请求头有 `authorization` |
-| 4 | 疑似签名参数 | query / body 键名命中 `sign|signature|_sign|sig|ibex|borgus|tstamp|x-sign|x-t`（**线索，不是结论**） |
+| 4 | 疑似签名参数 | query / body 键名**或请求头名**命中 `sign|signature|_sign|sig|ibex|borgus|tstamp|sdksign`（**线索，不是结论**） |
 | 8 | 带 Referer | 请求头有 `referer` |
 | 16 | 自定义头 | 存在 `x-` 前缀且不在上述集合的头 |
 
 > `authTraits` 只是给模型的提示词，不能当作「必须签名」的证明。起点那次是先看到 `ibex` 参数、再实测重放 402，才算证实；图谱里只写「疑似」。
+> 位 4 要把**请求头名**也算进去：真机实测里 `tstamp` / `ibex` / `borgus` / `sdksign` 全在头部，query 一个都没有，只看键名会把这类接口判成「不用签名」。
 
 ---
 
-## 4. 采集：`ApiTraceCollector`
+## 4 目标设计：采集
 
 ### 4.1 挂点
 
@@ -171,9 +174,27 @@ class ApiTraceCollector(
 | 丢弃 | 说明 |
 | --- | --- |
 | 静态资源后缀（js/css/png/jpg/webp/svg/woff/mp4/zip/apk） | 噪音主体 |
-| 响应体 < 64 字节，或 204 / 304 | 无信息 |
-| 埋点：`/log`、`/report`、`/track`、`/beacon`、`/collect`、`/metrics`、`/analytics`、`qreport` | 起点抓到过整包 JSON 上报，会污染字段索引 |
-| 首包即 4xx/5xx 且此前未见过的端点 | 只更新已知端点，不从错误响应建图 |
+| 非 JSON 的短响应（< 64 字节），或 204 / 304 | 无信息。**JSON 不设长度门槛**，见下 |
+| 埋点：带分隔符的段 `/log/`、`/track/`、`/beacon`、`/metrics`、`/analytics`、`qreport`，以及埋点域名 | 起点抓到过整包 JSON 上报，会污染字段索引 |
+| 首包即 4xx/5xx 且此前未见过的端点 | 采集阶段照收（402 正是要看的证据），**建图阶段**才只在已知端点上记 miss |
+
+实施时改了三处规则，都是实测出来的：
+
+- **JSON 响应不设最小长度**。原规则「响应体 < 64 字节丢弃」会把 `{"Result":0}` 这类成功标记接口全部砍掉，
+  而「这个接口返回什么字段」恰恰是要学的。现在只对非 JSON 短响应按长度丢。
+- **埋点判定要求带分隔符的段**。裸子串会把 `/bookshelf/collect`（收藏）当成上报丢掉；
+  同理 `/report` 也不单独判，交给建图阶段用调用频次与参数稳定性再筛。
+- **埋点判定改成「段名词元化」**（真机验收后修）。只认 `/log/`、`/report/` 这种带分隔符的段，
+  会漏掉真实形态：起点那次 54 条观测里有 41 条是
+  `zhiyan.monitor.tencent-cloud.net/access_v1.http_service/HttpCurveReportRpc`——
+  驼峰里藏着 Curve 与 Report，两头顶着埋点却一条规则都没命中，把 54 条观测挤成「41 条噪音 + 13 条有效」。
+  现在把每个路径段按非字母数字与大写字母切成词（`HttpCurveReportRpc` → http/curve/report/rpc），
+  整词命中 `log/report/track/beacon/metrics/analytics/qreport/monitor/curve/stat` 才丢；
+  host 任意一段等于埋点词、或含 `report/analytics/metrics/beacon/monitor/track` 这类长词也丢
+  （`blog`、`logistics`、`statics` 不会被 `log`/`stat` 误伤）。
+
+另外，**丢掉的每一条都记原因**（`ApiTrace.droppedBy`：`static` / `tracking` / `empty` / `html` / `other` / `invalid-url`）。
+验收时要回答的是「这个接口是没抓到，还是被规则丢了」，只记一个总数回答不了这个问题；这次就是靠这个分桶才看清 41 条噪音全在 `tracking` 里。
 
 一次开屏通常 50–120 个请求，过滤后剩 5–15 个。单条形状提取预算 < 5ms，单次运行内存 < 1MB。
 
@@ -216,14 +237,14 @@ class ApiTraceCollector(
 
 规则：
 
-- 深度上限 6，端点字段上限 80，超出置 `fieldsTruncated=true`；
+- 深度上限 6，端点字段上限 240，超出置 `fieldsTruncated=true`；
 - 数组取前 20 个元素求并集，类型冲突记 `mixed`；
 - 对象键数 > 32 且键名像动态值（纯数字 / 长 hex）时，折叠为 `*`，只保留一个样本路径，避免任务 id 把字段表撑爆；
 - **值一律丢弃**，包括字符串长度都不记。
 
 ---
 
-## 5. 学习：`ApiLearner`
+## 5 目标设计：学习
 
 纯函数，签名与 `AtlasLearner` 对齐：
 
@@ -253,7 +274,7 @@ object ApiLearner {
 | 对象 | 规则 |
 | --- | --- |
 | 端点 | 不存在则建；存在则 `calls++`、状态码计数、耗时 EWMA(0.3)、`lastSeenMs` |
-| 字段 | 按 `path` 求并集，`seen++`；类型冲突降为 `mixed`；超过 80 条按「浅层优先 + seen 降序」截断 |
+| 字段 | 按 `path` 求并集，`seen++`；类型冲突降为 `mixed`；超过 240 条按「浅层优先 + seen 降序」截断 |
 | 边 | 键 `(fromSigId, endpointId, tool)`；2xx 且 `learnDone` → `ok++`；2xx 且 `succeeded` → `weakOk++`；4xx/5xx → `miss++` |
 | 版本 | 端点带 `appVersion`；App 升级后，旧版本端点标 `unverifiedAfterUpgrade`，被新版本命中后转回 |
 | 淘汰 | 超过 200 端点 / 1000 边：复用 `AtlasEviction.evict`（近因 0.4 + log 命中 0.6），入口边不淘汰 |
@@ -265,7 +286,7 @@ object ApiLearner {
 
 ---
 
-## 6. 存储：`FileApiAtlasStore`
+## 6 目标设计：存储
 
 `app/src/main/java/com/wangzan101/mika/api/FileApiAtlasStore.kt`，逐条对齐 `FileAtlasStore`：
 
@@ -283,7 +304,7 @@ object ApiLearner {
 
 ---
 
-## 7. 界面
+## 7 目标设计：界面
 
 `App 经验` 详情页（`app/src/main/java/com/wangzan101/mika/ui/AppExperienceScreen.kt`）新增第 2 组，插在「页面与跳转」之后：
 
@@ -297,7 +318,7 @@ GET  /argus/api/v2/video/adv/mainPage        h5.if.qidian.com
 ```
 
 - 行首 `GET/POST` 徽标；path 单行省略，host 其次要色。
-- 默认折叠，展开才渲染字段树（38 条上限 80，长列表分页到「显示全部」）。
+- 默认折叠，展开才渲染字段树（实测 220 条、上限 240，长列表分页到「显示全部」）。
 - 操作：改名（写 `nameSource=user`）、删除单条、清空该 App 的接口图谱。
 - 列表页每个 App 的摘要行加「N 接口」，`appSummaryCountsText()` 同步改。
 - 空态分两种：没学过 vs 抓包没开。后者给一句「接口图谱依赖流量捕获」，不做跳转，避免设置页耦合。
@@ -307,7 +328,7 @@ GET  /argus/api/v2/video/adv/mainPage        h5.if.qidian.com
 
 ---
 
-## 8. 给模型的入口
+## 8 目标设计：给模型的入口
 
 | 工具 | 用途 | 数据来源 | 风险 |
 | --- | --- | --- | --- |
@@ -327,7 +348,7 @@ v1 **不做提示注入**。`AtlasHintPolicy` 那种每步 1–3 行的注入在
 
 ---
 
-## 9. 隐私与安全
+## 9 目标设计：隐私与安全
 
 写盘的内容只有「结构」，没有「内容」：
 
@@ -348,7 +369,7 @@ v1 **不做提示注入**。`AtlasHintPolicy` 那种每步 1–3 行的注入在
 
 ---
 
-## 10. 覆盖率与盲区
+## 10 目标设计：覆盖率与盲区
 
 | 场景 | 现状 | 影响 |
 | --- | --- | --- |
@@ -364,17 +385,113 @@ WebView 那条是**关键依赖**：刚做完的 `resolve_webview_apk_offsets` �
 
 ---
 
-## 11. 分期
+## 11 目标设计：分期
 
-### P0 影子采集（不落图谱）
+### P0 影子采集（不落图谱）—— ✅ 已实施
 
-- 新增 `core/api/ApiUrl.kt`、`core/api/ApiShape.kt`（纯函数，约 220 行）
-- 新增 `app/api/ApiTraceCollector.kt`（约 180 行）
-- `PhoneNetworkManager` 增加 `addExchangeSink`（约 30 行）
-- `TaskRun` 起停 collector、写 trace（约 40 行）
-- 单测：归一化 15 例、形状 12 例（动态键折叠、类型冲突、深度截断）
+原计划与落地后的差异：
 
-验收：起点福利中心一次打开、BOSS 一次搜索，trace 的端点集合与 `tools/aaue_http.py --dump` 手工核对一致，差异逐条解释。
+| 计划 | 实际 | 说明 |
+| --- | --- | --- |
+| `core/api/ApiUrl.kt` + `ApiShape.kt` | 另加 `ApiFilter.kt`、`ApiObservation.kt` | 过滤与 trace 模型独立成文件，P1 直接复用 |
+| `app/api/ApiTraceCollector.kt` | 同名，输入改为 `ApiExchangeInput` | 不依赖网络层类型，可脱离 Android 单测与回放 |
+| `PhoneNetworkManager.addExchangeSink` | 同签名，异常隔离 | 采集是旁路，坏一个订阅方不影响抓包 |
+| `TaskRun` 起停 + 写 trace | 起停挂在 `watchTarget` 的目标包回调里，收尾在 `execute` 的 `finally` | 与 `attachToPackage` 同源，不额外读屏 |
+| — | `FeatureFlags.apiGraphLearnEnabled()`，**默认关** | 保证「开关没开时无 trace、无目录、无磁盘写」 |
+| — | `app/api/ApiTraceStore.kt` | 写 `files/api_traces/<runId>.json`，保留最近 20 份 |
+
+单测 83 例（core 71 + app 12），覆盖：
+
+- 归一化：host 小写/端口、数字段与 UUID 模板化、版本段保留、query 只留键并排序、尾斜杠、非法 URL；
+- 形状：嵌套点路径、数组 `[]` 并集、类型冲突 `mixed`、int/long 分界、深度与字段上限、动态键折叠、BOM 嗅探；
+- 过滤：静态资源、埋点（驼峰段、根路径 `/collect`、埋点域名段）、`UNKNOWN` 帧、204/304、HTML 页面、
+  `/bookshelf/collect` 不被误伤、业务域名不被 `log`/`stat` 误伤、小 JSON 保留；
+- 采集：端点与字段形状、**值与 query 值不进 trace**、body 键名保留、丢弃原因分桶、上限截断、超大响应跳过形状、耗时反推开始时刻。
+
+**真机验收（2026-11-21 已完成，起点福利中心）**：见 §11.2。三次运行修掉了两处规则缺陷
+（埋点过滤漏掉驼峰与根路径 `/collect`、字段上限 80 截断真实响应），并把「空 trace 不落盘」
+改成「开关打开过就落盘 + 打日志」——否则无法区分「没抓到」与「全被过滤」。
+
+开关默认关，两个打开方式：
+
+- 评测跑器加参数 `evalApiGraphLearn=true`（走 `EvalHooks.apiGraphLearn`，不改本机设置）；
+- 真机手测：直接调 `FeatureFlags.setApiGraphLearnEnabled(true)`（P2 才有界面开关）。
+
+跑完一次任务后取 trace：
+
+```bash
+adb shell run-as com.wangzan101.mika ls files/api_traces/
+adb exec-out run-as com.wangzan101.mika cat files/api_traces/<runId>.json
+```
+
+核对口径：把 trace 里的 `endpointId` 排重，与 `python tools/aaue_http.py <抓包> --dump` 导出的请求行对照，
+差异逐条写清是「过滤规则丢掉」还是「没抓到」。
+
+### 11.2 真机验收：起点福利中心（2026-11-21）
+
+**环境**：真机 `3B15AN00MNB00000`；起点读书 7.9.486（`com.qidian.QDReader`）；模型 `gpt-6.1-terra`。
+题是新加的 `eval/tasks/read/content/qidian-welfare-tasks.json`：打开起点 → 福利中心 → 激励任务 →
+报「几项任务 / 已完成几项 / 第一项的奖励」。开关只经评测参数打开，本机设置没动。
+
+```bash
+adb shell am instrument -w -e class com.wangzan101.mika.eval.EvalRunTest \
+  -e evalRun qidian-api-p3 -e evalSet qidian-welfare-tasks -e evalApiGraphLearn true \
+  com.wangzan101.mika.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+三轮数据（`output/api-graph/` 存了三份原始 trace）：
+
+| 轮次 | 观测 | 端点 | 丢弃 | `mainPage` 字段 | 任务 |
+| --- | --- | --- | --- | --- | --- |
+| `qidian-api-p0` 修规则前 | 54 | 10 | 55 | 80（截断） | 8 步 / 152 秒 / 成功 |
+| `qidian-api-p1` 只改了过滤 | — | — | — | — | 4 步 / 99 秒 / 成功，**没留下 trace** |
+| `qidian-api-p2` 修过滤 + 上限 | 126 | 55 | 335（tracking 220） | 220（完整） | 4 步 / 99 秒 / 成功 |
+| `qidian-api-p3` 补 `/collect`、`UNKNOWN` 帧 | 61 | 46 | 320（tracking 205、empty 90、invalid-url 18、html 1、other 3、static 3） | 220（4 次调用） | 14 步 / 231 秒 / 成功 |
+
+`qidian-api-p1` 那一格空着，是这次最值钱的一条教训：当时还是「空 trace 不落盘」，而任务 4 步就结束、
+页面已经停在福利中心，几乎没有新交换，于是目录里什么都没有——**分不清是探针没挂上、页面没发请求，还是全被过滤网掉了**。
+现在开关打开过就落盘（空文件里也有 `dropped` / `droppedBy`），并在 `MikaTask` 打两行日志（挂上 / 收尾统计），
+下一轮一眼能定位。
+
+**修掉的三处缺陷（都是这一轮实测暴露，不是设计时想到的）**
+
+1. **埋点过滤漏掉驼峰与根路径**。p0 的 54 条观测里 41 条是
+   `zhiyan.monitor.tencent-cloud.net/access_v1.http_service/HttpCurveReportRpc`；p2 的 126 条里 47 条是
+   `galileotelemetry.tencent.com/collect` 与 `publiclog.zhiyan.tencent-cloud.net/collect`。
+   前者两头是埋点、驼峰里才看得见，后者是 SDK 上报的通用根路径，旧的「带分隔符的段」一条都没命中。
+2. **字段上限 80 截断真实响应**。`mainPage` 一次 19.9KB 的响应能切出 220 条路径、24 个业务模块；
+   上限 80 时只到第 10 个（`MoreRewardTab`），`PrivilegedTaskModule`、`ReadingPageTaskModule`、
+   `ScoreDrawModule` 整块丢掉。提到 240 后 p2/p3 都是 220 条、`fieldsTruncated=false`。
+3. **签名线索只看 query / body**。起点 `mainPage` 的 `tstamp` / `ibex` / `borgus` / `sdksign` 全在请求头，
+   query 一个都没有；`authTraits` 当时算出 25（cookie + referer + 自定义头），补上头名后是 29（多了「疑似签名」）。
+
+**端点集合与 `reverse/qidian/wv3_dump/`（46 份离线抓包）对照**
+
+| wv3_dump 侧 | p3 trace | 结论 |
+| --- | --- | --- |
+| `023 .../video/adv/mainPage`、`020 .../checkin/getcurrentweekcheckininfo`、`025 .../readtime/readpage` | 都有（各 3 次） | 福利中心的核心三件全抓到 |
+| `018`/`019 welfareCenter/*.html`、`017`/`020` 起一堆图片、`001` `qdclientlog`、`016` `monitor/report`、`026` `qreport` | 无 | 分别落在 `html` / `static` / `tracking`，符合规则 |
+| `007`–`013`、`004`、`005`（「我的」页那条链路） | 无 | 这次任务没经过「我的」页，不是丢了 |
+| — | `v4/bookcontent/getkey`、`v3/deeplink/geturl`、`teenmode/*`、`client/ostar`、`submit/deviceTokenV5`、`ywab.../experiments` | 冷启动链路，离线抓包那次从「我的」页开始，没覆盖到 |
+
+**隐私复核**（验收第 3 条）：p3 的 trace 用 `grep` 搜任务名（`订阅券` / `惊喜礼包` / `白泽宇航员`）、
+`Bearer`、token 片段，全部 0 命中；`IsFinished`、`Desc`、`RewardDesc` 这些**字段名**在（15 / 46 / 6 次）。
+值确实没落盘。
+
+**仍然留着、且认了的东西**
+
+- `path.book.qq.com/collect`、`tangram.e.qq.com/updateSetting`、`xs.gdt.qq.com/style_factory/*`：广告 SDK 的配置与上报，只看名字判不出来，保留。
+- `druidv6.if.qidian.com/argus/api/v1/client/ostar`：疑似行为上报，没有证据，先留。
+- `invalid-url=18`：`method=UNKNOWN`、`host=unknown-host`、`path=/` 的 h2 优先帧/隧道帧，现在按无效丢。
+
+**三次运行模型都答「3 项」，接口里是 9 条**
+
+p0/p1/p3 三次都报「激励任务 3 项、已完成 1 项、第一项是 10点章节卡」；接口 `Data.DailyBenefitModule.TaskList`
+是 9 条，`IsFinished` 只有 1 条为 1，第一条是 `10-3点订阅券`。屏幕上只露出 3 格，模型还把上面 1–9 格进度条
+解释成「阶梯奖励，不是任务本身」。评分判过是因为题只要求一个能在屏上核实的条目（`answer_grounded` 的 `minItems=1`），
+**这题是链路验收题，不是效果评测题**——但这条差异把「为什么要有接口图谱」讲清楚了：
+它正好是 P3 那个 `phone_find_api` 要回答的问题，也说明该工具不是锦上添花。
+
 
 ### P1 学习与存储
 
@@ -404,12 +521,12 @@ WebView 那条是**关键依赖**：刚做完的 `resolve_webview_apk_offsets` �
 
 ---
 
-## 12. 验收与评测
+## 12 验收与评测
 
 **功能验收（可复核）**
 
-1. 起点福利中心：图谱含 `GET h5.if.qidian.com/argus/api/v2/video/adv/mainPage`，字段含 `Data.DailyBenefitModule.TaskList[].IsFinished`，触发页为「福利中心」。
-2. 对问题「福利中心今天完成了几轮」：开启时从响应取到 9 条 `IsFinished`（1 条 true / 8 条 false），与 `wv3_dump` 的 JSON 一致；关闭时走原读屏路径。
+1. 起点福利中心：图谱含 `GET h5.if.qidian.com/argus/api/v2/video/adv/mainPage`，字段路径里要有「每日福利模块 → 任务列表 → 完成标记」这一条，触发页为「福利中心」。
+2. 对问题「福利中心今天完成了几轮」：开启时从响应逐条取到 9 个完成标记（1 条已完成 / 8 条未完成），与 `wv3_dump` 里的 JSON 一致；关闭时走原读屏路径。
 3. 隐私：固定样本跑完后，解密文件里搜不到任务名、token、手机号。
 4. 零副作用：开关关闭时无 trace、无目录、无磁盘写。
 
@@ -427,7 +544,7 @@ WebView 那条是**关键依赖**：刚做完的 `resolve_webview_apk_offsets` �
 
 ---
 
-## 13. 需要拍板的三件事
+## 13 需要拍板的三件事
 
 1. **隐私基线**：只存键名与类型、值一律不落盘——这条能不能作为前提？若要求连字段名也不存，字段索引就失去意义，方案要退化成「只有端点列表」。
 2. **归因口径**：接受「请求前最后一条动作的 afterSig」这个近似，并把无法归因的观测只算端点、不建边？
@@ -435,7 +552,7 @@ WebView 那条是**关键依赖**：刚做完的 `resolve_webview_apk_offsets` �
 
 ---
 
-## 14. 与现有文档的关系
+## 14 与现有文档的关系
 
 - `docs/dev/architecture.md` 第 298 节「App 页面地图」之后新增「App 接口图谱」小节，指向本文；
 - `docs/dev/roadmap.md` 第 17 条补一句接口层；
