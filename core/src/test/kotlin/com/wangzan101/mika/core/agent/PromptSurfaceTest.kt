@@ -118,7 +118,8 @@ class PromptSurfaceTest {
 
         // 防止提示词表面未来膨胀回归（slimmed budgets）
         // 注意 phone 的 token 预算卡得很紧:加一个手机工具大约就是两百多个 token,
-        // 上一次加 phone_watch_reward_videos 时从 22_000 抬到 22_400,再要加工具先想想能不能并进已有的那个。
+        // 上一次加 phone_watch_reward_videos 时从 22_000 抬到 22_400,现在余量只剩一百多(22_272/22_400),
+        // 再要加工具先想想能不能并进已有的那个,或者从已有的工具描述里删。
         val systemBudgets = mapOf("chat" to 11_000, "phone" to 18_500, "web" to 18_500, "all" to 26_000)
         val tokenBudgets = mapOf("chat" to 8_800, "phone" to 22_400, "web" to 20_000, "all" to 32_500)
         for ((name, triple) in measured) {
