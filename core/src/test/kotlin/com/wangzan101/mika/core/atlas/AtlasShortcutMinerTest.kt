@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.atlas
 
+import com.wangzan101.mika.core.action.Origin
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.replay.Anchors
@@ -164,5 +165,77 @@ class AtlasShortcutMinerTest {
         assertEquals(homeSig.sigId, sc.entrySigId)
         assertEquals(1, sc.slots)
         assertEquals(2, sc.steps.size)
+    }
+
+    @Test
+    fun doesNotMineShortcutsFromReplayedSteps() {
+        val store = InMemoryAtlasStore()
+        // 第一次是模型自己走出来的：成为候选
+        AtlasLearner.learn(
+            events = buildRunEvents("蓝牙耳机"),
+            goal = "查找蓝牙耳机",
+            store = store,
+            appVersions = mapOf(pkg to "1.0"),
+            tools = TOOLS,
+            nowMs = 2000L,
+        )
+        val first = store.get(pkg)!!
+        val candidateCount = first.candidatePatterns.size
+        assertTrue("模型自己走的这一趟应留下候选", candidateCount > 0)
+
+        // 第二次同样是这条路线，但整趟都是回放：照着自己记的路线重走不算新证据，
+        // 否则同一条流程被回放几次就自动「晋升」成快捷流程，等于图谱自己抄自己
+        val replayed = buildRunEvents("机械键盘").map { e ->
+            if (e is RunEvent.ActionTarget) e.copy(source = Origin.SOURCE_REPLAY) else e
+        }
+        AtlasLearner.learn(
+            events = replayed,
+            goal = "查找机械键盘",
+            store = store,
+            appVersions = mapOf(pkg to "1.0"),
+            tools = TOOLS,
+            nowMs = 3000L,
+        )
+
+        val after = store.get(pkg)!!
+        assertTrue("回放不得晋升出快捷流程: ${after.shortcuts}", after.shortcuts.isEmpty())
+        assertEquals("回放不得抬高候选的出现次数", candidateCount, after.candidatePatterns.size)
+        assertTrue(
+            "候选的见次数应原地不动: ${after.candidatePatterns.map { it.seenCount }}",
+            after.candidatePatterns.all { it.seenCount == 1 },
+        )
+    }
+
+    @Test
+    fun doesNotMineShortcutsAcrossToolSubSteps() {
+        val store = InMemoryAtlasStore()
+        // 整段工具内部的按键（source=script）不是模型走的一步：既不能参与挖掘，
+        // 也不能把它前后的两步接起来——那会造出一条从没被执行过的流程
+        val withSubSteps = buildRunEvents("蓝牙耳机").map { e ->
+            if (e is RunEvent.ActionTarget && e.step >= 2) {
+                e.copy(source = Origin.SOURCE_SCRIPT, parentTool = "phone_watch_reward_videos")
+            } else e
+        }
+        AtlasLearner.learn(
+            events = withSubSteps,
+            goal = "查找蓝牙耳机",
+            store = store,
+            appVersions = mapOf(pkg to "1.0"),
+            tools = TOOLS,
+            nowMs = 2000L,
+        )
+        // 再跑一趟同样形状的，确认不是「只差一次共现」
+        AtlasLearner.learn(
+            events = withSubSteps,
+            goal = "查找蓝牙耳机",
+            store = store,
+            appVersions = mapOf(pkg to "1.0"),
+            tools = TOOLS,
+            nowMs = 3000L,
+        )
+
+        val atlas = store.get(pkg)
+        assertTrue("子步不得拼成快捷流程: ${atlas?.shortcuts}", atlas?.shortcuts.orEmpty().isEmpty())
+        assertTrue("子步不得拼成候选: ${atlas?.candidatePatterns}", atlas?.candidatePatterns.orEmpty().isEmpty())
     }
 }

@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.atlas
 
+import com.wangzan101.mika.core.action.Origin
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.replay.Anchors
@@ -289,6 +290,12 @@ object AtlasShortcutMiner {
         for (event in events) {
             if (event !is RunEvent.ActionTarget) continue
             if (event.incomplete || !event.effective || event.protected) {
+                flush(); continue
+            }
+            // 回放和整段工具的子步都不是「模型走过的一步」：回放是照着自己记的路线重走，
+            // 拿它挖快捷就是自己抄自己；子步是工具内部的按键，接起来只会得到没被执行过的流程。
+            // 两边都要断开分段，不能让它们把前后两步连成一条。
+            if (event.source == Origin.SOURCE_REPLAY || event.source == Origin.SOURCE_SCRIPT) {
                 flush(); continue
             }
             val paired = event.callId?.let(resultsByCallId::get)
