@@ -61,6 +61,13 @@ android {
         unitTests.isReturnDefaultValues = true
     }
 
+    lint {
+        // lifecycle 的 NonNullableMutableLiveDataDetector 与 Kotlin 2.1 的分析 API 不兼容
+        // （KaCallableMemberCall 期望接口），分析 App 源码时抛 IncompatibleClassChangeError，
+        // 把 lintVitalRelease 带崩、发版构建跟着失败。本项目没有 LiveData，关掉这条检查。
+        disable += "NullSafeMutableLiveData"
+    }
+
     // 评测任务集(仓库根目录 eval/tasks)打进测试包的 assets,真机评测跑器从那里读题
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("eval/tasks"))
     sourceSets.getByName("main").java.srcDir(if (aauVisionEnabled) "src/localVision/java" else "src/noLocalVision/java")
