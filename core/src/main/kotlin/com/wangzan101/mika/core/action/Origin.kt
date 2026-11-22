@@ -73,31 +73,41 @@ sealed interface Origin {
         /** 一个页面脚本动作的上限:打开网址最多等 20 秒加载,再留余量等页面安静。 */
         const val SCRIPT_ACTION_CAP_MS = 40_000L
 
+        /**
+         * 运行记录里的 source 取值。写事件（[OriginPolicy.source]）和读事件（图谱学习、快捷挖掘）
+         * 必须用同一组字面量,所以放在这里各取所需,不要各写各的字符串。
+         */
+        const val SOURCE_MODEL = "model"
+        const val SOURCE_BATCH = "batch"
+        const val SOURCE_SCRIPT = "script"
+        const val SOURCE_REPLAY = "replay"
+        const val SOURCE_MCP_TOOL = "mcp_tool"
+
         // 只有模型单步能经用户同意放行付款;其余来源碰到付款就停下交还
         private val MODEL = OriginPolicy(
-            "model", usesGrant = true, judgeWithoutGate = false, refuseUnresolved = false, stopOnGuardWarning = false,
+            SOURCE_MODEL, usesGrant = true, judgeWithoutGate = false, refuseUnresolved = false, stopOnGuardWarning = false,
             gatedByCaller = false, isolatedReads = false, actionCapMs = null, frames = Frames.Caller, routeTargets = true,
             recordsRefusal = true, refusals = RefusalStyle.Model,
         )
         private val BATCH = OriginPolicy(
-            "batch", usesGrant = false, judgeWithoutGate = true, refuseUnresolved = true, stopOnGuardWarning = false,
+            SOURCE_BATCH, usesGrant = false, judgeWithoutGate = true, refuseUnresolved = true, stopOnGuardWarning = false,
             gatedByCaller = false, isolatedReads = false, actionCapMs = null, frames = Frames.WhenChanged, routeTargets = true,
             recordsRefusal = false, refusals = RefusalStyle.Code,
         )
         // 脚本是网页上的一段程序,不能作为路线的一步回放
         private val SCRIPT = OriginPolicy(
-            "script", usesGrant = false, judgeWithoutGate = true, refuseUnresolved = true, stopOnGuardWarning = false,
+            SOURCE_SCRIPT, usesGrant = false, judgeWithoutGate = true, refuseUnresolved = true, stopOnGuardWarning = false,
             gatedByCaller = false, isolatedReads = true, actionCapMs = SCRIPT_ACTION_CAP_MS, frames = Frames.WhenChanged, routeTargets = false,
             recordsRefusal = false, refusals = RefusalStyle.Script,
         )
         // 回放与模型单步一致:没配确认关卡时不判
         private val REPLAY = OriginPolicy(
-            "replay", usesGrant = false, judgeWithoutGate = false, refuseUnresolved = true, stopOnGuardWarning = true,
+            SOURCE_REPLAY, usesGrant = false, judgeWithoutGate = false, refuseUnresolved = true, stopOnGuardWarning = true,
             gatedByCaller = true, isolatedReads = false, actionCapMs = null, frames = Frames.None, routeTargets = true,
             recordsRefusal = false, refusals = RefusalStyle.Code,
         )
         private val MCP_TOOL = OriginPolicy(
-            "mcp_tool", usesGrant = false, judgeWithoutGate = true, refuseUnresolved = true, stopOnGuardWarning = true,
+            SOURCE_MCP_TOOL, usesGrant = false, judgeWithoutGate = true, refuseUnresolved = true, stopOnGuardWarning = true,
             gatedByCaller = false, isolatedReads = false, actionCapMs = null, frames = Frames.None, routeTargets = false,
             recordsRefusal = true, refusals = RefusalStyle.Code,
         )
