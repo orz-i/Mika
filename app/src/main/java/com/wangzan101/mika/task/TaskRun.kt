@@ -33,6 +33,7 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
 import com.wangzan101.mika.BuildConfig
+import com.wangzan101.mika.cap.phone.LocalEntities
 import com.wangzan101.mika.cap.phone.a11y.AndroidScreen
 import com.wangzan101.mika.cap.phone.a11y.AppCopyReader
 import com.wangzan101.mika.cap.phone.a11y.DisplayCustodian
@@ -910,7 +911,8 @@ class TaskRun(
                         sandbox = sandbox, workspace = { conversationId }, runSpec = childSpec.copy(profile = childProfile),
                         mcpServers = childMcp,
                         conversationId = conversationId, inlineScreen = speed.inlineScreen,
-                        adaptiveVision = speed.adaptiveVision)
+                        adaptiveVision = speed.adaptiveVision,
+                        textEntities = LocalEntities.create(service))
                     AgentLoop(model, childTools, SystemPrompt.identity(), maxSteps = childSpec.stepBudget ?: AgentLoop.UNLIMITED_STEPS,
                         // 子任务跟着询问 / 自主;询问时它也过关卡,子任务里花钱的一步一律不做
                         confirmations = runApproval.gate(), approvals = runApproval, autonomous = runApproval.startedAutonomous,
@@ -962,6 +964,8 @@ class TaskRun(
                 // 已 root 的手机上用户打开了「允许 Mika 执行 root 命令」才登记 root 工具(子任务、条件检查不给)
                 root = phoneServices.shellManager.root.takeIf { !conditionCheck && it.commandsAllowed() }
                     ?.let { r -> RootCommands(RootShell::su, r::commandsAllowed) { a -> if (a == null) r.suGone() else r.commandsDenied(a) } },
+                // 端上实体识别:模型随包走;资产没带或这台设备的 ABI 没有运行库时为 null,工具就不发给模型
+                textEntities = LocalEntities.create(service),
                 // L2 快捷流程与 L3 自动寻路工具跟着页面地图开关走；条件检查只读运行不开放
                 atlas = if (!conditionCheck && atlasHintsOn) atlasStore else null)
             dispatcher = tools

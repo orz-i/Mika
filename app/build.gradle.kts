@@ -166,6 +166,8 @@ dependencies {
     implementation(project(":aau-client"))
     implementation(project(":aau-a11y"))
     implementation(project(":aau-setup"))
+    // 端上实体识别:1.3MB 模型 + LiteRT 运行库,和视觉后端开关无关。
+    implementation(project(":aau-ner"))
     if (aauVisionEnabled) implementation(project(":aau-vision"))
     implementation(libs.protobuf.lite)
     implementation(platform(libs.compose.bom))

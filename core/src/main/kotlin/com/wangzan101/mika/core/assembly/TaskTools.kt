@@ -124,9 +124,11 @@ fun toolDispatcher(
     webSearch: com.wangzan101.mika.core.search.WebSearch? = null,
     /** 离线 AppAtlas 存储（非空时开放 L2 快捷执行与 L3 自动寻路工具；默认 null 保持旧行为与金样稳定）。 */
     atlas: com.wangzan101.mika.core.atlas.AtlasStore? = null,
+    /** 端上实体识别;为空时不提供 phone_entities(构建里没带模型,或这台设备没有对应的运行库)。 */
+    textEntities: com.wangzan101.mika.core.text.TextEntities? = null,
 ): ToolDispatcher {
     val config = ToolConfig(visionEnabled, skills, recordFrames, vision, inlineScreen, adaptiveVision, memory, profile, utterances, conversationId,
-        imageOps, scheduleTrigger, scheduleAdmin, runSpec, childHost, userScreens, personalSkills, selfConfig, runRecords, webSearch)
+        imageOps, scheduleTrigger, scheduleAdmin, runSpec, childHost, userScreens, personalSkills, selfConfig, runRecords, webSearch, textEntities)
     val providers: List<CapabilityProvider> = listOf(
         object : CapabilityProvider {
             override val id = PHONE

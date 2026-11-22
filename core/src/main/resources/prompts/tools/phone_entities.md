@@ -1,0 +1,3 @@
+Recognise entities in text with the on-device model: person, phone, written and spoken address, administrative division, company, organisation, government, school, hospital, restaurant, hotel, supermarket, bank name and card number, express number, flight and train number, subway and bus station.
+
+Pass `text` (up to 2000 characters) to analyse a string without touching the screen. Omit it to read the current screen: each returned item carries that node's `ref` and the entities found in its text, so the value can be tapped or typed afterwards. `start` and `end` are character offsets into the item's own `text`. This is recognition, not extraction of the screen structure (that is phone_extract) and not a search (that is phone_find).

@@ -62,6 +62,8 @@ internal class ToolConfig(
     val runRecords: com.wangzan101.mika.core.record.RunRecords? = null,
     /** 用户配置并启用的网页搜索;为空时不提供 web_search。 */
     val webSearch: com.wangzan101.mika.core.search.WebSearch? = null,
+    /** 端上实体识别;为空时不提供 phone_entities(构建里没带模型,或这台设备没有对应的运行库)。 */
+    val textEntities: com.wangzan101.mika.core.text.TextEntities? = null,
 )
 
 /**
