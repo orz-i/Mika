@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.replay
 
+import com.wangzan101.mika.core.action.Origin
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.tool.ToolIndex
@@ -33,6 +34,11 @@ object RouteRecorder {
         if (events.lastOrNull { it is RunEvent.TaskEnded }?.let { (it as RunEvent.TaskEnded).outcome } != "succeeded") return null
         if (events.any { spoils(it, tools) }) return null
         if (events.any { it is RunEvent.ActionTarget && it.incomplete }) return null
+        // 这一趟里有回放、寻路（`Origin.Replay`）或整段工具内部的按键（`Origin.Script`）：
+        // 前者是照着旧路线再走一遍，录下来只是把旧路线复制一份；后者是工具自己的实现细节，
+        // 不是这次任务走的步骤。两者都不能被截掉或漏掉——拼出一条从没被执行过的流程比不录更糟，
+        // 所以整条不记：路线该由真正自己走出来的那一趟来定。
+        if (events.any { it is RunEvent.ActionTarget && (it.source == Origin.SOURCE_REPLAY || it.source == Origin.SOURCE_SCRIPT) }) return null
 
         val acts = events.filterIsInstance<RunEvent.ActionTarget>().filter { it.effective && tools[it.tool]?.routable == true }
         if (acts.isEmpty() || acts.size > MAX_ROUTE_STEPS || acts.any { it.protected }) return null

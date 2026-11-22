@@ -183,4 +183,26 @@ class RouteRecorderTest {
         val sub = RunEvent.ActionTarget(3, 3, "phone_back", "{}", null, editor, editor, true, "c3.2", source = "batch")
         assertEquals(listOf("phone_launch_app", "phone_tap", "phone_back", "phone_type_text"), RouteRecorder.record(goal, run(sub, result(3, "phone_back", """{"ok":true,"changed":true}""", "c3.2")), 1, TOOLS)!!.steps.map { it.tool })
     }
+
+    @Test fun runsThatReplayedAnOldRouteAreNotRecorded() {
+        // 中间那步是照旧路线重走（Origin.Replay）：这一趟不是模型自己走出来的。
+        // 录下来只是把旧路线复制一份；要是把这一步滤掉再拼，还会得到一条从没被执行过的流程。
+        val replayed = RunEvent.ActionTarget(
+            3, 3, "phone_tap", """{"ref":"@e5"}""", newBtn, home, editor, true, "c3r",
+            source = com.wangzan101.mika.core.action.Origin.SOURCE_REPLAY,
+        )
+        assertNull(RouteRecorder.record(goal, run(replayed, result(3, "phone_tap", """{"ok":true,"changed":true}""", "c3r")), 1, TOOLS))
+    }
+
+    @Test fun runsThatUsedACompositeToolAreNotRecorded() {
+        // 整段工具内部的按键（Origin.Script）是工具的实现细节，不是这次任务走的步骤
+        val subStep = RunEvent.ActionTarget(
+            3, 3, "phone_gesture", """{"paths":[[500,800]]}""", null, editor, editor, true, "c3s",
+            source = com.wangzan101.mika.core.action.Origin.SOURCE_SCRIPT,
+            parentTool = "phone_watch_reward_videos",
+        )
+        assertNull(
+            RouteRecorder.record(goal, run(subStep, result(3, "phone_gesture", """{"ok":true,"changed":true}""", "c3s")), 1, TOOLS),
+        )
+    }
 }
