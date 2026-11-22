@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.atlas
 
+import com.wangzan101.mika.core.action.Origin
 import com.wangzan101.mika.core.agent.LearnGate
 import com.wangzan101.mika.core.agent.RunOutcome
 import com.wangzan101.mika.core.agent.TaskState
@@ -19,9 +20,6 @@ import kotlinx.serialization.json.JsonPrimitive
 object AtlasLearner {
     const val DEFAULT_SELF_PACKAGE = "com.wangzan101.mika"
     const val DEFAULT_MATCH_THRESHOLD = ScreenSig.DEFAULT_MATCH_THRESHOLD
-
-    /** 组合工具子步的 source（见 `Origin.Script`）；这类事件只用来记页面能力，不进图谱结构。 */
-    private const val SOURCE_SCRIPT = "script"
 
     data class LearnResult(
         /** 本次更新后各包的最新页面图谱（已写回 store）。 */
@@ -51,6 +49,12 @@ object AtlasLearner {
     private data class CapabilityObservation(
         val sig: ScreenSig,
         val tool: String,
+        val atMs: Long,
+    )
+
+    /** 回放/寻路走到过的一页；只用来推后已存在页面的最近出现时间，不建节点。 */
+    private data class ReplayVisit(
+        val sig: ScreenSig,
         val atMs: Long,
     )
 
@@ -123,6 +127,7 @@ object AtlasLearner {
         val afterOnlyByPkg = linkedMapOf<String, MutableList<Pair<Long, ScreenSig>>>()
         val entryByPkg = linkedMapOf<String, MutableList<EntryObservation>>()
         val capabilitiesByPkg = linkedMapOf<String, MutableList<CapabilityObservation>>()
+        val replayVisitsByPkg = linkedMapOf<String, MutableList<ReplayVisit>>()
 
         for (event in events) {
             if (event !is RunEvent.ActionTarget) continue
@@ -139,18 +144,6 @@ object AtlasLearner {
                 normalizeSig(rawBeforeSig, beforePkg, event.beforeActivity ?: rawBeforeSig.activity, inputValues)
             } else null
 
-            // 组合工具自己发起的子步（看广告那类整段工具里的每一次点击）不是模型走的路：
-            // 拿它建节点和边，图谱里就会长出「福利中心 --gesture--> 广告页」这种一步一变的废料。
-            // 但它是唯一能说明「这一页有整段做法」的证据，所以只记能力，不进步骤。
-            if (event.source == SOURCE_SCRIPT) {
-                val parent = event.parentTool?.takeIf { it.isNotBlank() }
-                if (parent != null && event.effective && beforeSig != null && beforePkg != null) {
-                    capabilitiesByPkg.getOrPut(beforePkg) { mutableListOf() } +=
-                        CapabilityObservation(beforeSig, parent, event.atMs)
-                }
-                continue
-            }
-
             val rawAfterSig = if (event.effective) event.afterSig?.takeUnless { it.isBlank } else null
             val afterPkg = AtlasSanitizer.cleanPackage(
                 rawAfterSig?.packageName ?: event.after.packageName,
@@ -159,6 +152,31 @@ object AtlasLearner {
             val afterSig = if (rawAfterSig != null && afterPkg != null) {
                 normalizeSig(rawAfterSig, afterPkg, event.afterActivity ?: rawAfterSig.activity, inputValues)
             } else null
+
+            // 组合工具自己发起的子步（看广告那类整段工具里的每一次点击）不是模型走的路：
+            // 拿它建节点和边，图谱里就会长出「福利中心 --gesture--> 广告页」这种一步一变的废料。
+            // 但它是唯一能说明「这一页有整段做法」的证据，所以只记能力，不进步骤。
+            if (event.source == Origin.SOURCE_SCRIPT) {
+                val parent = event.parentTool?.takeIf { it.isNotBlank() }
+                if (parent != null && event.effective && beforeSig != null && beforePkg != null) {
+                    capabilitiesByPkg.getOrPut(beforePkg) { mutableListOf() } +=
+                        CapabilityObservation(beforeSig, parent, event.atMs)
+                }
+                continue
+            }
+
+            // 回放、快捷流程、自动寻路都是照着自己已经记下的路线重走一遍。
+            // 拿它当新证据，等于让图谱自己给自己打分：用得越多，同一条边的 ok 越大、越像「验证过」。
+            // 所以这一步不进结构——不建节点、不建边、不记控件、也不记失误。
+            // 它唯一还能说明的是「这一页还是这个样子」，于是只给已存在的页面推一下最近出现时间，
+            // 免得长期靠回放跑的 App 里，页面被 LRU 当成陈旧数据淘汰掉。
+            if (event.source == Origin.SOURCE_REPLAY) {
+                for (sig in listOfNotNull(beforeSig, afterSig)) {
+                    val visitPkg = sig.packageName ?: continue
+                    replayVisitsByPkg.getOrPut(visitPkg) { mutableListOf() } += ReplayVisit(sig, event.atMs)
+                }
+                continue
+            }
 
             val cleanTarget = event.target?.let {
                 AtlasSanitizer.cleanSelector(it, isTypeAction = AtlasSanitizer.isTextInputTool(event.tool) || inputValues.any { value -> value in it.name })
@@ -189,7 +207,7 @@ object AtlasLearner {
             }
         }
 
-        val allPackages = (stepsByPkg.keys + afterOnlyByPkg.keys + entryByPkg.keys).distinct()
+        val allPackages = (stepsByPkg.keys + afterOnlyByPkg.keys + entryByPkg.keys + replayVisitsByPkg.keys).distinct()
         if (allPackages.isEmpty()) return LearnResult(emptyMap(), emptyMap())
 
         val updated = linkedMapOf<String, AppAtlas>()
@@ -199,6 +217,10 @@ object AtlasLearner {
             val steps = stepsByPkg[pkg].orEmpty()
             val extraVisits = afterOnlyByPkg[pkg].orEmpty()
             val entries = entryByPkg[pkg].orEmpty()
+            val replayVisits = replayVisitsByPkg[pkg].orEmpty()
+            // 回放访问和子步能力都只能往「已有的页面」上贴。没有既有图谱时写进去，
+            // 只是一条除包名外空空如也的记录，还会占着最近使用列表。
+            if (steps.isEmpty() && extraVisits.isEmpty() && entries.isEmpty() && store.get(pkg) == null) continue
             val pkgUnnamed = linkedSetOf<String>()
             val version = appVersions[pkg]?.trim()?.takeIf { it.isNotEmpty() }
             val label = AtlasSanitizer.cleanSingleLine(appLabels[pkg], 48)
@@ -213,6 +235,7 @@ object AtlasLearner {
                     extraVisits = extraVisits,
                     entries = entries,
                     capabilities = capabilitiesByPkg[pkg].orEmpty(),
+                    replayVisits = replayVisits,
                     learnDone = learnDone,
                     succeeded = succeeded,
                     matchThreshold = matchThreshold,
@@ -257,6 +280,7 @@ object AtlasLearner {
         extraVisits: List<Pair<Long, ScreenSig>>,
         entries: List<EntryObservation>,
         capabilities: List<CapabilityObservation>,
+        replayVisits: List<ReplayVisit>,
         learnDone: Boolean,
         succeeded: Boolean,
         matchThreshold: Double,
@@ -371,6 +395,17 @@ object AtlasLearner {
             val idx = AtlasEviction.findMatchingScreenIndex(screens, pkg, cap.sig, matchThreshold)
             if (idx < 0) continue
             screens[idx] = screens[idx].withCapability(cap.tool, cap.atMs)
+        }
+
+        // 回放走过的页面：只把已存在页面的最近出现时间推后。
+        // 不认得的页面（idx < 0）不建节点——回放只该走已经记下的路线，冒出陌生页说明走偏了，
+        // 那种页面学进去反而是噪声。hits 也不涨：它不是「发现」，只是「还在」。
+        for (visit in replayVisits) {
+            val idx = AtlasEviction.findMatchingScreenIndex(screens, pkg, visit.sig, matchThreshold)
+            if (idx < 0) continue
+            val old = screens[idx]
+            maxAtMs = maxOf(maxAtMs, visit.atMs)
+            screens[idx] = old.copy(lastSeenMs = maxOf(old.lastSeenMs, visit.atMs))
         }
 
         val versionsSeen = buildList {
