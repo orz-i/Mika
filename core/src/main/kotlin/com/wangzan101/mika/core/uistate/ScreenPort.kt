@@ -217,6 +217,16 @@ sealed interface ActionResult {
 /** 打开 App 时这个 App 正被另一个任务用着(同一个 App 同时只能在一块屏上)。 */
 const val APP_IN_USE_BY_OTHER_TASK = "app_in_use_by_other_task"
 
+/** 打开 App 时用户正把它摆在自己的屏幕上用:端口不抢,只回这个原因。 */
+const val APP_IN_USE_BY_USER = "app_in_use_by_user"
+
+/**
+ * 要的是冷启动,端口却只做了热启动时 hint 的前缀:这个 App 在别的屏上还有任务(用户自己开过、退到了后台),
+ * 结束它会把用户那一边的状态一起抹掉,所以端口没有结束它、只是重新把它提到前台。
+ * 调用方若必须要一次真正的进程重起(例如抓包要蹲 natives 注册),看到这个前缀就得自己补一步。
+ */
+const val HINT_COLD_DEGRADED = "coldIgnored"
+
 /** [ScreenPort.awaitAppFree] 的结果。 */
 enum class AppWait {
     /** 放开了,可以打开了。 */

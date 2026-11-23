@@ -26,6 +26,13 @@ data class NetworkResponseInfo(
 )
 
 /**
+ * 抓包在跑、但这个 App 的进程内解密一次也没接上:响应体里只有密文。
+ *
+ * 这不是"没抓到",是"抓到了但解不开"——明文只在 App 自己进程里出现,得让它重起一次才蹲得到注册。
+ */
+const val ERROR_PLAINTEXT_BRIDGE_MISSING = "plaintext_bridge_not_installed"
+
+/**
  * 捕获到的 HTTP 响应体数据。
  */
 @Serializable
@@ -38,6 +45,8 @@ data class NetworkResponseBody(
     val isTruncated: Boolean = false,
     val error: String? = null,
     val contentEncoding: String? = null,
+    /** 拿不到明文时给模型的一句可执行建议(没有问题时为 null)。 */
+    val hint: String? = null,
 )
 
 /**
@@ -66,7 +75,30 @@ data class NetworkCaptureStatus(
     val activeMode: String = "NONE",
     val targetPackage: String? = null,
     val error: String? = null,
+    /** 抓包在跑、但有一条能力是缺的(比如进程内解密没接上):说明白,别让调用方把密文当明文。 */
+    val warnings: List<String> = emptyList(),
 )
+
+/**
+ * 打开 App 之前先挂抓包的准备结果。
+ *
+ * 有的 App 在 TLS 之上再套一层自己的加密,明文只在**进程内**出现,端侧只能靠在 natives 注册时
+ * 挂上去的观察点拿到。注册只发生一次、且早于"App 已经显示在屏上",所以必须在启动之前就把抓包挂好;
+ * 挂晚了就只能等下一次冷启动。
+ */
+enum class CapturePreheat {
+    /** 不用管:抓包没开、不是这个端口的事,或者这个 App 不需要进程内通道。 */
+    NOT_NEEDED,
+
+    /** 已经挂好了,接下来这个 App 启动时进程内通道会在注册那一刻接上。 */
+    READY,
+
+    /** 挂是挂上了,但这个 App 已经在跑、注册已经过去了:再打开一次得冷启动,才拿得到明文。 */
+    RESTART_REQUIRED,
+
+    /** 想挂但没挂上(没 root、助手没连上):照常打开,只是拿不到明文。 */
+    FAILED,
+}
 
 /**
  * 端侧 `--discover-only` 扫描到的单个共享库及其 BoringSSL/Cronet 偏移结果。
@@ -110,6 +142,16 @@ data class EbpfProbeReport(
  * 底层可由 Root eBPF 或免 Root VpnService 驱动。
  */
 interface PhoneNetworkPort {
+    /**
+     * 在启动 [packageName] 之前先把抓包挂到它身上,返回这次要不要冷启动才拿得到明文。
+     *
+     * 打开 App 的动作必须在**启动之前**调它:端侧能拿到明文的那条通道挂在目标进程的 natives 注册上,
+     * 注册只发生一次。挂晚了不会报错,只会一路拿密文——所以宁可在这里先挂,也不要等 App 显示出来再挂。
+     *
+     * 不实现的端口(网页、测试替身)返回 [CapturePreheat.NOT_NEEDED],调用方照常启动。
+     */
+    suspend fun prepareCapture(packageName: String): CapturePreheat = CapturePreheat.NOT_NEEDED
+
     /**
      * 等待指定 App 匹配指定 URL 正则/子串的网络 API 响应（如订单提交、数据刷新、搜索接口）。
      * 超时未收到返回 null。
