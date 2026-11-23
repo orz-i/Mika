@@ -3,8 +3,10 @@ package com.wangzan101.mika.cap.phone.network
 import android.content.Context
 import android.util.Log
 import com.agent.use.client.network.ebpf.LocalRootEbpfCaptureEngine
+import com.agent.use.common.network.plugin.BUILTIN_PLUGIN_ID_PREFIX
 import com.agent.use.common.network.plugin.EbpfProbeProfile
 import com.agent.use.common.network.plugin.NetworkCapturePluginRegistry
+import com.agent.use.common.network.plugin.external.BuiltinCapturePluginPackages
 import com.agent.use.common.network.plugin.external.ExternalCapturePluginLoader
 import java.io.File
 
@@ -22,14 +24,28 @@ data class CapturePluginEntry(
 
 /**
  * 持久化端侧 eBPF 插件偏移规则到 `aau_capture_plugins.json` 并同步到 [NetworkCapturePluginRegistry]。
+ *
+ * 三条来源，优先级从低到高：
+ * 1. 内置插件包（assets 安装到 `capture_plugins_builtin/`）
+ * 2. 用户放的插件包（`capture_plugins/`）
+ * 3. `aau_capture_plugins.json` 覆盖配置（设置页保存）
  */
-class CapturePluginProfileStore(private val filesDir: File?) {
+class CapturePluginProfileStore(
+    private val filesDir: File?,
+    private val builtinPackages: List<BuiltinCapturePluginPackages.Package> = emptyList(),
+) {
 
     companion object {
         private const val TAG = "CapturePluginStore"
 
-        fun forContext(context: Context?): CapturePluginProfileStore =
-            CapturePluginProfileStore(runCatching { context?.filesDir }.getOrNull())
+        fun forContext(context: Context?): CapturePluginProfileStore = CapturePluginProfileStore(
+            runCatching { context?.filesDir }.getOrNull(),
+            BuiltinCapturePluginPackages.fromAssets(context?.assets),
+        )
+
+        /** 测试与本地调试用：内置包从磁盘目录读，布局与 assets 一致。 */
+        fun forDirectory(dir: File, builtinAssetDir: File? = null): CapturePluginProfileStore =
+            CapturePluginProfileStore(dir, BuiltinCapturePluginPackages.fromDirectory(builtinAssetDir))
     }
 
     val overrideFile: File?
@@ -39,11 +55,16 @@ class CapturePluginProfileStore(private val filesDir: File?) {
     val pluginsDir: File?
         get() = filesDir?.let { File(it, ExternalCapturePluginLoader.PLUGINS_DIR_NAME) }
 
+    /** 内置插件包安装目录：随 APK 分发，升级时按 version 覆盖。 */
+    val builtinPluginsDir: File?
+        get() = filesDir?.let { File(it, ExternalCapturePluginLoader.BUILTIN_PLUGINS_DIR_NAME) }
+
     fun ensurePluginsDir(): File? = pluginsDir?.apply { if (!isDirectory) mkdirs() }
 
     @Synchronized
     fun loadIntoRegistry(): Int {
-        // 先装外部插件包，再套覆盖配置：覆盖是"改参数"，本来就该后落。
+        // 先装内置包、再装外部包，最后套覆盖配置：覆盖是"改参数"，本来就该后落。
+        loadBuiltinPlugins()
         loadExternalPlugins()
         val file = overrideFile ?: return 0
         if (!file.isFile) return 0
@@ -53,6 +74,34 @@ class CapturePluginProfileStore(private val filesDir: File?) {
             Log.w(TAG, "Failed to load capture plugin overrides: ${t.message}")
             0
         }
+    }
+
+    /**
+     * 安装并加载随 APK 分发的内置插件包。
+     *
+     * 内置包与外部包是同一份 `plugin.json` 结构，只是 id 前缀是 `builtin.`。
+     */
+    @Synchronized
+    fun loadBuiltinPlugins(): ExternalCapturePluginLoader.Report {
+        val root = builtinPluginsDir ?: return ExternalCapturePluginLoader.Report()
+        if (builtinPackages.isEmpty()) return ExternalCapturePluginLoader.Report()
+        BuiltinCapturePluginPackages.install(builtinPackages, root).let { report ->
+            if (report.installed.isNotEmpty()) {
+                Log.i(TAG, "Installed builtin capture plugins: ${report.installed.joinToString()}")
+            }
+            report.failed.forEach { Log.w(TAG, "Failed to install builtin capture plugin: $it") }
+        }
+        val parent = javaClass.classLoader ?: return ExternalCapturePluginLoader.Report()
+        val report = try {
+            ExternalCapturePluginLoader.load(root, parent, idPrefix = BUILTIN_PLUGIN_ID_PREFIX)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to scan builtin capture plugins: ${t.message}")
+            return ExternalCapturePluginLoader.Report()
+        }
+        for (bad in report.rejected) {
+            Log.w(TAG, "Rejected builtin capture plugin ${bad.path}: ${bad.reason}")
+        }
+        return report
     }
 
     /**

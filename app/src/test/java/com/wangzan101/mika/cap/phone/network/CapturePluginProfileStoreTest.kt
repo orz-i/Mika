@@ -27,9 +27,30 @@ class CapturePluginProfileStoreTest {
         NetworkCapturePluginRegistry.clearJsonProfileOverrides()
     }
 
+    /**
+     * 内置 App 规则已经是随 APK 分发的插件包，不再是编译期对象。测试从 assets 源目录读同一份
+     * `plugin.json`，装的、跑的都是真正会发出去的那份配置。
+     */
+    private fun newStore(dir: File = tempFolder.root): CapturePluginProfileStore =
+        CapturePluginProfileStore.forDirectory(dir, builtinAssetRoot()).also {
+            // 注册表启动时为空，内置包要先装再加载，snapshot 才有东西可看。
+            it.loadIntoRegistry()
+        }
+
+    private fun builtinAssetRoot(): File {
+        val candidates = listOf(
+            File("../aau/aau-common/src/main/assets/aau_capture_plugins"),
+            File("aau/aau-common/src/main/assets/aau_capture_plugins"),
+            File("../aau-common/src/main/assets/aau_capture_plugins"),
+            File("src/main/assets/aau_capture_plugins"),
+        )
+        return candidates.firstOrNull { it.isDirectory }
+            ?: error("找不到内置插件包目录: " + candidates.joinToString { it.absolutePath })
+    }
+
     @Test
     fun snapshotSaveAndResetXiaohongshuOffsetsRoundTrip() {
-        val store = CapturePluginProfileStore(tempFolder.root)
+        val store = newStore()
         val initial = store.snapshotEntries()
         val xhs = initial.firstOrNull { it.packageName == "com.xingin.xhs" }
         assertNotNull(xhs)
@@ -47,7 +68,7 @@ class CapturePluginProfileStoreTest {
         store.saveProfile("com.xingin.xhs", updatedProfile)
         assertTrue(store.overrideFile!!.isFile)
 
-        val reloadedStore = CapturePluginProfileStore(tempFolder.root)
+        val reloadedStore = newStore()
         reloadedStore.loadIntoRegistry()
         val afterSave = reloadedStore.snapshotEntries().first { it.packageName == "com.xingin.xhs" }
         assertTrue(afterSave.isOverridden)
@@ -112,7 +133,7 @@ class CapturePluginProfileStoreTest {
     fun draftKeepsTheContainerMagicWhenOnlyAMethodNameChanges() {
         // 界面只编辑「库 + 方法名」，但 BOSS 那条规则还带 magic=BZPBlock。改一个方法名再保存，
         // 魔数不能跟着变成 null —— 否则带容器的返回会被判成误读丢掉。
-        val builtin = CapturePluginProfileStore(tempFolder.root).snapshotEntries()
+        val builtin = newStore().snapshotEntries()
             .first { it.packageName == "com.hpbr.bosszhipin" }
         val renamed = CapturePluginDraft.fromEntry(builtin).copy(
             jniRules = "libyzwg.so | nativeDecodeContentV2"
@@ -130,7 +151,7 @@ class CapturePluginProfileStoreTest {
     fun draftWithOnlyDecoderEntriesDoesNotReplaceBuiltinRules() {
         // 只补进程内入口、没碰任何偏移：不能把内置规则整个替换掉，
         // 否则为了拿明文反而把抓包本身（SSL 偏移）拆了。
-        val builtin = CapturePluginProfileStore(tempFolder.root).snapshotEntries()
+        val builtin = newStore().snapshotEntries()
             .first { it.packageName == "com.hpbr.bosszhipin" }
         val profile = CapturePluginDraft.fromEntry(builtin).copy(
             quickOffsetsEnabled = false,
@@ -202,9 +223,9 @@ class CapturePluginProfileStoreTest {
         assertEquals("api.acme.com", profile!!.declarative.hostFix?.defaultHost)
         assertEquals(1, profile.declarative.responseCodecs.size)
 
-        CapturePluginProfileStore(tempFolder.root).saveProfile("com.acme.market", profile)
+        newStore().saveProfile("com.acme.market", profile)
 
-        val reloaded = CapturePluginProfileStore(tempFolder.root)
+        val reloaded = newStore()
         reloaded.loadIntoRegistry()
         val entry = reloaded.snapshotEntries().first { it.packageName == "com.acme.market" }
         assertEquals(profile.declarative, entry.profile.declarative)
@@ -239,7 +260,7 @@ class CapturePluginProfileStoreTest {
             """.trimIndent()
         )
 
-        val store = CapturePluginProfileStore(tempFolder.root)
+        val store = newStore()
         val report = store.loadExternalPlugins()
         assertEquals(1, report.loaded.size)
         val entry = store.snapshotEntries().first { it.packageName == "com.acme.ext" }

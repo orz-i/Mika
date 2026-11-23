@@ -1,26 +1,42 @@
-# 抓包插件：从「改代码」到「放配置」
+# 抓包插件：所有 App 规则都是数据
 
 这份文档讲一件事：**接入或修复一个 App 的抓包，什么时候需要重编 aau，什么时候不需要。**
 
-结论先给：新增 App、换响应容器、改解码入口，现在都不需要重编。只有「自定义加密 / 有状态解码」
+结论先给：**不需要了。** 内置的 BOSS / 抖音 / 小红书 / cronet 兜底本身就是插件包，
+和用户自己放的插件包走同一份 `plugin.json`、同一个加载器。只有「自定义加密 / 有状态解码」
 这类本质是代码的东西才需要插件包里的 dex。
 
 ---
 
-## 一、三层边界
+## 一、三种来源，一条加载路径
 
-| 层 | 解决的问题 | 载体 | 改它要重编吗 |
+| 来源 | 位置 | id 前缀 | 谁维护 |
 |---|---|---|---|
-| L1 探测规则 | 偏移变了、JNI 方法改名 | `aau_capture_plugins.json` | 不要 |
-| L2 解码管道 | 响应体是自有容器 / 压缩 / 编码 | 同一个 JSON 的 `responseCodecs` | 不要 |
-| L3 插件包 | 自定义 AES、分段、有状态解码 | `capture_plugins/<名字>/plugin.json` + 可选 dex | 纯配置不要，带 dex 才要重新打包（不是重编 aau） |
+| 内置插件包 | `assets/aau_capture_plugins/` → 安装到 `filesDir/capture_plugins_builtin/` | `builtin.` | 随 APK 发布，按 `version` 升级 |
+| 外部插件包 | `filesDir/capture_plugins/<名字>/plugin.json` | `external.` | 用户 / 现场 |
+| 覆盖配置 | `filesDir/aau_capture_plugins.json` | — | 设置页保存，优先级最高 |
 
-底层（`aau-ebpf`、TLS 解析、`NetworkTrafficMiddleware` 接口）只负责「把字节读出来」和
-「按契约过一遍中间件」。**读到之后怎么读**是配置的事。
+三者最后都进 `NetworkCapturePluginRegistry`，解析（`resolveEbpfProfile` / `resolveMiddlewares`）
+不区分来源。**注册表启动时是空的**——没有「编译进 aau 的那一份」，所以不会出现
+「配置改了但代码里那份还在赢」的情况。
+
+内置包安装到磁盘而不是直接从 assets 读，是为了：用户能看见它、能对比、能覆盖；
+加载器只需要认识目录，不必再写一套 `AssetManager` 分支。
+
+### 内置包的升级规则
+
+`plugin.json` 里的 `version`（整数）决定覆盖：
+
+- 磁盘上没有 → 安装
+- 磁盘上的 `version` < APK 里的 `version` → 覆盖
+- 否则跳过
+
+等于也跳过，是为了让「我手动调过的内置包」在一次无关的 APK 升级后还留着。
+**要改规则请走覆盖配置**（设置页保存），别直接改内置包目录——那份目录归版本管理。
 
 ---
 
-## 二、L1：探测规则的数据化
+## 二、L1：探测规则
 
 设置 › 高级与其他 › 端侧网络抓包 › eBPF 探测规则里可以直接改：
 
@@ -39,10 +55,14 @@
 
 ### 3.1 形态
 
-`aau_capture_plugins.json` 每个包的对象里可以写：
+每个 `plugin.json`（或覆盖配置的每个包对象）里可以写：
 
 ```json
-"com.hpbr.bosszhipin": {
+{
+  "id": "bosszhipin",
+  "apiVersion": 1,
+  "version": 1,
+  "packages": ["com.hpbr.bosszhipin", "com.hpbr.bosszhipin.lite"],
   "hostFix": {
     "headerPriority": ["x-bz-host", ":authority", "host"],
     "defaultHost": "www.zhipin.com"
@@ -50,19 +70,29 @@
   "responseCodecs": [
     {
       "id": "bzp-block",
-      "when": [{ "header": "zp-compressing", "equals": "2" }],
+      "when": [{ "magic": "BZPBlock" }],
       "steps": [
         { "op": "container", "magic": "BZPBlock", "headerSize": 24,
           "payloadLen": { "at": 12, "width": 4, "endian": "le" },
-          "rawLen":     { "at": 16, "width": 4, "endian": "le" } },
-        { "op": "decompress", "algo": "lz4-block" }
+          "rawLen":     { "at": 16, "width": 4, "endian": "le" },
+          "label": "bzp" },
+        { "op": "decompress", "algo": "lz4-block", "label": "lz4" }
       ]
     }
-  ]
+  ],
+  "diagnose": [
+    { "when": [{ "header": "zp-encrypting", "equals": "1" }], "label": "aes" }
+  ],
+  "ebpfProfile": {
+    "sslOffsetRules": [ /* … */ ],
+    "jniHookRules": [ /* … */ ]
+  }
 }
 ```
 
-同一段 JSON 也可以直接放进 L3 的 `plugin.json`，字段名完全一致。
+这就是 `assets/aau_capture_plugins/bosszhipin/plugin.json` 的骨架。BOSS 的整套行为
+（容器 + LZ4、gzip/zstd/br/deflate 兜底、`unknown-host` 补全、加密诊断）全部在这份文件里，
+`aau-common` 里没有一行 BOSS 专用 Kotlin。
 
 ### 3.2 原子操作
 
@@ -83,30 +113,51 @@
 `when` 是「全部成立才应用」的数组，元素支持：
 
 - `header` + `equals` / `contains` / `absent`
-- `magic`（响应体前缀）
+- `magic`（响应体前缀，UTF-8 文本）
+- `magicHex`（二进制魔数，如 `1f8b08` = gzip、`28b52ffd` = zstd）
 
-不写 `when` 表示无条件匹配。多条规则按顺序尝试，**任何一步失败就换下一条**，
-全都失败则保留原始字节——宁可让模型看到密文，也不能贴错明文。
+不写 `when` 表示无条件匹配。多条规则之间的语义是「谁会解谁上」：
+
+1. 依次尝试命中的规则；
+2. 某条规则成功且**解出的是明文 JSON** → 立刻返回；
+3. 都解不出 JSON → 返回第一条成功的（解压出来但不是 JSON 也算结果）。
+
+这样一份配置里可以同时写「容器 + lz4 + gzip」和「容器 + lz4」，不必让调用方枚举组合。
+全都没成功则保留原始字节——宁可让模型看到密文，也不能贴错明文。
 
 ### 3.4 `hostFix`
 
 抓包链路在没有 SNI 或连接复用时拿不到域名，URL 会退化成 `://unknown-host`。
 `hostFix` 按 `headerPriority` 依次取第一个非空头，兜底用 `defaultHost`，把域名补回去。
-三个内置插件各自手写过这段逻辑，现在是一条配置。
 
-### 3.5 怎么看解码结果
+- `defaultHostPathContains`：兜底域名只在 URL 含该片段时使用。小红书只在 `/api/sns/`、
+  抖音只在 `/aweme/v` 下省略 Host，对这些之外硬补一个域名会编造出不存在的主机。
+- `onRequest: false`：只在响应阶段补。请求阶段补会抢在证据之前——解析器本来会从响应的
+  `Set-Cookie: Domain=` 学真实域名，再回填下一次请求；提前补等于把这条路堵死。
 
-解出明文后响应头会多一个 `x-aau-decode-hint`，形如 `bzp-block>lz4-block:643->512`：
-左边是走过的步骤，右边是原始长度和解出长度。没有这个头就是「没解」，不是「解错了」。
+### 3.5 `diagnose`
+
+解不开时不能只是「什么都没发生」。`diagnose` 命中第一条就把
+`x-aau-decode-hint: undecoded:<label>[:k=v,...]:<size>` 写进响应头：
+
+| 场景 | hint |
+|---|---|
+| 解开了 | `bzp>lz4:643->512` |
+| 需要 App 的密钥 | `undecoded:aes:42` |
+| 未知容器，但 App 自报了加工方式 | `undecoded:raw:zp-compressing=3:64` |
+| zstd 带字典 | `undecoded:zstd-dict:10` |
+
+有 `undecoded:` 就是「抓到了，但解不开」，不是「没抓到」。
 
 ---
 
-## 四、L3：外部插件包
+## 四、L3：插件包
 
 ### 4.1 目录
 
 ```
-filesDir/capture_plugins/
+filesDir/capture_plugins/            # 用户的包
+filesDir/capture_plugins_builtin/    # 内置包，由 assets 安装
   acme-market/
     plugin.json      # 必需
     plugin.dex       # 可选，仅当需要自定义逻辑
@@ -120,6 +171,7 @@ filesDir/capture_plugins/
 {
   "id": "acme.market",
   "apiVersion": 1,
+  "version": 1,
   "enabled": true,
   "packages": ["com.acme.market"],
   "dex": "plugin.dex",
@@ -127,6 +179,7 @@ filesDir/capture_plugins/
   "middlewareClass": "com.acme.capture.AcmeMiddleware",
   "hostFix": { "headerPriority": ["x-acme-host"], "defaultHost": "api.acme.com" },
   "responseCodecs": [ /* 同 L2 */ ],
+  "diagnose": [ /* 同 L2 */ ],
   "ebpfProfile": {
     "jniHookRules": [
       { "libSubstring": "libacme.so", "methodNames": ["nativeDecode"], "magic": "ACME" }
@@ -137,14 +190,17 @@ filesDir/capture_plugins/
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `id` | 是 | `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`，注册为 `external.<id>` |
+| `id` | 是 | `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`，注册为 `external.<id>` 或 `builtin.<id>` |
 | `apiVersion` | 否（默认 1） | 必须等于宿主支持的版本，否则直接拒绝 |
-| `packages` | 是 | 匹配的包名；`*` 仅建议给内置兜底用 |
+| `version` | 否（默认 1） | 内置包的覆盖判据，只有内置包用得上 |
+| `enabled` | 否（默认 true） | 设 false 等于停用这个包 |
+| `fallback` | 否（默认 false） | 兜底包：匹配所有包，用户要求「替换内置偏移」时不会被拆掉 |
+| `packages` | 是 | 匹配的包名；`*` 表示匹配所有包（兜底包的唯一表达方式） |
 | `dex` | 否 | 只能是包目录内的文件名，不允许 `/`、`..` |
 | `sha256` | 否 | dex 的 SHA-256，写了就校验 |
 | `entryClass` | 否 | 实现 `NetworkCapturePlugin` 的类 |
 | `middlewareClass` | 否 | 实现 `NetworkTrafficMiddleware` 的类 |
-| `hostFix` / `responseCodecs` | 否 | 同 L2 |
+| `hostFix` / `responseCodecs` / `diagnose` | 否 | 同 L2 |
 | `ebpfProfile` | 否 | 偏移 / ABI / JNI 入口，字段同 `aau_capture_plugins.json` |
 
 **纯配置包（没有 dex）就足够覆盖绝大多数新 App。** 只有自定义解密才需要写代码。
@@ -169,15 +225,18 @@ filesDir/capture_plugins/
   宁可多一个 op，也不要让已有配置悄悄变味。
 - 原子操作刻意保持少而稳。想解 AES？那是插件包的活，不要往 DSL 里堆。
 - `apiVersion` 只在「插件与宿主的接口」变化时 +1，不是每次加字段都 +1。
+- 内置包的 `version` 在自己那份规则变了（App 升级、偏移重算）时 +1。
 
 ---
 
 ## 六、排查顺序
 
-1. **有没有字节**：看响应长度是不是 0。没有字节是偏移 / JNI 入口的问题（L1）。
-2. **是不是明文**：`Content-Type` 与首字节。`{` / `[` 开头就是明文，别再解。
-3. **有没有 `x-aau-decode-hint`**：没有说明规则没命中或某一步失败；有说明解过，
-   看 `trace` 判断走了哪几层。
-4. **`when` 是否命中**：把条件临时删掉试试，能解就是条件写错了（常见：大小写、
-   头的名字带了 `:`）。
-5. **容器头部字段位置**：`payloadLen` / `rawLen` 的 `at` 是相对响应体起点，不是相对头部。
+1. **包有没有加载**：`adb logcat | grep CapturePluginStore`，看 `Rejected capture plugin …`。
+   内置包被拒说明 `plugin.json` 写坏了或 `apiVersion` 对不上。
+2. **有没有字节**：看响应长度是不是 0。没有字节是偏移 / JNI 入口的问题（L1）。
+3. **是不是明文**：`Content-Type` 与首字节。`{` / `[` 开头就是明文，别再解。
+4. **`x-aau-decode-hint`**：`undecoded:*` = 抓到了但解不开，看 label 判断原因；
+   有 `trace` = 解过，看走了哪几层。
+5. **`when` 是否命中**：把条件临时删掉试试，能解就是条件写错了（常见：大小写、
+   头的名字带了 `:`、二进制魔数该用 `magicHex`）。
+6. **容器头部字段位置**：`payloadLen` / `rawLen` 的 `at` 是相对响应体起点，不是相对头部。
