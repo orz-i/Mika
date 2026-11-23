@@ -103,20 +103,21 @@ internal object PhoneGetNetworkResponse : PhoneTool {
         val asString = a.bool("asString", true)
         val net = ctx.network ?: return failure("network_capture_unavailable")
 
-        val respBody = net.getResponseBody(requestId, urlPattern, asString)
-        return if (respBody != null) {
+        val body = net.getResponseBody(requestId, urlPattern, asString)
+        return if (body != null) {
             ToolExecution(buildJsonObject {
-                put("ok", respBody.error == null)
-                put("requestId", respBody.requestId)
-                put("url", respBody.url)
-                put("statusCode", respBody.statusCode)
-                respBody.contentType?.let { put("contentType", it) }
-                respBody.contentEncoding?.let { put("contentEncoding", it) }
-                if (respBody.body != null) {
-                    put("body", Untrusted.wrapWithin(respBody.body, 50_000))
+                put("ok", body.error == null)
+                put("requestId", body.requestId)
+                put("url", body.url)
+                put("statusCode", body.statusCode)
+                body.contentType?.let { put("contentType", it) }
+                body.contentEncoding?.let { put("contentEncoding", it) }
+                if (body.body != null) {
+                    put("body", Untrusted.wrapWithin(body.body, 50_000))
                 }
-                put("truncated", respBody.isTruncated)
-                respBody.error?.let { put("error", it) }
+                put("truncated", body.isTruncated)
+                body.error?.let { put("error", it) }
+                body.hint?.let { put("hint", it) }
             })
         } else {
             ToolExecution(buildJsonObject {
@@ -166,6 +167,10 @@ internal object PhoneInspectNetwork : PhoneTool {
                 put("activeMode", it.activeMode)
                 it.targetPackage?.let { pkg -> put("targetPackage", pkg) }
                 effectiveError?.let { err -> put("captureError", err) }
+                // 抓包在跑但缺一条能力(比如进程内解密没接上):说出来,否则下层只能看到密文
+                if (it.warnings.isNotEmpty()) {
+                    put("warnings", JsonArray(it.warnings.map { w -> kotlinx.serialization.json.JsonPrimitive(w) }))
+                }
             }
             put("requests", JsonArray(requests.map { r ->
                 buildJsonObject {
