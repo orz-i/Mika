@@ -3,6 +3,7 @@ package com.wangzan101.mika.core.cap.phone
 import com.wangzan101.mika.core.tool.Entry
 import com.wangzan101.mika.core.observation.ObsKind
 import com.wangzan101.mika.core.observation.Observation
+import com.wangzan101.mika.core.net.CapturePreheat
 import com.wangzan101.mika.core.prompt.Feedback
 import com.wangzan101.mika.core.prompt.Prompts
 import com.wangzan101.mika.core.tool.ArgError
@@ -26,7 +27,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import com.wangzan101.mika.core.tool.LinkPolicy
+import com.wangzan101.mika.core.uistate.APP_IN_USE_BY_USER
 import com.wangzan101.mika.core.uistate.ActionResult
+import com.wangzan101.mika.core.uistate.HINT_COLD_DEGRADED
 import com.wangzan101.mika.core.uistate.APP_IN_USE_BY_OTHER_TASK
 import com.wangzan101.mika.core.uistate.AppWait
 import com.wangzan101.mika.core.uistate.action
@@ -101,8 +104,36 @@ internal object LaunchApp : PhoneTool {
         }
         // 换了 App,之前被拒的付款申报就不是这次的了
         ctx.refusedPay = null
-        suspend fun open() = if (user != null) ctx.phone.screen.openAppCopy(p, user, cold) else ctx.phone.screen.openApp(p, cold)
+        // 抓包要赶在 App 起来之前挂上:有的 App 在 TLS 之上还有一层自己的加密,明文只出现在进程内,
+        // 端侧得蹲在它的 natives 注册那一刻。注册只发生一次,等屏幕上看得到它时早过去了(见 CapturePreheat)。
+        val preheat = if (user == null) {
+            ctx.network?.prepareCapture(p) ?: CapturePreheat.NOT_NEEDED
+        } else {
+            CapturePreheat.NOT_NEEDED
+        }
+        val restartForCapture = preheat == CapturePreheat.RESTART_REQUIRED
+        val coldOpen = cold || restartForCapture
+        suspend fun open() = if (user != null) ctx.phone.screen.openAppCopy(p, user, coldOpen) else ctx.phone.screen.openApp(p, coldOpen)
         var opened = open()
+        // 端口会把冷启动降级成热启动:这个 App 在别的屏上还有任务(用户刚自己开过、按了返回键回到桌面),
+        // 结束它等于把用户那一边的状态抹掉。可抓包要的正是"进程重起一次"——注册早过去了,热启动就是白等,
+        // 明文通道照样挂不上。这时补一步显式 force-stop 再开:端口刚刚判过它不在用户眼前(在的话会直接拒开),
+        // 所以这一步不会抢走用户正在看的 App。
+        var coldDegraded = (opened as? ActionResult.Ok)?.hint?.startsWith(HINT_COLD_DEGRADED) == true
+        if (restartForCapture && coldDegraded) {
+            ctx.phone.screen.systemCommand("am force-stop --user current $p")
+            opened = open()
+            coldDegraded = (opened as? ActionResult.Ok)?.hint?.startsWith(HINT_COLD_DEGRADED) == true
+        }
+        // 用户正把这个 App 摆在自己屏幕上用,端口不抢。可这次要读的是明文,而明文只在 App 自己进程里出现、
+        // 挂钩只能在进程启动那一刻——不重起就永远读不到。用户要的正是这包数据,所以这次由我接手:
+        // 结束它、在我这边冷启动。别把"你先退出 App、再把控制权交回"当成作业派回去。
+        var tookOver = false
+        if (restartForCapture && opened is ActionResult.Failed && opened.reason == APP_IN_USE_BY_USER) {
+            ctx.phone.screen.systemCommand("am force-stop --user current $p")
+            opened = open()
+            tookOver = true
+        }
         // 别的任务正用着、模型要了等:等它放开再开一次;互相等(谁也等不到)、等到时限仍被占着,照实说
         if (wait != null && opened is ActionResult.Failed && opened.reason == APP_IN_USE_BY_OTHER_TASK) {
             when (ctx.phone.screen.awaitAppFree(p, user, wait * 1_000L)) {
@@ -115,7 +146,20 @@ internal object LaunchApp : PhoneTool {
         val r = ctx.action(opened)
         if (r.content["ok"] != JsonPrimitive(true)) return r
         ctx.appOpened = true
-        return unreadable(ctx, p, r)
+        // 为了拿明文要过一次真正的冷启动:App 会回到初始页。补完 force-stop 仍是热启动(用户正占着主屏),
+        // 说明没真的重起、明文还是拿不到,这一项就不报 true——别让模型以为通道已经就位。
+        val notes = mutableMapOf<String, JsonPrimitive>()
+        if (restartForCapture && !coldDegraded) notes["coldForCapture"] = JsonPrimitive(true)
+        // 接过来的:用户原来那一边的界面没了,回去是初始页。说清楚,让模型照实讲一句。
+        if (tookOver) {
+            notes["tookOverApp"] = JsonPrimitive(p)
+            notes["note"] = JsonPrimitive(
+                "$p was open on your own screen; I restarted it so its decrypted responses could be read " +
+                    "(the decoder can only be observed when the process starts). It reopens at its start screen."
+            )
+        }
+        val noted = if (notes.isEmpty()) r else r.with(content = JsonObject(r.content + notes))
+        return unreadable(ctx, p, noted)
     }
 
     override fun logTarget(o: JsonObject, r: ToolExecution, ctx: ToolContext) =
