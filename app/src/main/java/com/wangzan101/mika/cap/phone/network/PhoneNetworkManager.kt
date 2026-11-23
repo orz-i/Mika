@@ -210,8 +210,16 @@ class PhoneNetworkManager(
 
     private fun handleResponseEvent(response: HttpResponseEvent) {
         val request = inFlightRequests.remove(response.requestId)
-        val startTime = request?.timestamp ?: response.timestamp
-        val duration = (response.timestamp - startTime).coerceAtLeast(0L)
+        // 同一条响应会被派发两次：先到的密文一次，进程内解出的明文补发一次。
+        // 第二次已经没有 in-flight 请求了，方法名和耗时要从已有记录里继承，
+        // 否则那条记录会退化成 UNKNOWN / 0ms。
+        val previous = trafficHistory.firstOrNull { it.requestId == response.requestId }
+        val startTime = request?.timestamp ?: previous?.let { it.timestamp } ?: response.timestamp
+        val duration = if (request != null) {
+            (response.timestamp - startTime).coerceAtLeast(0L)
+        } else {
+            previous?.durationMs ?: (response.timestamp - startTime).coerceAtLeast(0L)
+        }
 
         val chunkedBytes = pendingChunkBuffers.remove(response.requestId)?.let { buf ->
             synchronized(buf) { buf.toByteArray() }
@@ -238,7 +246,7 @@ class PhoneNetworkManager(
             requestId = response.requestId,
             timestamp = response.timestamp,
             url = response.url,
-            method = request?.method ?: "UNKNOWN",
+            method = request?.method ?: previous?.method ?: "UNKNOWN",
             statusCode = response.statusCode,
             statusText = response.statusText,
             durationMs = duration,
