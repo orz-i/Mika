@@ -49,6 +49,8 @@
     <string name="tool_explain_failure">Jelaskan mengapa tidak berhasil</string>
     <string name="tool_ask_user">Ajukan pertanyaan kepada Anda</string>
     <string name="tool_takeover">Minta Anda mengambil alih</string>
+    <string name="tool_entities">Temukan entitas dalam teks</string>
+    <string name="tool_watch_reward_videos">Tonton video hadiah</string>
     <string name="tool_confirm">Minta persetujuan Anda</string>
     <string name="tool_wait">Tunggu</string>
     <string name="tool_diagnose">Periksa layar</string>

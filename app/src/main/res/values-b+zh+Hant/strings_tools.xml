@@ -49,6 +49,8 @@
     <string name="tool_explain_failure">說明沒辦成的原因</string>
     <string name="tool_ask_user">問你一個問題</string>
     <string name="tool_takeover">請你接手</string>
+    <string name="tool_entities">辨識文字裡的實體</string>
+    <string name="tool_watch_reward_videos">連看看廣告任務</string>
     <string name="tool_confirm">請你同意</string>
     <string name="tool_wait">等待</string>
     <string name="tool_diagnose">檢查螢幕</string>

@@ -49,6 +49,8 @@
     <string name="tool_explain_failure">Explicar por que não deu certo</string>
     <string name="tool_ask_user">Fazer uma pergunta a você</string>
     <string name="tool_takeover">Pedir para você assumir</string>
+    <string name="tool_entities">Encontrar entidades no texto</string>
+    <string name="tool_watch_reward_videos">Assistir vídeos com recompensa</string>
     <string name="tool_confirm">Pedir a sua aprovação</string>
     <string name="tool_wait">Aguardar</string>
     <string name="tool_diagnose">Verificar a tela</string>

@@ -49,6 +49,8 @@
     <string name="tool_explain_failure">شرح سبب عدم نجاح العملية</string>
     <string name="tool_ask_user">طرح سؤال عليك</string>
     <string name="tool_takeover">مطالبتك بتولّي التحكم</string>
+    <string name="tool_entities">العثور على الكيانات في النص</string>
+    <string name="tool_watch_reward_videos">مشاهدة فيديوهات المكافآت</string>
     <string name="tool_confirm">طلب موافقتك</string>
     <string name="tool_wait">انتظار</string>
     <string name="tool_diagnose">فحص الشاشة</string>

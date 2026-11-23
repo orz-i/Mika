@@ -2138,6 +2138,8 @@ class ToolLabels(private val tools: ToolIndex, private val legacy: LegacyNames =
             "说明没办成的原因" to R.string.tool_explain_failure,
             "问你一个问题" to R.string.tool_ask_user,
             "请你接手" to R.string.tool_takeover,
+            "识别文字里的实体" to R.string.tool_entities,
+            "连看看广告任务" to R.string.tool_watch_reward_videos,
             "请你同意" to R.string.tool_confirm,
             "等待" to R.string.tool_wait,
             "检查屏幕" to R.string.tool_diagnose,
