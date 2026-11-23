@@ -278,6 +278,7 @@
     <string name="network_capture_plugins_tag_external">外部プラグイン</string>
     <string name="network_capture_plugins_field_decoder">レスポンスデコード（JSON）</string>
     <string name="network_capture_plugins_decoder_hint">コンテナのマジック値・ヘッダー内の位置・圧縮方式をここで宣言します。空欄ならレスポンス本文をそのまま通します。形式エラー時は保存を拒否します。</string>
+    <string name="network_capture_plugins_override_note">ここには変更した部分だけが保存されます。空欄の項目は内蔵または外部プラグインの規則をそのまま使います。最初からやり直すには「既定に戻す」を使います。</string>
     <string name="network_capture_plugins_invalid">パッケージ名、ライブラリ名、オフセット値（0x... または 10 進数）、および ABI パラメータを確認してください。</string>
     <string name="network_capture_plugins_restore_one">組み込み既定に戻す</string>
     <string name="network_capture_plugins_delete_one">規則を削除</string>

@@ -298,6 +298,7 @@
     <string name="network_capture_plugins_tag_external">إضافة خارجية</string>
     <string name="network_capture_plugins_field_decoder">فك ترميز الاستجابة (JSON)</string>
     <string name="network_capture_plugins_decoder_hint">يُعلن هنا عن سحر الحاوية ومواضع الحقول وخوارزمية الضغط. تركه فارغًا يعني تمرير الجسم كما هو. الصيغة الخاطئة ترفض الحفظ.</string>
+    <string name="network_capture_plugins_override_note">يُحفظ هنا ما غيّرته فقط. الحقول الفارغة تبقى على قواعد الحزمة المدمجة أو الخارجية؛ للبدء من جديد استخدم استعادة الافتراضي.</string>
     <string name="network_capture_plugins_invalid">تحقق من اسم الحزمة واسم المكتبة وقيم الإزاحة (0x... أو عشري) ومعاملات ABI.</string>
     <string name="network_capture_plugins_restore_one">استعادة الافتراضي المدمج</string>
     <string name="network_capture_plugins_delete_one">حذف القاعدة</string>

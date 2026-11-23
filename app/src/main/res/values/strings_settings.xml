@@ -258,6 +258,7 @@
     <string name="network_capture_plugins_tag_external">External</string>
     <string name="network_capture_plugins_field_decoder">Response decoding (JSON)</string>
     <string name="network_capture_plugins_decoder_hint">Container magic, header field offsets and compression as JSON. Empty passes bodies through. A malformed entry rejects the save instead of silently dropping rules.</string>
+    <string name="network_capture_plugins_override_note">Only your changes are stored here. Blank fields keep using the built-in or external package rules; to start over, use restore default.</string>
     <string name="network_capture_plugins_invalid">Check package name, library substring, offset values (0x... or decimal), and Cronet ABI parameters.</string>
     <string name="network_capture_plugins_restore_one">Restore built-in default</string>
     <string name="network_capture_plugins_delete_one">Delete rule</string>

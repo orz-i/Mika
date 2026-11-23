@@ -278,6 +278,7 @@
     <string name="network_capture_plugins_tag_external">Plugin eksternal</string>
     <string name="network_capture_plugins_field_decoder">Dekode respons (JSON)</string>
     <string name="network_capture_plugins_decoder_hint">Magic kontainer, posisi field header, dan kompresi dideklarasikan di sini. Kosong berarti body dibiarkan apa adanya. Format salah akan menolak penyimpanan.</string>
+    <string name="network_capture_plugins_override_note">Hanya perubahan Anda yang disimpan di sini. Kolom kosong tetap memakai aturan paket bawaan atau eksternal; untuk memulai ulang, gunakan pulihkan default.</string>
     <string name="network_capture_plugins_invalid">Periksa nama paket, substring pustaka, offset (0x... atau desimal), dan parameter ABI.</string>
     <string name="network_capture_plugins_restore_one">Pulihkan bawaan</string>
     <string name="network_capture_plugins_delete_one">Hapus aturan</string>

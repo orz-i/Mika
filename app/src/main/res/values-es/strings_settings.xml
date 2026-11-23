@@ -286,6 +286,7 @@
     <string name="network_capture_plugins_tag_external">Complemento externo</string>
     <string name="network_capture_plugins_field_decoder">Decodificación de respuesta (JSON)</string>
     <string name="network_capture_plugins_decoder_hint">El magic del contenedor, los campos de cabecera y la compresión se declaran aquí. Vacío deja el cuerpo intacto. Un formato inválido rechaza el guardado.</string>
+    <string name="network_capture_plugins_override_note">Aquí solo se guardan tus cambios. Los campos vacíos siguen usando las reglas del paquete integrado o externo; para empezar de cero, usa restaurar predeterminado.</string>
     <string name="network_capture_plugins_invalid">Comprueba paquete, librería, desplazamientos (0x... o decimal) y parámetros ABI.</string>
     <string name="network_capture_plugins_restore_one">Restaurar valor integrado</string>
     <string name="network_capture_plugins_delete_one">Eliminar regla</string>

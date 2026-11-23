@@ -278,6 +278,7 @@
     <string name="network_capture_plugins_tag_external">외부 플러그인</string>
     <string name="network_capture_plugins_field_decoder">응답 디코딩(JSON)</string>
     <string name="network_capture_plugins_decoder_hint">컨테이너 매직, 헤더 필드 위치, 압축 방식을 여기에 선언합니다. 비워 두면 응답 본문을 그대로 전달합니다. 형식이 틀리면 저장이 거부됩니다.</string>
+    <string name="network_capture_plugins_override_note">여기에는 변경한 부분만 저장됩니다. 비워 둔 항목은 내장 또는 외부 플러그인 규칙을 그대로 사용합니다. 처음부터 다시 하려면 기본값 복원을 사용하세요.</string>
     <string name="network_capture_plugins_invalid">패키지 이름, 라이브러리 문자열, 오프셋(0x... 또는 10진수) 및 ABI 값을 확인하세요.</string>
     <string name="network_capture_plugins_restore_one">기본값으로 복원</string>
     <string name="network_capture_plugins_delete_one">규칙 삭제</string>

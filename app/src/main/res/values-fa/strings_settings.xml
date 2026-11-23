@@ -293,6 +293,7 @@
     <string name="network_capture_plugins_tag_external">افزونه خارجی</string>
     <string name="network_capture_plugins_field_decoder">رمزگشایی پاسخ (JSON)</string>
     <string name="network_capture_plugins_decoder_hint">جادوی محفظه، جای فیلدهای سرآیند و الگوریتم فشرده‌سازی اینجا اعلام می‌شود. خالی یعنی بدنه بدون تغییر می‌ماند. قالب نادرست ذخیره را رد می‌کند.</string>
+    <string name="network_capture_plugins_override_note">فقط تغییرات شما اینجا ذخیره می‌شود. فیلدهای خالی همچنان از قواعد بستهٔ داخلی یا خارجی استفاده می‌کنند؛ برای شروع دوباره «بازگردانی پیش‌فرض» را بزنید.</string>
     <string name="network_capture_plugins_invalid">نام بسته، کتابخانه، مقادیر آفست (0x... یا ده‌دهی) و پارامترهای ABI را بررسی کنید.</string>
     <string name="network_capture_plugins_restore_one">بازگردانی به پیش‌فرض داخلی</string>
     <string name="network_capture_plugins_delete_one">حذف قاعده</string>

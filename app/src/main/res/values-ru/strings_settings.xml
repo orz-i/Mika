@@ -290,6 +290,7 @@
     <string name="network_capture_plugins_tag_external">Внешний плагин</string>
     <string name="network_capture_plugins_field_decoder">Декодирование ответа (JSON)</string>
     <string name="network_capture_plugins_decoder_hint">Магия контейнера, смещения полей и алгоритм сжатия задаются здесь. Пусто — тело не обрабатывается. При ошибке формата сохранение отклоняется.</string>
+    <string name="network_capture_plugins_override_note">Здесь сохраняются только ваши изменения. Пустые поля продолжают использовать правила встроенного или внешнего пакета. Чтобы начать заново, выберите восстановление по умолчанию.</string>
     <string name="network_capture_plugins_invalid">Проверьте пакет, библиотеку, смещения (0x... или десятичные) и параметры ABI.</string>
     <string name="network_capture_plugins_restore_one">Восстановить встроенное</string>
     <string name="network_capture_plugins_delete_one">Удалить правило</string>

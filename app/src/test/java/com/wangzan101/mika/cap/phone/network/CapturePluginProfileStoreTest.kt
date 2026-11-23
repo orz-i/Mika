@@ -265,8 +265,79 @@ class CapturePluginProfileStoreTest {
         assertEquals(1, report.loaded.size)
         val entry = store.snapshotEntries().first { it.packageName == "com.acme.ext" }
         assertTrue(entry.isExternal)
+        assertFalse("外部包不是内置包，混起来会让编辑外部包时误触发「替换内置」", entry.isBuiltin)
         assertEquals(1, entry.profile.declarative.responseCodecs.size)
 
         NetworkCapturePluginRegistry.unregister("external.acme.ext")
+    }
+
+    @Test
+    fun wildcardExternalPackageDoesNotRelabelEveryBuiltinEntry() {
+        // 兜底包声明 `*`，但"谁提供了这一条"必须按包名精确认。用 matchesPackage 判断的话，
+        // 一个兜底外部包会把 BOSS、小红书全标成"外部插件"，用户以为内置规则没了。
+        val pkgDir = File(tempFolder.root, "capture_plugins/any-ext").apply { mkdirs() }
+        File(pkgDir, "plugin.json").writeText(
+            """
+            {
+              "id": "any.ext",
+              "apiVersion": 1,
+              "fallback": true,
+              "packages": ["*"],
+              "responseCodecs": [{ "steps": [{ "op": "base64" }] }]
+            }
+            """.trimIndent()
+        )
+
+        val store = newStore()
+        assertEquals(1, store.loadExternalPlugins().loaded.size)
+        val entries = store.snapshotEntries().associateBy { it.packageName }
+        assertFalse(entries.getValue("com.hpbr.bosszhipin").isExternal)
+        assertTrue(entries.getValue("com.hpbr.bosszhipin").isBuiltin)
+        assertFalse(entries.getValue("com.xingin.xhs").isExternal)
+        assertTrue(entries.getValue("*").isExternal)
+
+        NetworkCapturePluginRegistry.unregister("external.any.ext")
+    }
+
+    @Test
+    fun oldOverrideStillMergesWithTheBuiltinPackage() {
+        // 老设备上可能已经存过一份只补了进程内入口的覆盖。内置包化之后这份文件不能被
+        // 当成"整条替换"：内置包的 SSL 偏移与 BZPBlock 解码管道必须继续生效，
+        // 否则升级一次 APK，用户的抓包就从"能解明文"退回"只有密文"。
+        val store = newStore()
+        val override = EbpfProbeProfile(
+            jniHookRules = listOf(
+                com.agent.use.common.network.plugin.JniHookRule(
+                    libSubstring = "libyzwg.so",
+                    methodNames = listOf("nativeDecodeContentV3"),
+                    magic = "BZPBlock",
+                )
+            ),
+            replaceBuiltinOffsets = false,
+        )
+        store.saveProfile("com.hpbr.bosszhipin", override)
+
+        val resolved = NetworkCapturePluginRegistry.resolveEbpfProfile("com.hpbr.bosszhipin")
+        assertEquals(
+            "覆盖里的入口排在前面，先挂上",
+            "nativeDecodeContentV3",
+            resolved.jniHookRules.first().methodNames.first(),
+        )
+        assertTrue(
+            "内置包原来的入口不能被覆盖顶掉",
+            resolved.jniHookRules.any { "nativeDecodeContent" in it.methodNames },
+        )
+        assertTrue(
+            "内置包的 SSL 偏移必须还在",
+            resolved.sslOffsetRules.any { it.libSubstring == "libzp-sdk-transport.so" },
+        )
+        assertTrue(
+            "内置包的 BZPBlock 解码管道必须还在",
+            resolved.declarative.responseCodecs.any { it.id == "bzp-block" },
+        )
+        assertTrue(
+            "内置包的加密诊断必须还在",
+            resolved.declarative.diagnose.any { it.label == "aes" },
+        )
     }
 }

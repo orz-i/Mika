@@ -170,7 +170,9 @@ class CapturePluginProfileStore(
             CapturePluginEntry(
                 packageName = pkg,
                 profile = effective,
-                isBuiltin = builtin != null,
+                // 来源按插件包声明的包名判断，不看 listBuiltinProfiles 的 key：
+                // 后者把外部包也算进来，会让外部包显示成"内置"、编辑时还误触发「替换内置」。
+                isBuiltin = NetworkCapturePluginRegistry.isBuiltinPluginPackage(pkg),
                 isOverridden = override != null,
                 isExternal = NetworkCapturePluginRegistry.isExternalPluginPackage(pkg),
             )

@@ -492,9 +492,11 @@ fun CapturePluginProfilesContent(
                     else -> stringResource(R.string.network_capture_plugins_generic_only_sub)
                 }
                 val (badge, tone) = when {
-                    entry.isExternal -> stringResource(R.string.network_capture_plugins_tag_external) to PillTone.Ok
+                    // 「我改过」比「它从哪来」更该被看见：内置包被覆盖后仍标记成"内置"，
+                    // 用户会以为改动没生效，回头再改一遍。
                     offsetsDisabled -> stringResource(R.string.network_capture_plugins_tag_disabled) to PillTone.Warn
                     entry.isOverridden -> stringResource(R.string.network_capture_plugins_tag_custom) to PillTone.Ok
+                    entry.isExternal -> stringResource(R.string.network_capture_plugins_tag_external) to PillTone.Ok
                     else -> stringResource(R.string.network_capture_plugins_tag_builtin) to PillTone.Neutral
                 }
                 ListRow(
@@ -576,6 +578,16 @@ fun CapturePluginProfilesContent(
                     }
 
                     val c = MikaTheme.colors
+                    // 覆盖文件里只有"用户改过的那一版"，内置包的规则仍然在下面合并。
+                    // 不说清楚的话，打开一个只补了入口的覆盖会看到偏移全空，像是配置丢了。
+                    if (!currentDraft.isNew && currentDraft.isOverridden) {
+                        Text(
+                            stringResource(R.string.network_capture_plugins_override_note),
+                            style = MikaType.Caption,
+                            color = c.ink3,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
                     val toggleShape = RoundedCornerShape(12.dp)
                     Row(
                         modifier = Modifier

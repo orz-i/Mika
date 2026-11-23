@@ -243,6 +243,7 @@
     <string name="network_capture_plugins_tag_external">外部外掛</string>
     <string name="network_capture_plugins_field_decoder">回應解碼管道（JSON）</string>
     <string name="network_capture_plugins_decoder_hint">容器魔數、標頭欄位位置、壓縮演算法都在這裡宣告；留空表示不處理回應主體。格式錯誤會直接拒絕儲存，不會靜默丟掉規則。</string>
+    <string name="network_capture_plugins_override_note">這裡只儲存你改動的部分；留空的項目繼續沿用內建或外部外掛包的規則。想徹底重來，用下面的恢復預設。</string>
     <string name="network_capture_plugins_invalid">請檢查套件名稱、SO 子字串、偏移格式（0x... 或十進位）及 ABI 參數是否合法。</string>
     <string name="network_capture_plugins_restore_one">恢復此應用內建預設</string>
     <string name="network_capture_plugins_delete_one">刪除此規則</string>
