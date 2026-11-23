@@ -16,6 +16,9 @@ import com.agent.use.common.network.INetworkCapture
 import com.agent.use.common.network.NetworkCaptureConfig
 import com.agent.use.common.network.parser.GrpcDecoder
 import com.agent.use.common.network.plugin.EbpfProbeProfile
+import com.agent.use.common.network.plugin.NetworkCapturePluginRegistry
+import com.wangzan101.mika.core.net.CapturePreheat
+import com.wangzan101.mika.core.net.ERROR_PLAINTEXT_BRIDGE_MISSING
 import com.wangzan101.mika.core.net.EbpfDiscoveredLib
 import com.wangzan101.mika.core.net.EbpfProbeReport
 import com.wangzan101.mika.core.net.NetworkCaptureStatus
@@ -23,6 +26,7 @@ import com.wangzan101.mika.core.net.NetworkResponseBody
 import com.wangzan101.mika.core.net.NetworkResponseInfo
 import com.wangzan101.mika.core.net.NetworkRequestSummary
 import com.wangzan101.mika.core.net.PhoneNetworkPort
+import com.wangzan101.mika.settings.FeatureFlags
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -70,6 +74,14 @@ class PhoneNetworkManager(
         const val MIN_REATTACH_INTERVAL_MS = 1000L
         const val BODY_CACHE_DIR_NAME = "mika_network_bodies"
         const val DEFAULT_TIMEOUT_MS = 5000L
+
+        /** 抓包在跑,但这个 App 的进程内解密没接上:再开的响应只会是密文。值定义在端口契约里,调用方按同一个值判断。 */
+        const val PLAINTEXT_BRIDGE_MISSING = ERROR_PLAINTEXT_BRIDGE_MISSING
+
+        /** 拿不到明文时给模型的办法:这个 App 的解密只在它自己进程里发生,得冷启动一次才蹲得到。 */
+        const val PLAINTEXT_BRIDGE_HINT =
+            "This app decrypts response bodies inside its own process, and capture started after its native decoder was already registered. " +
+                "Reopen it with phone_launch_app (it will restart cold so the decoder can be observed), then repeat the action."
     }
 
     /**
@@ -341,6 +353,74 @@ class PhoneNetworkManager(
     }
 
     /**
+     * 打开界面之前先让抓包就位。
+     *
+     * 有的 App 在 TLS 之上还有一层自己的信封：eBPF 读到的只是密文，明文只出现在它自己进程里，
+     * 端侧能靠的是蹲在 natives 注册那一刻的 uprobe。注册只发生一次、且远早于"这个 App 出现在屏幕上"，
+     * 所以挂载必须赶在启动之前——这也是 [com.wangzan101.mika.core.cap.phone.LaunchApp] 先问一句的原因。
+     *
+     * 已经不巧错过注册（进程在跑、通道没命中）时返回 [CapturePreheat.RESTART_REQUIRED]：调用方冷启动一次即可。
+     */
+    override suspend fun prepareCapture(packageName: String): CapturePreheat {
+        if (isClosed.get()) return CapturePreheat.FAILED
+        val pkg = packageName.trim()
+        if (pkg.isEmpty()) return CapturePreheat.NOT_NEEDED
+        val flags = FeatureFlags.get(context)
+        val enabled = flags.networkCaptureEnabled()
+        val rooted = rootAvailable()
+        val wantsBridge = requiresProcessBridge(pkg)
+        Log.i(TAG, "prepareCapture($pkg): enabled=$enabled root=$rooted bridge=$wantsBridge capturing=${isCapturing()}")
+        if (!enabled) return CapturePreheat.NOT_NEEDED
+        // 免 root 的 VPN 模式拿到的是 TLS 之后、App 自己那一层之前的字节；没有进程内通道，也就没什么可提前挂的。
+        // 这里只问"有没有 root"，不问引擎自己怎么判断设备——助手还没连上时那个判断会给出假阴性，
+        // 而这条通道本来就只在 root 下存在。
+        if (!rooted) return CapturePreheat.NOT_NEEDED
+        if (!wantsBridge) return CapturePreheat.NOT_NEEDED
+
+        val attached = withContext(Dispatchers.IO) { attachToPackage(pkg, flags.networkCaptureMode()) }
+        if (!attached) {
+            Log.w(TAG, "capture preheat failed for $pkg: ${lastCaptureError()}")
+            return CapturePreheat.FAILED
+        }
+        if (bridgeArmed()) {
+            Log.i(TAG, "capture preheat for $pkg: bridge armed")
+            return CapturePreheat.READY
+        }
+        // 还没命中注册。分不清是"它还没起来"还是"早起来了、注册已经错过"——而这两件事要的动作正好相反,
+        // 且从 App 自己的 uid 里查不到别的应用有没有在跑(别的应用的 /proc 看不见,pidof 也答不出来)。
+        // 一律按"要冷启动"算:App 本来没在跑时,冷启动就是普通启动,差别只是结果里多一句说明。
+        Log.i(TAG, "capture preheat for $pkg: attached, bridge idle -> cold start")
+        return CapturePreheat.RESTART_REQUIRED
+    }
+
+    /** 有没有 root（eBPF 与进程内通道的前提）；助手没连着也照样答得出来。 */
+    private fun rootAvailable(): Boolean = runCatching {
+        (android.os.Process.myUid() == 0) || (LocalRootEbpfCaptureEngine.findSuBinary() != null)
+    }.getOrDefault(false)
+
+    /** 这个包是否要靠进程内通道才有明文（插件里声明了 jniHookRules）。 */
+    private fun requiresProcessBridge(pkg: String): Boolean = runCatching {
+        NetworkCapturePluginRegistry.resolveEbpfProfile(pkg).jniHookRules.isNotEmpty()
+    }.getOrDefault(false)
+
+    /** 本次抓包有没有真的命中过 natives 注册。 */
+    private fun bridgeArmed(): Boolean = (internalAgentManager?.localJniHookCount() ?: 0) > 0
+
+    /**
+     * 抓包在跑、明文却拿不到:插件要求进程内通道，而这条通道一次也没命中。
+     *
+     * 不再去问"App 在不在跑":从 App 自己的 uid 里看不到别的应用的进程,问出来的空不算数,
+     * 而这条通道是否命中本身就是最准的证据——命中过一次就说明它在这个进程里能用。
+     */
+    private fun plaintextBridgeMissing(): Boolean {
+        val mgr = internalAgentManager ?: return false
+        if (!mgr.isCapturing) return false
+        val pkg = mgr.targetPackage ?: return false
+        if (!requiresProcessBridge(pkg)) return false
+        return !bridgeArmed()
+    }
+
+    /**
      * 若曾经设置过目标包但当前抓取已断开（例如首次 attach 时目标进程尚未加载或临时失败），按冷却间隔自动尝试恢复。
      */
     @Synchronized
@@ -427,7 +507,10 @@ class PhoneNetworkManager(
         } else {
             bodyBytes?.let { java.util.Base64.getEncoder().encodeToString(it) }
         }
+        // 拿到的是一包"读不出来"的字节，而这次抓包压根没蹲到进程内解密:别让它冒充成功
+        val sealedBody = asString && bodyStr?.contains("\"_binaryPayload\"") == true && plaintextBridgeMissing()
         val error = when {
+            sealedBody -> PLAINTEXT_BRIDGE_MISSING
             bodyBytes != null && bodyBytes.isEmpty() && bodyStr == null ->
                 "empty_response_body"
             bodyBytes != null || bodyStr != null -> null
@@ -451,7 +534,8 @@ class PhoneNetworkManager(
             body = bodyStr,
             isTruncated = (bodyBytes?.size ?: 0) >= MAX_PERSISTED_BODY_BYTES,
             error = error,
-            contentEncoding = entry?.contentEncoding
+            contentEncoding = entry?.contentEncoding,
+            hint = if (sealedBody) PLAINTEXT_BRIDGE_HINT else null
         )
     }
 
@@ -496,7 +580,8 @@ class PhoneNetworkManager(
             capturing = capturing,
             activeMode = modeName,
             targetPackage = mgr?.targetPackage,
-            error = mgr?.lastError ?: if (!capturing) "capture_not_active" else null
+            error = mgr?.lastError ?: if (!capturing) "capture_not_active" else null,
+            warnings = if (plaintextBridgeMissing()) listOf(PLAINTEXT_BRIDGE_MISSING) else emptyList()
         )
     }
 
