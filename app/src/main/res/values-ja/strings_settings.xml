@@ -273,6 +273,11 @@
     <string name="network_capture_plugins_field_abi_strmode">libc++ string レイアウト（0=alt, 1=LSB）</string>
     <string name="network_capture_plugins_field_abi_slots">Adapter 仮想テーブルスロット（例: 3,4,5）</string>
     <string name="network_capture_plugins_field_abi_sigs">Cronet JNI シグネチャ（カンマまたは改行区切り）</string>
+    <string name="network_capture_plugins_field_jni_rules">プロセス内デコーダー入口（lib | メソッド, メソッド）</string>
+    <string name="network_capture_plugins_jni_hint">1 行に 1 件：ライブラリ名の部分文字列 | native メソッド名。アプリが自身のプロセス内でレスポンス本文を復号する場合に必要です。この入口がないと、キャプチャには暗号文しか見えません。</string>
+    <string name="network_capture_plugins_tag_external">外部プラグイン</string>
+    <string name="network_capture_plugins_field_decoder">レスポンスデコード（JSON）</string>
+    <string name="network_capture_plugins_decoder_hint">コンテナのマジック値・ヘッダー内の位置・圧縮方式をここで宣言します。空欄ならレスポンス本文をそのまま通します。形式エラー時は保存を拒否します。</string>
     <string name="network_capture_plugins_invalid">パッケージ名、ライブラリ名、オフセット値（0x... または 10 進数）、および ABI パラメータを確認してください。</string>
     <string name="network_capture_plugins_restore_one">組み込み既定に戻す</string>
     <string name="network_capture_plugins_delete_one">規則を削除</string>

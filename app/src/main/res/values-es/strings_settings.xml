@@ -281,6 +281,11 @@
     <string name="network_capture_plugins_field_abi_strmode">Modo cadena libc++ (0=alt, 1=LSB)</string>
     <string name="network_capture_plugins_field_abi_slots">Ranuras vtable del adaptador (ej. 3,4,5)</string>
     <string name="network_capture_plugins_field_abi_sigs">Firmas JNI de Cronet (por coma o línea)</string>
+    <string name="network_capture_plugins_field_jni_rules">Entradas del decodificador en proceso (lib | método, método)</string>
+    <string name="network_capture_plugins_jni_hint">Una por línea: subcadena de la biblioteca | nombres de métodos nativos. Necesario cuando una app descifra los cuerpos dentro de su propio proceso; sin esta entrada la captura solo ve texto cifrado.</string>
+    <string name="network_capture_plugins_tag_external">Complemento externo</string>
+    <string name="network_capture_plugins_field_decoder">Decodificación de respuesta (JSON)</string>
+    <string name="network_capture_plugins_decoder_hint">El magic del contenedor, los campos de cabecera y la compresión se declaran aquí. Vacío deja el cuerpo intacto. Un formato inválido rechaza el guardado.</string>
     <string name="network_capture_plugins_invalid">Comprueba paquete, librería, desplazamientos (0x... o decimal) y parámetros ABI.</string>
     <string name="network_capture_plugins_restore_one">Restaurar valor integrado</string>
     <string name="network_capture_plugins_delete_one">Eliminar regla</string>

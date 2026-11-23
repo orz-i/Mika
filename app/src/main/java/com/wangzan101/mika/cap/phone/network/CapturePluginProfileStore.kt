@@ -5,6 +5,7 @@ import android.util.Log
 import com.agent.use.client.network.ebpf.LocalRootEbpfCaptureEngine
 import com.agent.use.common.network.plugin.EbpfProbeProfile
 import com.agent.use.common.network.plugin.NetworkCapturePluginRegistry
+import com.agent.use.common.network.plugin.external.ExternalCapturePluginLoader
 import java.io.File
 
 /**
@@ -15,6 +16,8 @@ data class CapturePluginEntry(
     val profile: EbpfProbeProfile,
     val isBuiltin: Boolean,
     val isOverridden: Boolean,
+    /** 由 `filesDir/capture_plugins` 里的插件包提供（不是编译进 aau 的内置插件）。 */
+    val isExternal: Boolean = false,
 )
 
 /**
@@ -32,8 +35,16 @@ class CapturePluginProfileStore(private val filesDir: File?) {
     val overrideFile: File?
         get() = filesDir?.let { File(it, LocalRootEbpfCaptureEngine.PLUGIN_OVERRIDE_FILE_NAME) }
 
+    /** 外部插件包目录：`filesDir/capture_plugins/<任意名>/plugin.json`。 */
+    val pluginsDir: File?
+        get() = filesDir?.let { File(it, ExternalCapturePluginLoader.PLUGINS_DIR_NAME) }
+
+    fun ensurePluginsDir(): File? = pluginsDir?.apply { if (!isDirectory) mkdirs() }
+
     @Synchronized
     fun loadIntoRegistry(): Int {
+        // 先装外部插件包，再套覆盖配置：覆盖是"改参数"，本来就该后落。
+        loadExternalPlugins()
         val file = overrideFile ?: return 0
         if (!file.isFile) return 0
         return try {
@@ -42,6 +53,30 @@ class CapturePluginProfileStore(private val filesDir: File?) {
             Log.w(TAG, "Failed to load capture plugin overrides: ${t.message}")
             0
         }
+    }
+
+    /**
+     * 加载外部插件包（L3）。与覆盖配置分开：一个是"改内置插件的参数"，一个是"新增一个插件"。
+     *
+     * 单个包坏掉只记日志，不影响其它包，也不影响抓包本身。
+     */
+    @Synchronized
+    fun loadExternalPlugins(): ExternalCapturePluginLoader.Report {
+        val dir = pluginsDir
+        val parent = javaClass.classLoader ?: return ExternalCapturePluginLoader.Report()
+        val report = try {
+            ExternalCapturePluginLoader.load(dir, parent)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to scan external capture plugins: ${t.message}")
+            return ExternalCapturePluginLoader.Report()
+        }
+        if (report.loaded.isNotEmpty()) {
+            Log.i(TAG, "Loaded external capture plugins: " + report.loaded.joinToString { it.id })
+        }
+        for (bad in report.rejected) {
+            Log.w(TAG, "Rejected capture plugin ${bad.path}: ${bad.reason}")
+        }
+        return report
     }
 
     @Synchronized
@@ -88,6 +123,7 @@ class CapturePluginProfileStore(private val filesDir: File?) {
                 profile = effective,
                 isBuiltin = builtin != null,
                 isOverridden = override != null,
+                isExternal = NetworkCapturePluginRegistry.isExternalPluginPackage(pkg),
             )
         }
     }

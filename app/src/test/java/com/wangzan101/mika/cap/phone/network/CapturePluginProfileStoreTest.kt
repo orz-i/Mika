@@ -15,6 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 class CapturePluginProfileStoreTest {
 
@@ -105,5 +106,146 @@ class CapturePluginProfileStoreTest {
             sslRead = "0x100",
         ).toProfile()
         assertNull(invalidHex)
+    }
+
+    @Test
+    fun draftKeepsTheContainerMagicWhenOnlyAMethodNameChanges() {
+        // 界面只编辑「库 + 方法名」，但 BOSS 那条规则还带 magic=BZPBlock。改一个方法名再保存，
+        // 魔数不能跟着变成 null —— 否则带容器的返回会被判成误读丢掉。
+        val builtin = CapturePluginProfileStore(tempFolder.root).snapshotEntries()
+            .first { it.packageName == "com.hpbr.bosszhipin" }
+        val renamed = CapturePluginDraft.fromEntry(builtin).copy(
+            jniRules = "libyzwg.so | nativeDecodeContentV2"
+        ).toProfile()
+
+        assertNotNull(renamed)
+        val rule = renamed!!.jniHookRules.single()
+        assertEquals("libyzwg.so", rule.libSubstring)
+        assertEquals(listOf("nativeDecodeContentV2"), rule.methodNames)
+        assertEquals("BZPBlock", rule.magic)
+        assertEquals(4 * 1024 * 1024, rule.maxBytes)
+    }
+
+    @Test
+    fun draftWithOnlyDecoderEntriesDoesNotReplaceBuiltinRules() {
+        // 只补进程内入口、没碰任何偏移：不能把内置规则整个替换掉，
+        // 否则为了拿明文反而把抓包本身（SSL 偏移）拆了。
+        val builtin = CapturePluginProfileStore(tempFolder.root).snapshotEntries()
+            .first { it.packageName == "com.hpbr.bosszhipin" }
+        val profile = CapturePluginDraft.fromEntry(builtin).copy(
+            quickOffsetsEnabled = false,
+            sslWrite = "",
+            sslRead = "",
+            crCreate = "",
+            crHeaders = "",
+            crBody = "",
+            crFinish = "",
+            abiRawHeaders = "",
+            abiIoBufferData = "",
+            abiStringLayoutMode = "",
+            abiVtableSlots = "",
+            abiJniSignatures = "",
+        ).toProfile()
+
+        assertNotNull(profile)
+        assertFalse(profile!!.replaceBuiltinOffsets)
+        assertEquals(1, profile.jniHookRules.size)
+    }
+
+    @Test
+    fun draftRejectsMalformedDecoderEntry() {
+        val missingSeparator = CapturePluginDraft(
+            isNew = true,
+            packageName = "com.demo.app",
+            quickOffsetsEnabled = false,
+            jniRules = "libyzwg.so nativeDecodeContent",
+        ).toProfile()
+        assertNull(missingSeparator)
+
+        val missingMethods = CapturePluginDraft(
+            isNew = true,
+            packageName = "com.demo.app",
+            quickOffsetsEnabled = false,
+            jniRules = "libyzwg.so |",
+        ).toProfile()
+        assertNull(missingMethods)
+
+        // 只有注释 = 没有任何入口 = 清空，跟「一个字段都不填」同义，不算格式错误。
+        val onlyComment = CapturePluginDraft(
+            isNew = true,
+            packageName = "com.demo.app",
+            quickOffsetsEnabled = false,
+            jniRules = "# 这个 App 不需要进程内通道",
+        ).toProfile()
+        assertNotNull(onlyComment)
+        assertTrue(onlyComment!!.jniHookRules.isEmpty())
+    }
+
+    @Test
+    fun declarativeDecoderSurvivesSaveAndIsRegistered() {
+        // L2：不写一行 Kotlin，只靠一段 JSON 就能给新 App 配解码管道。
+        val draft = CapturePluginDraft(
+            isNew = true,
+            packageName = "com.acme.market",
+            quickOffsetsEnabled = false,
+            decoderJson = """
+                {
+                  "hostFix": { "headerPriority": ["x-acme-host"], "defaultHost": "api.acme.com" },
+                  "responseCodecs": [
+                    { "id": "acme", "steps": [{ "op": "base64" }] }
+                  ]
+                }
+            """.trimIndent(),
+        )
+        val profile = draft.toProfile()
+        assertNotNull(profile)
+        assertEquals("api.acme.com", profile!!.declarative.hostFix?.defaultHost)
+        assertEquals(1, profile.declarative.responseCodecs.size)
+
+        CapturePluginProfileStore(tempFolder.root).saveProfile("com.acme.market", profile)
+
+        val reloaded = CapturePluginProfileStore(tempFolder.root)
+        reloaded.loadIntoRegistry()
+        val entry = reloaded.snapshotEntries().first { it.packageName == "com.acme.market" }
+        assertEquals(profile.declarative, entry.profile.declarative)
+
+        val middleware = NetworkCapturePluginRegistry.resolveMiddlewares("com.acme.market")
+            .firstOrNull { it.id.startsWith("declarative:") }
+        assertNotNull("保存后的解码管道必须真的挂到中间件列表里", middleware)
+    }
+
+    @Test
+    fun draftRejectsBrokenDecoderJson() {
+        val broken = CapturePluginDraft(
+            isNew = true,
+            packageName = "com.acme.market",
+            quickOffsetsEnabled = false,
+            decoderJson = "{ \"responseCodecs\": [ { \"steps\": [ { \"op\": ",
+        ).toProfile()
+        assertNull("坏 JSON 必须拒绝保存，不能静默当成空配置", broken)
+    }
+
+    @Test
+    fun externalPluginPackageShowsUpAsExternal() {
+        val pkgDir = File(tempFolder.root, "capture_plugins/acme-ext").apply { mkdirs() }
+        File(pkgDir, "plugin.json").writeText(
+            """
+            {
+              "id": "acme.ext",
+              "apiVersion": 1,
+              "packages": ["com.acme.ext"],
+              "responseCodecs": [{ "steps": [{ "op": "base64" }] }]
+            }
+            """.trimIndent()
+        )
+
+        val store = CapturePluginProfileStore(tempFolder.root)
+        val report = store.loadExternalPlugins()
+        assertEquals(1, report.loaded.size)
+        val entry = store.snapshotEntries().first { it.packageName == "com.acme.ext" }
+        assertTrue(entry.isExternal)
+        assertEquals(1, entry.profile.declarative.responseCodecs.size)
+
+        NetworkCapturePluginRegistry.unregister("external.acme.ext")
     }
 }

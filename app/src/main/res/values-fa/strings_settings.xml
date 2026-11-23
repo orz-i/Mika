@@ -288,6 +288,11 @@
     <string name="network_capture_plugins_field_abi_strmode">چیدمان رشته libc++ (0=alt, 1=LSB)</string>
     <string name="network_capture_plugins_field_abi_slots">اسلات‌های vtable آداپتور (مثلا 3,4,5)</string>
     <string name="network_capture_plugins_field_abi_sigs">امضاهای JNI کرونت (با کاما یا خط جدید)</string>
+    <string name="network_capture_plugins_field_jni_rules">ورودی‌های رمزگشای درون‌فرآیندی (lib | method, method)</string>
+    <string name="network_capture_plugins_jni_hint">هر خط یک ورودی: بخشی از نام کتابخانه | نام متدهای native. زمانی لازم است که برنامه بدنه پاسخ را درون فرآیند خود رمزگشایی می‌کند — بدون این ورودی، ضبط فقط متن رمزشده را می‌بیند.</string>
+    <string name="network_capture_plugins_tag_external">افزونه خارجی</string>
+    <string name="network_capture_plugins_field_decoder">رمزگشایی پاسخ (JSON)</string>
+    <string name="network_capture_plugins_decoder_hint">جادوی محفظه، جای فیلدهای سرآیند و الگوریتم فشرده‌سازی اینجا اعلام می‌شود. خالی یعنی بدنه بدون تغییر می‌ماند. قالب نادرست ذخیره را رد می‌کند.</string>
     <string name="network_capture_plugins_invalid">نام بسته، کتابخانه، مقادیر آفست (0x... یا ده‌دهی) و پارامترهای ABI را بررسی کنید.</string>
     <string name="network_capture_plugins_restore_one">بازگردانی به پیش‌فرض داخلی</string>
     <string name="network_capture_plugins_delete_one">حذف قاعده</string>

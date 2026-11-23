@@ -293,6 +293,11 @@
     <string name="network_capture_plugins_field_abi_strmode">نمط نصوص libc++ (0=alt, 1=LSB)</string>
     <string name="network_capture_plugins_field_abi_slots">خانات vtable للمحول (مثل 3,4,5)</string>
     <string name="network_capture_plugins_field_abi_sigs">تواقيع JNI لـ Cronet (مفصولة بفاصلة أو سطر)</string>
+    <string name="network_capture_plugins_field_jni_rules">مدخلات فك الترميز داخل العملية (lib | method, method)</string>
+    <string name="network_capture_plugins_jni_hint">سطر واحد لكل إدخال: جزء من اسم المكتبة | أسماء دوال native. مطلوب عندما يفك التطبيق ترميز أجسام الاستجابات داخل عمليته — بدون هذا الإدخال لا يرى الاعتراض سوى النص المشفّر.</string>
+    <string name="network_capture_plugins_tag_external">إضافة خارجية</string>
+    <string name="network_capture_plugins_field_decoder">فك ترميز الاستجابة (JSON)</string>
+    <string name="network_capture_plugins_decoder_hint">يُعلن هنا عن سحر الحاوية ومواضع الحقول وخوارزمية الضغط. تركه فارغًا يعني تمرير الجسم كما هو. الصيغة الخاطئة ترفض الحفظ.</string>
     <string name="network_capture_plugins_invalid">تحقق من اسم الحزمة واسم المكتبة وقيم الإزاحة (0x... أو عشري) ومعاملات ABI.</string>
     <string name="network_capture_plugins_restore_one">استعادة الافتراضي المدمج</string>
     <string name="network_capture_plugins_delete_one">حذف القاعدة</string>

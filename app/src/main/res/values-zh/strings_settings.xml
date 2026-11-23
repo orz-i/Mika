@@ -238,6 +238,11 @@
     <string name="network_capture_plugins_field_abi_strmode">libc++ string 布局模式（0=alt, 1=LSB）</string>
     <string name="network_capture_plugins_field_abi_slots">Adapter 虚表槽位（如 3,4,5）</string>
     <string name="network_capture_plugins_field_abi_sigs">Cronet JNI 签名（逗号或换行分隔）</string>
+    <string name="network_capture_plugins_field_jni_rules">进程内解码入口（库 | 方法名, 方法名）</string>
+    <string name="network_capture_plugins_jni_hint">每行一条：库名子串 | native 方法名。App 在自己进程里解密响应体时需要它——挂不上这个入口，抓到的就只有密文。</string>
+    <string name="network_capture_plugins_tag_external">外部插件</string>
+    <string name="network_capture_plugins_field_decoder">响应解码管道（JSON）</string>
+    <string name="network_capture_plugins_decoder_hint">容器魔数、头部字段位置、压缩算法都在这里声明；留空表示不处理响应体。格式错误会直接拒绝保存，不会静默丢掉规则。</string>
     <string name="network_capture_plugins_invalid">请检查包名、SO 库子串、偏移格式（0x... 或十进制）及 ABI 参数是否合法。</string>
     <string name="network_capture_plugins_restore_one">恢复此应用内置默认</string>
     <string name="network_capture_plugins_delete_one">删除此规则</string>

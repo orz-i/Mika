@@ -32,10 +32,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.agent.use.client.network.ebpf.EbpfDiscoveryResult
 import com.agent.use.client.network.ebpf.LocalRootEbpfCaptureEngine
+import com.agent.use.common.network.plugin.DeclarativeConfigs
 import com.agent.use.common.network.plugin.EbpfCronetAbiRule
 import com.agent.use.common.network.plugin.EbpfCronetOffsetRule
 import com.agent.use.common.network.plugin.EbpfProbeProfile
 import com.agent.use.common.network.plugin.EbpfSslOffsetRule
+import com.agent.use.common.network.plugin.JniHookRule
 import com.wangzan101.mika.R
 import com.wangzan101.mika.cap.phone.a11y.launchableApps
 import com.wangzan101.mika.cap.phone.network.CapturePluginEntry
@@ -78,6 +80,23 @@ internal data class CapturePluginDraft(
     val abiStringLayoutMode: String = "0",
     val abiVtableSlots: String = "3,4,5",
     val abiJniSignatures: String = "(Ljava/lang/Object;JLjava/lang/String;IZZZIZIIJ)J",
+    /** 进程内解码入口，每行一条：`lib 子串 | 方法名, 方法名`。留空表示这个 App 不需要进程内通道。 */
+    val jniRules: String = "",
+    /**
+     * 编辑前的入口规则，用来继承界面上没有展示的字段（`magic`、`maxBytes`、`captureReturn`）。
+     *
+     * 不继承就会出事：BOSS 那条规则带 `magic = "BZPBlock"`，界面只显示库名和方法名，
+     * 用户改一个方法名再保存，容器魔数就变成 null —— 带容器的返回会被 loader 当成误读丢掉，
+     * 明面上配置还在，实际少了一半数据。
+     */
+    val sourceJniRules: List<JniHookRule> = emptyList(),
+    /**
+     * 响应解码管道（JSON）：`hostFix` + `responseCodecs`。
+     *
+     * 这是「新 App 不用重编 aau」的关键开关：容器魔数、头部字段位置、压缩算法都在这里声明，
+     * 底层只负责把字节读出来。留空表示不处理响应体。
+     */
+    val decoderJson: String = "",
 ) {
     fun toProfile(): EbpfProbeProfile? {
         val pkg = packageName.trim()
@@ -173,7 +192,14 @@ internal data class CapturePluginDraft(
             null
         }
 
-        if (quickOffsetsEnabled && !hasSsl && !hasCronet && abiRule == null) {
+        val jniHookRules = parseJniRules(jniRules, sourceJniRules) ?: return null
+        val declarative = DeclarativeConfigs.parse(decoderJson) ?: return null
+
+        // 全是空的才算无效。只有进程内解码入口也是有效配置——那种 App 的标准 TLS 偏移本来就由
+        // 内置规则负责，用户要补的只是"明文在它自己的 decoder 里"这一个事实。
+        if (quickOffsetsEnabled &&
+            !hasSsl && !hasCronet && abiRule == null && jniHookRules.isEmpty() && declarative.isEmpty
+        ) {
             return null
         }
 
@@ -181,8 +207,50 @@ internal data class CapturePluginDraft(
             sslOffsetRules = sslRules,
             cronetOffsetRules = cronetRules,
             cronetAbiRule = abiRule,
-            replaceBuiltinOffsets = isBuiltinEntry || !quickOffsetsEnabled,
+            jniHookRules = jniHookRules,
+            declarative = declarative,
+            // 「替换内置」只在用户确实给了偏移时成立。一个偏移都没有、只有进程内入口时，
+            // 内置那条 SSL/Cronet 规则是这个 App 能有流量的前提，丢掉它等于为了拿明文
+            // 反而把抓包本身拆了。
+            replaceBuiltinOffsets = when {
+                !hasSsl && !hasCronet && abiRule == null -> false
+                !quickOffsetsEnabled -> true
+                else -> isBuiltinEntry
+            },
         )
+    }
+
+    /**
+     * 解析进程内解码入口，每行 `lib 子串 | 方法名, 方法名`。
+     *
+     * 格式不对返回 null，让保存直接失败——静默丢掉一行会让用户以为配好了，实际只有部分入口在挂。
+     * 空行与 `#` 开头的行跳过，方便在界面上留注释。
+     *
+     * 同一条库的规则从 [inherited] 继承界面上没有展示的字段：界面只编辑「库 + 方法名」，
+     * 而一条规则还带 `magic` / `maxBytes` / `captureReturn` 这些声明式常量，丢掉它们会让
+     * 带容器的返回被判为误读。
+     */
+    private fun parseJniRules(raw: String, inherited: List<JniHookRule>): List<JniHookRule>? {
+        val rules = ArrayList<JniHookRule>()
+        for (line in raw.split('\n')) {
+            val text = line.trim()
+            if (text.isEmpty() || text.startsWith("#")) continue
+            val sep = text.indexOf('|')
+            if (sep <= 0) return null
+            val lib = text.substring(0, sep).trim()
+            val names = text.substring(sep + 1)
+                .split(',', '|', ';')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            if (lib.isEmpty() || names.isEmpty()) return null
+            val base = inherited.firstOrNull { it.libSubstring.equals(lib, ignoreCase = true) }
+            rules += if (base != null) {
+                base.copy(libSubstring = lib, methodNames = names)
+            } else {
+                JniHookRule(libSubstring = lib, methodNames = names)
+            }
+        }
+        return rules
     }
 
     companion object {
@@ -211,6 +279,11 @@ internal data class CapturePluginDraft(
                 abiStringLayoutMode = abi?.stringLayoutMode?.toString().orEmpty(),
                 abiVtableSlots = abi?.vtableSlots?.let { "${it.first},${it.second},${it.third}" }.orEmpty(),
                 abiJniSignatures = abi?.jniSignatures?.joinToString("\n").orEmpty(),
+                jniRules = entry.profile.jniHookRules.joinToString("\n") { rule ->
+                    "${rule.libSubstring} | ${rule.methodNames.joinToString(", ")}"
+                },
+                sourceJniRules = entry.profile.jniHookRules,
+                decoderJson = DeclarativeConfigs.toJson(entry.profile.declarative),
             )
         }
     }
@@ -236,6 +309,18 @@ internal object CapturePluginCopy {
         }
         profile.cronetAbiRule?.let { abi ->
             parts += "ABI: rawHdr=${EbpfProbeProfile.formatOffset(abi.rawHeadersOffset.toLong())} · ioBuf=${EbpfProbeProfile.formatOffset(abi.ioBufferDataOffset.toLong())} · strMode=${abi.stringLayoutMode} · slots=${abi.vtableSlots.first},${abi.vtableSlots.second},${abi.vtableSlots.third}"
+        }
+        profile.jniHookRules.forEach { rule ->
+            val magic = rule.magic?.takeIf { it.isNotBlank() }?.let { " · magic=$it" }.orEmpty()
+            parts += "JNI: ${rule.libSubstring} → ${rule.methodNames.joinToString(", ")}$magic"
+        }
+        profile.declarative.hostFix?.let { fix ->
+            val fallback = fix.defaultHost?.takeIf { it.isNotBlank() }?.let { " · fallback=$it" }.orEmpty()
+            parts += "Host: ${fix.headerPriority.joinToString(" > ")}$fallback"
+        }
+        profile.declarative.responseCodecs.forEach { rule ->
+            val prefix = rule.id?.takeIf { it.isNotBlank() }?.let { "$it: " }.orEmpty()
+            parts += "Decode: $prefix" + rule.steps.joinToString(" → ") { it.traceName }
         }
         return parts.joinToString("\n")
     }
@@ -407,6 +492,7 @@ fun CapturePluginProfilesContent(
                     else -> stringResource(R.string.network_capture_plugins_generic_only_sub)
                 }
                 val (badge, tone) = when {
+                    entry.isExternal -> stringResource(R.string.network_capture_plugins_tag_external) to PillTone.Ok
                     offsetsDisabled -> stringResource(R.string.network_capture_plugins_tag_disabled) to PillTone.Warn
                     entry.isOverridden -> stringResource(R.string.network_capture_plugins_tag_custom) to PillTone.Ok
                     else -> stringResource(R.string.network_capture_plugins_tag_builtin) to PillTone.Neutral
@@ -624,6 +710,35 @@ fun CapturePluginProfilesContent(
                         label = { Text(stringResource(R.string.network_capture_plugins_field_abi_sigs)) },
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                    )
+                    // 进程内解码入口与偏移无关：关掉快速偏移也该能配，有些 App 的明文只在它自己
+                    // 的 decoder 里，标准 TLS 偏移照旧由内置规则负责。
+                    OutlinedTextField(
+                        value = currentDraft.jniRules,
+                        onValueChange = { invalidDraft = false; draft = currentDraft.copy(jniRules = it) },
+                        label = { Text(stringResource(R.string.network_capture_plugins_field_jni_rules)) },
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp).testTag("capture-plugin-input-jni-rules"),
+                    )
+                    Text(
+                        stringResource(R.string.network_capture_plugins_jni_hint),
+                        style = MikaType.Caption,
+                        color = MikaTheme.colors.ink3,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+
+                    OutlinedTextField(
+                        value = currentDraft.decoderJson,
+                        onValueChange = { invalidDraft = false; draft = currentDraft.copy(decoderJson = it) },
+                        label = { Text(stringResource(R.string.network_capture_plugins_field_decoder)) },
+                        maxLines = 8,
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp).testTag("capture-plugin-input-decoder"),
+                    )
+                    Text(
+                        stringResource(R.string.network_capture_plugins_decoder_hint),
+                        style = MikaType.Caption,
+                        color = MikaTheme.colors.ink3,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
 
                     if (invalidDraft) {
