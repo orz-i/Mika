@@ -24,6 +24,7 @@ import com.wangzan101.mika.core.cap.phone.GesturePacing
 import com.wangzan101.mika.core.cap.phone.TypingPacing
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.APP_IN_USE_BY_OTHER_TASK
+import com.wangzan101.mika.core.uistate.DEFAULT_SWIPE_MS
 import com.wangzan101.mika.core.uistate.AppWait
 import com.wangzan101.mika.core.uistate.AppCopy
 import com.wangzan101.mika.core.uistate.AppProfiles
@@ -735,13 +736,25 @@ class AndroidScreen(
         val node = start?.let { ancestorOrSelf(it) { n -> n.isScrollable } }
         if (node == null) {
             // 没有可滚动的控件时用屏幕中部的滑动代替
-            val cx = screenWidth / 2
-            val (from, to) = if (down) screenHeight * 3 / 4 to screenHeight / 4 else screenHeight / 4 to screenHeight * 3 / 4
-            val r = swipe(cx, from, cx, to)
-            return@withContext if (r is ActionResult.Ok && relocatedTo != null) r.copy(relocated = true, relocatedTo = relocatedTo) else r
+            return@withContext verified(relocatedTo = relocatedTo) { fingerScroll(down) }
         }
         val action = if (down) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
-        verified(relocatedTo = relocatedTo) { node.performAction(action) }
+        // 控件能滚就让它滚(带动效和吸附,比手势准);控件不认这个动作(App 自己画的列表、Pager、Compose 的常见情况)时退回手势,
+        // 不直接报 action_failed——信息流这类屏只有手势推得动
+        val touchFallback: suspend (EventClock) -> Boolean = { clock ->
+            clock.mark()
+            fingerScroll(down)
+        }
+        verified(relocatedTo = relocatedTo, fallback = touchFallback, retryWhenUnchanged = false) {
+            node.performAction(action)
+        }
+    }
+
+    /** 屏幕中部的纵向滑动:往里看更下面([down] 为 true)时手指往上划。 */
+    private suspend fun fingerScroll(down: Boolean): Boolean {
+        val cx = screenWidth / 2
+        val (from, to) = if (down) screenHeight * 3 / 4 to screenHeight / 4 else screenHeight / 4 to screenHeight * 3 / 4
+        return drag(listOf(cx to from, cx to to), DEFAULT_SWIPE_MS, bow = true)
     }
 
     /**
