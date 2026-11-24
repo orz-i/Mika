@@ -45,6 +45,11 @@ data class SystemStatus(
     val helperRestart: HelperRestart = HelperRestart.None,
     /** 开机后用户还没解锁过一次([android.os.UserManager.isUserUnlocked] 为假):无障碍服务这时本来就绑不上。 */
     val userLocked: Boolean = false,
+    /**
+     * 开了「免无障碍」(见 FeatureFlags.a11yFreeMode):读屏走 shell 快照、手势走定向注入,
+     * 不依赖无障碍服务,所以它没开不算挡住手机操作。
+     */
+    val a11yFree: Boolean = false,
 )
 
 fun SystemStatus.notificationOverview() = NotificationOverview.of(
@@ -92,7 +97,8 @@ object Prerequisites {
             if (status.sdkInt >= MIN_SDK && status.builtinShell != BuiltinShellStatus.Running) {
                 add(Problem.PhoneHelper(status.builtinShell))
             }
-            if (status.sdkInt >= MIN_SDK && status.accessibility != AccessibilityState.On) {
+            // 免无障碍时这一项不挡:手机操作改走 shell 通道(见 a11yFree)
+            if (status.sdkInt >= MIN_SDK && status.accessibility != AccessibilityState.On && !status.a11yFree) {
                 add(Problem.Accessibility(status.accessibility, status.userLocked, status.restrictedSettings))
             }
             if (!hasMainModel) add(Problem.NoModel)

@@ -95,7 +95,7 @@ fun PhoneOpsScreen(
     PageScaffold(stringResource(R.string.settings_phone_ops), onBack) {
         GroupLabel(stringResource(R.string.settings_status))
         GroupCard {
-            val (a11yText, a11yTone) = StatusCopy.accessibilityValue(status.accessibility)
+            val (a11yText, a11yTone) = StatusCopy.accessibilityValue(status.accessibility, status.a11yFree)
             ListRow(
                 MikaIcons.Hand, stringResource(R.string.settings_a11y), stringResource(R.string.settings_a11y_sub), first = true,
                 onClick = check.problems.firstOrNull { it is Problem.Accessibility }?.let { { onProblem(it) } },

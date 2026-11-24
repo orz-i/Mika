@@ -25,4 +25,7 @@
     <string name="dev_speed">速度</string>
     <string name="dev_experiments">実験的機能</string>
     <string name="dev_run_log">実行ログ</string>
+    <string name="dev_a11y_free">アクセシビリティサービスなしで実行</string>
+    <string name="dev_a11y_free_sub">代わりに shell 経由で画面を読み取ります。タップは同じように動きますが、要素はスナップショットで、通知もありません。アプリが「インストールされているアクセシビリティサービス」をリスク信号として扱う場合に使います。設定 › ユーザー補助で Mika をオフにすると、Mika はそれを要求しなくなります。</string>
+    <string name="dev_a11y_group">ユーザー補助</string>
 </resources>

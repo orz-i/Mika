@@ -12,6 +12,7 @@
     <string name="state_on">On</string>
     <string name="state_off">Off</string>
     <string name="state_not_running">Not running</string>
+    <string name="state_a11y_free">A11y-free</string>
     <string name="stop_summarizing">Wrapping up what was done…</string>
     <string name="notifications_title">Notifications</string>
     <string name="channel_progress">Task progress</string>

@@ -11,6 +11,7 @@
     <string name="state_on">已開啟</string>
     <string name="state_off">未開啟</string>
     <string name="state_not_running">未執行</string>
+    <string name="state_a11y_free">免無障礙</string>
     <string name="stop_summarizing">正在整理已做的事…</string>
     <string name="notifications_title">通知</string>
     <string name="channel_progress">任務進度</string>

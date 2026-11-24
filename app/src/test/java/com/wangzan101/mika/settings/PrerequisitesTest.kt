@@ -67,9 +67,19 @@ class PrerequisitesTest {
         }
     }
 
+    /** 免无障碍时服务没开也不算挡住:读屏和手势都改走 shell 通道。 */
     @Test
-    fun restrictedSettingsStateReachesTheAccessibilityProblem() {
-        val c = Prerequisites.check(
+    fun a11yFreeModeDoesNotNeedTheService() {
+        for (a in listOf(AccessibilityState.Off, AccessibilityState.EnabledNotRunning)) {
+            val c = Prerequisites.check(ready.copy(accessibility = a, a11yFree = true), hasMainModel = true)
+            assertTrue(c.canStartTask)
+            assertTrue("still blocked by $a", c.phoneReady)
+            assertEquals(emptyList<Problem>(), c.problems)
+        }
+    }
+
+    @Test
+    fun restrictedSettingsStateReachesTheAccessibilityProblem() {        val c = Prerequisites.check(
             ready.copy(accessibility = AccessibilityState.EnabledNotRunning, restrictedSettings = true),
             hasMainModel = true,
         )

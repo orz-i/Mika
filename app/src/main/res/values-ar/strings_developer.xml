@@ -25,4 +25,7 @@
     <string name="dev_speed">السرعة</string>
     <string name="dev_experiments">التجارب</string>
     <string name="dev_run_log">سجلات التشغيل</string>
+    <string name="dev_a11y_free">التشغيل بدون خدمة إمكانية الوصول</string>
+    <string name="dev_a11y_free_sub">يقرأ الشاشة عبر قناة shell بدلًا من ذلك: النقرات نفسها، لكن العناصر تكون لقطة ولا توجد إشعارات. استخدمه عندما يعتبر تطبيق ما خدمات إمكانية الوصول المثبَّتة إشارة خطر — أوقف Mika أيضًا من الإعدادات › إمكانية الوصول، ولن يطلبه Mika بعد ذلك.</string>
+    <string name="dev_a11y_group">إمكانية الوصول</string>
 </resources>

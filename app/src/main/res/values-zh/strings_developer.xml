@@ -25,4 +25,7 @@
     <string name="dev_speed">速度</string>
     <string name="dev_experiments">实验</string>
     <string name="dev_run_log">运行记录</string>
+    <string name="dev_a11y_free">不用无障碍运行</string>
+    <string name="dev_a11y_free_sub">改用 shell 通道读屏：照样点得动，但读到的元素是快照、也没有通知。某些 App 会把「装了哪些无障碍服务」当风控信号时才需要——记得再去系统设置 › 无障碍里把 Mika 关掉，关掉后 Mika 就不再要求它。</string>
+    <string name="dev_a11y_group">无障碍</string>
 </resources>

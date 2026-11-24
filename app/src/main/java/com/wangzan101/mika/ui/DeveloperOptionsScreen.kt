@@ -66,6 +66,8 @@ fun DeveloperOptionsScreen(
     onBack: () -> Unit,
     grounding: GroundingSetting? = null,
     onGrounding: (Boolean) -> Unit = {},
+    a11yFree: Boolean = false,
+    onA11yFree: ((Boolean) -> Unit)? = null,
     onOpenRunStats: (() -> Unit)? = null,
 ) {
     PageScaffold(tr(R.string.settings_developer), onBack) {
@@ -73,6 +75,14 @@ fun DeveloperOptionsScreen(
         SwitchGroup(DeveloperSwitches.speed(speed), onSpeed)
         GroupLabel(tr(R.string.dev_experiments))
         SwitchGroup(DeveloperSwitches.experimental(speed), onSpeed)
+        if (onA11yFree != null) {
+            GroupLabel(tr(R.string.dev_a11y_group))
+            GroupCard {
+                ListRow(null, tr(R.string.dev_a11y_free), tr(R.string.dev_a11y_free_sub), first = true, onClick = { onA11yFree(!a11yFree) }) {
+                    MikaSwitch(a11yFree, onA11yFree, Modifier.testTag("dev-a11y-free"))
+                }
+            }
+        }
         if (grounding != null) {
             GroupLabel(GroundingCopy.GROUP)
             GroupCard {

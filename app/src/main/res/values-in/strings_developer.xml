@@ -25,4 +25,7 @@
     <string name="dev_speed">Kecepatan</string>
     <string name="dev_experiments">Eksperimen</string>
     <string name="dev_run_log">Catatan eksekusi</string>
+    <string name="dev_a11y_free">Jalankan tanpa layanan aksesibilitas</string>
+    <string name="dev_a11y_free_sub">Membaca layar lewat kanal shell: ketukan sama, tetapi elemen berupa snapshot dan tidak ada notifikasi. Pakai saat aplikasi menganggap layanan aksesibilitas terpasang sebagai sinyal risiko — matikan juga Mika di Setelan › Aksesibilitas, dan Mika berhenti memintanya.</string>
+    <string name="dev_a11y_group">Aksesibilitas</string>
 </resources>

@@ -12,6 +12,7 @@
     <string name="state_on">روشن</string>
     <string name="state_off">خاموش</string>
     <string name="state_not_running">در حال اجرا نیست</string>
+    <string name="state_a11y_free">بدون دسترسی‌پذیری</string>
     <string name="stop_summarizing">در حال جمع‌بندی کارهای انجام‌شده…</string>
     <string name="notifications_title">اعلان‌ها</string>
     <string name="channel_progress">پیشرفت کار</string>

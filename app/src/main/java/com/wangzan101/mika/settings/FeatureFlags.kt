@@ -101,6 +101,17 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         prefs.edit().putString(THEME_MODE, mode.name).commit()
     }
 
+    /**
+     * 免无障碍模式:不要求 Mika 的无障碍服务开着,任务改走 shell 通道(读屏用快照、手势用定向注入)。
+     * 默认关——服务在的时候无障碍读得更全(有节点引用、有多窗口、有事件流),不该悄悄降级。
+     * 开着的价值只有一个:某些 App 会拿"装了哪些无障碍服务"当风控信号,这时宁可读得笨一点。
+     */
+    fun a11yFreeMode(): Boolean = prefs.getBoolean(A11Y_FREE_MODE, false)
+
+    fun setA11yFreeMode(on: Boolean) {
+        prefs.edit().putBoolean(A11Y_FREE_MODE, on).commit()
+    }
+
     /** 端侧网络抓包总开关；默认开启。 */
     fun networkCaptureEnabled(): Boolean = prefs.getBoolean(NETWORK_CAPTURE_ENABLED, true)
 
@@ -295,6 +306,7 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val SELF_CONFIG = "self_config"
         private const val JUMP_CONFIRM_HOSTING = "jump_confirm_hosting"
         private const val JUMP_CONFIRM_AUTO_BLOCKED_VERSION = "jump_confirm_auto_blocked_version"
+        private const val A11Y_FREE_MODE = "a11y_free_mode"
         private const val NO_BLOCKED_VERSION = -1
         private const val THEME_MODE = "theme_mode"
         private const val CAPSULE_MODE = "capsule_mode"

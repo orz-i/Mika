@@ -11,6 +11,7 @@
     <string name="state_on">オン</string>
     <string name="state_off">オフ</string>
     <string name="state_not_running">停止中</string>
+    <string name="state_a11y_free">アクセシビリティ不要</string>
     <string name="stop_summarizing">ここまでの内容をまとめています…</string>
     <string name="notifications_title">通知</string>
     <string name="channel_progress">タスクの進行状況</string>

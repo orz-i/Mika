@@ -14,6 +14,7 @@
     <string name="state_on">Включено</string>
     <string name="state_off">Выключено</string>
     <string name="state_not_running">Не работает</string>
+    <string name="state_a11y_free">Без доступности</string>
     <string name="stop_summarizing">Подводим итоги сделанного…</string>
     <string name="notifications_title">Уведомления</string>
     <string name="channel_progress">Ход задач</string>

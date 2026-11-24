@@ -25,4 +25,7 @@
     <string name="dev_speed">Скорость</string>
     <string name="dev_experiments">Эксперименты</string>
     <string name="dev_run_log">Журнал запусков</string>
+    <string name="dev_a11y_free">Работать без службы доступности</string>
+    <string name="dev_a11y_free_sub">Экран читается через канал shell: касания те же, но элементы — снимок, и уведомлений нет. Нужно, когда приложение считает установленные службы доступности признаком риска — отключите Mika в Настройки › Специальные возможности, и Mika перестанет её требовать.</string>
+    <string name="dev_a11y_group">Специальные возможности</string>
 </resources>

@@ -38,7 +38,9 @@ import com.wangzan101.mika.cap.phone.a11y.AndroidScreen
 import com.wangzan101.mika.cap.phone.a11y.AppCopyReader
 import com.wangzan101.mika.cap.phone.a11y.DisplayCustodian
 import com.wangzan101.mika.cap.phone.a11y.LazyPhoneScreen
+import com.wangzan101.mika.cap.phone.a11y.ScreenAccess
 import com.wangzan101.mika.cap.phone.a11y.ScreenAccessibility
+import com.wangzan101.mika.cap.phone.a11y.ShellScreenAccess
 import com.wangzan101.mika.cap.phone.a11y.PhoneUnavailable
 import com.wangzan101.mika.core.custody.InterstitialKind
 import com.wangzan101.mika.core.run.Attendance
@@ -626,9 +628,15 @@ class TaskRun(
                             if (phoneServices.shellControl.restart == HelperRestart.UsbCommand) NO_PHONE_HELPER_USB else NO_PHONE_HELPER,
                         )
                     }
-                // 服务卡在「开着却没运行」、正在自动重启时多等一会儿,修好了接着做,放弃了照常报错
-                val a11y = AccessibilityRepair.awaitService(ScreenAccessibility.instance, phoneServices.recovery.accessibilityRepair.phase, A11Y_WAIT_MS)
-                    ?: throw PhoneUnavailable(StatusCopy.accessibilityUnavailable(phoneServices.recovery.accessibility.value.enabled))
+                // 服务卡在「开着却没运行」、正在自动重启时多等一会儿,修好了接着做,放弃了照常报错。
+                // 开了「免无障碍」且用户本来就没启用服务时不去等:直接走 shell 通道(读屏退化成快照、手势走定向注入)。
+                val flags = FeatureFlags.get(service)
+                val a11yEnabled = phoneServices.recovery.accessibility.value.enabled
+                val a11y = if (flags.a11yFreeMode() && !a11yEnabled) null
+                else AccessibilityRepair.awaitService(ScreenAccessibility.instance, phoneServices.recovery.accessibilityRepair.phase, A11Y_WAIT_MS)
+                if (a11y == null && !flags.a11yFreeMode()) {
+                    throw PhoneUnavailable(StatusCopy.accessibilityUnavailable(a11yEnabled))
+                }
                 recovery.beginRun(shell, key)
                 // 只有用过手机的任务才跟着 shell 的死活:shell 没了,虚拟屏和上面的 App 一起没了
                 shellDeath = IBinder.DeathRecipient {
@@ -656,6 +664,10 @@ class TaskRun(
                         side.launch { appAccess.state.collect { if (dispatcher?.surface != WEB && !previewAllowed()) _frames.value = null } }
                     }
                 }
+                // 无障碍在就用服务(完整能力);没开且允许免无障碍时,改用 shell 通道顶上
+                val access: ScreenAccess = a11y ?: ShellScreenAccess(
+                    service, shell,
+                ) { agentDisplay.current?.displayId ?: Display.DEFAULT_DISPLAY }
                 val audio = recovery.audioMute(shell, key) { agentDisplay.current?.displayId }.also { mute = it }
                 val muter = appMuter(shell, audio)
                 // 占用登记里的名字:另一份用户里的那份单独占,和本来那份互不挡;占着的任务还在不在用它,问内置助手
@@ -665,7 +677,7 @@ class TaskRun(
                 }
                 val screen = resources.acquire(Dispatchers.IO, AndroidScreen::close) {
                     AndroidScreen(
-                        a11y, shell, agentDisplay, { recovery.markClipHeld(it) },
+                        access, shell, agentDisplay, { recovery.markClipHeld(it) },
                         clipLock = service.clipLock, checkOtherTasks = parallel,
                         reserve = { pkg -> service.reservePackage(pkg, key, stillUsed(pkg, null)) },
                         reserveCopy = { pkg, user -> service.reservePackage(claimKey(pkg, user), key, stillUsed(pkg, user)) },
@@ -690,7 +702,7 @@ class TaskRun(
                         recordEvent = { runSinkRef.get().event(it) },
                     )
                 }
-                val side0 = PhoneSide(shell, a11y, screen, agentDisplay, muter)
+                val side0 = PhoneSide(shell, screen, agentDisplay, muter)
                 phone = side0
                 interactiveInterstitials = allowUserInteraction
                 watchTarget(side0, states)
@@ -710,7 +722,9 @@ class TaskRun(
                 phoneScreen, appAccess,
                 packages = { phone?.screen?.accessPackages().orEmpty() },
                 protectedUi = { appAccess.sensitiveUi }, ownPackage = service.packageName,
-                windowToken = { ScreenAccessibility.windowGeneration() },
+                // 窗口计数只用来省一次核对;服务没开时它不动,核对改由 TTL 兜着(见 AppAccessScreenPort)
+                // 窗口计数只用来省一次核对;这层能力不 live 时它按 shell 事件自增,同样能省(见 AppAccessScreenPort)
+                windowToken = { phone?.screen?.access?.windowGeneration() ?: 0 },
             ).also { accessGuard = it }
             afterTask = phoneScreen.afterTask
             // 挪回虚拟屏后等窗口出现,Agent 接下来读屏才读得到
@@ -1062,9 +1076,11 @@ class TaskRun(
                     counting?.cancel()
                     val c = HandoverActivityCounter(packageName).also { counter = it }
                     // 立即订阅:接着发生的第一下操作不能漏
-                    val a11y = phone?.a11y ?: return
+                    val access = phone?.screen?.access ?: return
+                    // 快照型给不出点击事件(轮询只认窗口换代),数不到操作次数;位置照样能跟着走
+                    if (!access.live) Log.i(TAG, "takeover: ${c.packageName} 走 shell 事件流,只能跟着页面走、数不到点击")
                     counting = side.launch(start = CoroutineStart.UNDISPATCHED) {
-                        a11y.eventsFor(Display.DEFAULT_DISPLAY).collect { e ->
+                        access.eventsFor(Display.DEFAULT_DISPLAY).collect { e ->
                             c.onEvent(Display.DEFAULT_DISPLAY, e.packageName, e.eventType, e.className, e.eventTime, e.windowId to e.source?.hashCode())
                         }
                     }
@@ -1073,7 +1089,7 @@ class TaskRun(
                     val c = counter ?: return null
                     val pm = service.packageManager
                     val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(c.packageName, 0)).toString() }.getOrNull()
-                    return HandoverActivity(c.inputCount, stoppedAt(phone?.a11y?.let { mainWindowTitle(it, c.packageName) }, label, c.lastActivity))
+                    return HandoverActivity(c.inputCount, stoppedAt(phone?.screen?.access?.let { mainWindowTitle(it, c.packageName) }, label, c.lastActivity))
                 }
                 override fun stopWatching() {
                     counting?.cancel()
@@ -1188,7 +1204,7 @@ class TaskRun(
 
     /** 手机一侧:用过手机的任务才有。 */
     private class PhoneSide(
-        val shell: com.wangzan101.mika.shell.IMikaShell, val a11y: ScreenAccessibility, val screen: AndroidScreen,
+        val shell: com.wangzan101.mika.shell.IMikaShell, val screen: AndroidScreen,
         val display: LazyAgentDisplay, val audio: AppMuter,
     )
 
@@ -1579,7 +1595,7 @@ class TaskRun(
     }
 
     /** 主屏上该包最上面那个窗口的标题;窗口按从上到下排列。 */
-    private fun mainWindowTitle(a11y: ScreenAccessibility, packageName: String): String? = runCatching {
+    private fun mainWindowTitle(a11y: ScreenAccess, packageName: String): String? = runCatching {
         a11y.windowsOn(Display.DEFAULT_DISPLAY).firstNotNullOfOrNull { w ->
             w.title?.toString()?.takeIf { it.isNotBlank() && w.root?.packageName?.toString() == packageName }
         }

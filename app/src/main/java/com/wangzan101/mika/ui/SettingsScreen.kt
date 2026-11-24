@@ -121,6 +121,7 @@ fun SettingsScreen(
     var stepLimit by remember { mutableStateOf(flags.taskStepLimit()) }
     var tokenBudget by remember { mutableStateOf(flags.taskTokenBudget()) }
     var selfConfig by remember { mutableStateOf(flags.selfConfig()) }
+    var a11yFree by remember { mutableStateOf(flags.a11yFreeMode()) }
     var capsuleMode by remember { mutableStateOf(flags.capsuleMode()) }
     var capsuleIdleOpacity by remember { mutableStateOf(flags.capsuleIdleOpacity()) }
     var networkCaptureEnabled by remember { mutableStateOf(flags.networkCaptureEnabled()) }
@@ -269,6 +270,7 @@ fun SettingsScreen(
             speed, onSpeed = { flags.setSpeed(it); speed = it }, onBack = toAdvanced,
             grounding = visionConfig?.let { GroundingSetting(it.model, it.capabilities.groundingVerified) },
             onGrounding = { verified -> scope.launch { withContext(Dispatchers.IO) { store.setVisionGroundingVerified(verified) } } },
+            a11yFree = a11yFree, onA11yFree = { on -> flags.setA11yFreeMode(on); a11yFree = on },
             onOpenRunStats = { page = SettingsPage.RunStats },
         )
         SettingsPage.RunStats -> RunStatsScreen(remember { RunStore(context).metrics }, onBack = back)

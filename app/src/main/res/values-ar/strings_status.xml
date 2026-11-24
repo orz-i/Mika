@@ -16,6 +16,7 @@
     <string name="state_on">مفعّل</string>
     <string name="state_off">متوقف</string>
     <string name="state_not_running">لا يعمل</string>
+    <string name="state_a11y_free">بدون إمكانية الوصول</string>
     <string name="stop_summarizing">جارٍ إنهاء تلخيص ما تم…</string>
     <string name="notifications_title">الإشعارات</string>
     <string name="channel_progress">تقدّم المهمة</string>

@@ -25,4 +25,7 @@
     <string name="dev_speed">Speed</string>
     <string name="dev_experiments">Experiments</string>
     <string name="dev_run_log">Run records</string>
+    <string name="dev_a11y_group">Accessibility</string>
+    <string name="dev_a11y_free">Run without the accessibility service</string>
+    <string name="dev_a11y_free_sub">Reads the screen through the shell channel instead: same taps, but element data is a snapshot and there are no notifications. Use it when an app treats an installed accessibility service as a risk signal — also turn Mika off in Settings › Accessibility, and Mika will stop asking for it.</string>
 </resources>

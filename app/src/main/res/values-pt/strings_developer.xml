@@ -25,4 +25,7 @@
     <string name="dev_speed">Velocidade</string>
     <string name="dev_experiments">Experimentos</string>
     <string name="dev_run_log">Registros de execução</string>
+    <string name="dev_a11y_free">Executar sem o serviço de acessibilidade</string>
+    <string name="dev_a11y_free_sub">Lê a tela pelo canal shell: os toques são os mesmos, mas os elementos são um instantâneo e não há notificações. Use quando um app trata serviços de acessibilidade instalados como sinal de risco — desative o Mika também em Configurações › Acessibilidade e o Mika deixa de pedi-lo.</string>
+    <string name="dev_a11y_group">Acessibilidade</string>
 </resources>

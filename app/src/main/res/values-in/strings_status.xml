@@ -11,6 +11,7 @@
     <string name="state_on">Aktif</string>
     <string name="state_off">Nonaktif</string>
     <string name="state_not_running">Tidak berjalan</string>
+    <string name="state_a11y_free">Tanpa aksesibilitas</string>
     <string name="stop_summarizing">Merangkum apa yang sudah dikerjakan…</string>
     <string name="notifications_title">Notifikasi</string>
     <string name="channel_progress">Kemajuan tugas</string>

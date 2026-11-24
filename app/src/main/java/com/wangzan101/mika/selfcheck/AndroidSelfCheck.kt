@@ -128,11 +128,17 @@ class AndroidSelfCheck(context: Context, private val status: () -> SystemStatus)
             AccessibilityState.On -> "on (bound)"
             AccessibilityState.EnabledNotRunning -> "enabled, not bound"
             AccessibilityState.Off -> "off"
-        } + ", notifications " + (if (s.notificationsAllowed) "allowed" else "blocked") +
+        } + (if (s.a11yFree) " (a11y-free: read via shell, gestures via targeted injection)" else "") +
+            ", notifications " + (if (s.notificationsAllowed) "allowed" else "blocked") +
             ", battery " + when (battery) { true -> "unrestricted"; false -> "restricted"; null -> "unreadable" }
+        // 免无障碍时不要求这项:读屏和手势都不经过服务(见 FeatureFlags.a11yFreeMode)
+        val a11yIssue = if (s.a11yFree) null else when (s.accessibility) {
+            AccessibilityState.Off -> Advice.TurnOnAccessibility
+            AccessibilityState.EnabledNotRunning -> Advice.RestartAccessibility
+            AccessibilityState.On -> null
+        }
         return when {
-            s.accessibility == AccessibilityState.Off -> CheckOutcome.fail(detail, Advice.TurnOnAccessibility)
-            s.accessibility == AccessibilityState.EnabledNotRunning -> CheckOutcome.fail(detail, Advice.RestartAccessibility)
+            a11yIssue != null -> CheckOutcome.fail(detail, a11yIssue)
             !s.notificationsAllowed -> CheckOutcome.partial(detail, Advice.AllowNotifications)
             battery == false -> CheckOutcome.partial(detail, Advice.AllowBattery)
             else -> CheckOutcome.pass(detail)

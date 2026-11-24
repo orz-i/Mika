@@ -90,6 +90,7 @@ class SystemStatusMonitor(context: Context, private val shell: BuiltinShellContr
         restrictedSettings = restrictedSettings(),
         helperRestart = shell.restart,
         rootStart = shell.rootStart,
+        a11yFree = FeatureFlags.get(app).a11yFreeMode(),
     )
 
     private fun channelImportance(id: String): Int? =

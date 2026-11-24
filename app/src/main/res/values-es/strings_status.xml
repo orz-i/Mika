@@ -13,6 +13,7 @@
     <string name="state_on">Activado</string>
     <string name="state_off">Desactivado</string>
     <string name="state_not_running">Sin ejecutar</string>
+    <string name="state_a11y_free">Sin accesibilidad</string>
     <string name="stop_summarizing">Resumiendo lo que se hizo…</string>
     <string name="notifications_title">Notificaciones</string>
     <string name="channel_progress">Progreso de la tarea</string>

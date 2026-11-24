@@ -25,4 +25,7 @@
     <string name="dev_speed">속도</string>
     <string name="dev_experiments">실험</string>
     <string name="dev_run_log">실행 기록</string>
+    <string name="dev_a11y_free">접근성 서비스 없이 실행</string>
+    <string name="dev_a11y_free_sub">대신 shell 채널로 화면을 읽습니다. 탭은 그대로 되지만 요소는 스냅샷이고 알림도 없습니다. 앱이 ‘설치된 접근성 서비스’를 위험 신호로 볼 때 사용하세요. 설정 › 접근성에서 Mika를 꺼 두면 Mika가 더 이상 요구하지 않습니다.</string>
+    <string name="dev_a11y_group">접근성</string>
 </resources>

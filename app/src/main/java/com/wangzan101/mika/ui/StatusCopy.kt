@@ -62,10 +62,14 @@ object StatusCopy {
     fun accessibilityUnavailable(enabled: Boolean): String =
         tr(if (enabled) R.string.task_a11y_not_running else R.string.task_no_a11y)
 
-    fun accessibilityValue(s: AccessibilityState): Pair<String, ValueTone> = when (s) {
-        AccessibilityState.On -> tr(R.string.state_on) to ValueTone.Ok
-        AccessibilityState.Off -> tr(R.string.state_off) to ValueTone.Bad
-        AccessibilityState.EnabledNotRunning -> tr(R.string.state_not_running) to ValueTone.Bad
+    /** [a11yFree] 为真时不经过无障碍服务也能干活:关着不再算问题,值写成「免无障碍」而不是「关」。 */
+    fun accessibilityValue(s: AccessibilityState, a11yFree: Boolean = false): Pair<String, ValueTone> = when {
+        a11yFree && s != AccessibilityState.On -> tr(R.string.state_a11y_free) to ValueTone.Plain
+        else -> when (s) {
+            AccessibilityState.On -> tr(R.string.state_on) to ValueTone.Ok
+            AccessibilityState.Off -> tr(R.string.state_off) to ValueTone.Bad
+            AccessibilityState.EnabledNotRunning -> tr(R.string.state_not_running) to ValueTone.Bad
+        }
     }
 
     /** 不用说明、点了直接修的问题。 */
