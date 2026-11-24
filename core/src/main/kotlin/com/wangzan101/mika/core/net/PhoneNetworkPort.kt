@@ -77,6 +77,26 @@ data class NetworkCaptureStatus(
     val error: String? = null,
     /** 抓包在跑、但有一条能力是缺的(比如进程内解密没接上):说明白,别让调用方把密文当明文。 */
     val warnings: List<String> = emptyList(),
+    /** 历史留存的窗口。查不到请求时先看这里，别把"被挤出窗口"当成"没抓到"。 */
+    val retention: CaptureRetention? = null,
+)
+
+/**
+ * 抓包历史保留了多少、丢了多久以前的。
+ *
+ * 历史是滚动窗口而不是全量日志：长任务里请求一多，早期条目会被挤出。
+ * 把这个数报给调用方，是为了让"查不到"能被区分为"确实没发生"和"发生得太早"。
+ */
+@Serializable
+data class CaptureRetention(
+    /** 当前可检索的条数。 */
+    val kept: Int = 0,
+    /** 窗口上限。 */
+    val capacity: Int = 0,
+    /** 本次抓包以来被挤出窗口的条数。 */
+    val trimmed: Int = 0,
+    /** 仍在窗口里的最早一条的时间戳(毫秒)；空窗口为 null。 */
+    val oldestKeptAt: Long? = null,
 )
 
 /**
@@ -168,6 +188,14 @@ interface PhoneNetworkPort {
      * 查看当前 App 最近捕获的请求与响应列表。
      */
     suspend fun inspectNetwork(limit: Int = 10, filter: String? = null): List<NetworkRequestSummary>
+
+    /**
+     * 历史窗口现状：保留了多少条、本次抓包淘汰了多少条、最早一条是什么时候。
+     *
+     * 列表为空时必须能和这个一起看：`kept=0` 与 `trimmed>0` 是两种完全不同的结论。
+     * 不实现的端口返回空窗口。
+     */
+    fun retentionSnapshot(): CaptureRetention = CaptureRetention()
 
     /**
      * 返回当前底层抓包健康与活跃状态；未实现的模拟端口可返回 null。

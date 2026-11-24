@@ -125,6 +125,19 @@ internal object PhoneGetNetworkResponse : PhoneTool {
                 put("error", "not_found")
                 requestId?.let { put("requestId", it) }
                 urlPattern?.let { put("urlPattern", it) }
+                // 找不到时最有用的信息是"窗口里还有多少、挤掉了多少"：
+                // 有淘汰记录就说明可能是太早了，别再拿同一个模式反复查。
+                val retention = net.retentionSnapshot()
+                if (retention.trimmed > 0 || retention.kept > 0) {
+                    put("retention", buildJsonObject {
+                        put("kept", retention.kept)
+                        put("trimmed", retention.trimmed)
+                        retention.oldestKeptAt?.let { put("oldestKeptAt", it) }
+                    })
+                }
+                if (retention.trimmed > 0) {
+                    put("hint", "This response is no longer in the window (${retention.trimmed} earlier request(s) evicted). Re-trigger the action to capture it again instead of querying repeatedly.")
+                }
             })
         }
     }
@@ -154,6 +167,7 @@ internal object PhoneInspectNetwork : PhoneTool {
 
         val status = net.captureStatus()
         val requests = net.inspectNetwork(limit, filter)
+        val retention = status?.retention ?: net.retentionSnapshot()
         val capturing = status?.capturing ?: true
         val effectiveError = status?.error ?: if (!capturing) "capture_not_active" else null
         return ToolExecution(buildJsonObject {
@@ -171,6 +185,19 @@ internal object PhoneInspectNetwork : PhoneTool {
                 if (it.warnings.isNotEmpty()) {
                     put("warnings", JsonArray(it.warnings.map { w -> kotlinx.serialization.json.JsonPrimitive(w) }))
                 }
+            }
+            // 历史是滚动窗口。查询为空时，这两件事必须能分开：
+            // 真的没有这样的请求，还是它发生在窗口之外。否则调用方会一直重查。
+            put("retention", buildJsonObject {
+                put("kept", retention.kept)
+                put("capacity", retention.capacity)
+                put("trimmed", retention.trimmed)
+                retention.oldestKeptAt?.let { put("oldestKeptAt", it) }
+            })
+            if (requests.isEmpty() && retention.trimmed > 0) {
+                put("hint", "No match in the current window, but ${
+                    retention.trimmed
+                } earlier request(s) were already evicted. Do not keep re-querying: read the data from the screen, or widen the moment you capture (re-trigger the action) instead.")
             }
             put("requests", JsonArray(requests.map { r ->
                 buildJsonObject {

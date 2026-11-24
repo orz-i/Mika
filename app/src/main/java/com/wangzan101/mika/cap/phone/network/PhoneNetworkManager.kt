@@ -18,6 +18,7 @@ import com.agent.use.common.network.parser.GrpcDecoder
 import com.agent.use.common.network.plugin.EbpfProbeProfile
 import com.agent.use.common.network.plugin.NetworkCapturePluginRegistry
 import com.wangzan101.mika.core.net.CapturePreheat
+import com.wangzan101.mika.core.net.CaptureRetention
 import com.wangzan101.mika.core.net.ERROR_PLAINTEXT_BRIDGE_MISSING
 import com.wangzan101.mika.core.net.EbpfDiscoveredLib
 import com.wangzan101.mika.core.net.EbpfProbeReport
@@ -45,6 +46,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 手机侧原生网络嗅探与流量捕获服务管理器。
@@ -67,9 +69,17 @@ class PhoneNetworkManager(
 
     companion object {
         private const val TAG = "PhoneNetworkManager"
-        const val MAX_HISTORY_ENTRIES = 250
+        /**
+         * 历史窗口条数。
+         *
+         * 原来 250 条：一次「搜索 + 翻页 + 详情」就能发出上百个请求，长任务里正在查的那条
+         * 会被挤出去，查询方看到空列表就以为没抓到，于是反复重试。窗口不够也是循环的成因之一。
+         */
+        const val MAX_HISTORY_ENTRIES = 600
         const val MAX_LOCAL_BODY_ENTRIES = 250
-        const val MAX_DISK_BODY_FILES = 500
+        /** 磁盘响应体上限：条数 + 总字节双限，只按条数会在个别大响应上把缓存撑到 GB 级。 */
+        const val MAX_DISK_BODY_FILES = 800
+        const val MAX_DISK_BODY_BYTES = 128L * 1024 * 1024
         const val MAX_PERSISTED_BODY_BYTES = 1024 * 1024
         const val MIN_REATTACH_INTERVAL_MS = 1000L
         const val BODY_CACHE_DIR_NAME = "mika_network_bodies"
@@ -131,6 +141,16 @@ class PhoneNetworkManager(
      */
     private val exchangeSinks =
         CopyOnWriteArrayList<(HttpRequestEvent?, CapturedTrafficEntry, ByteArray?) -> Unit>()
+
+    /** 本次抓包以来被挤出窗口的条数，报告给调用方区分「没抓到」和「太早了」。 */
+    private val trimmedEntries = AtomicInteger(0)
+
+    /**
+     * 本次抓包开始的时间。淘汰历史时优先丢早于它的条目：
+     * 用户正在查的是这一轮请求，上一轮任务留下的那条再有用也不该把它挤掉。
+     */
+    @Volatile
+    private var captureStartedAtMs: Long = 0L
 
     // 环形缓存与在途请求追踪
     private val trafficHistory = ConcurrentLinkedDeque<CapturedTrafficEntry>()
@@ -307,9 +327,25 @@ class PhoneNetworkManager(
         }
 
         trafficHistory.addFirst(entry)
+        trimHistory()
+    }
 
+    /**
+     * 超出窗口时先挤掉本轮抓包之前的旧条目，旧条目吃完才动本轮最早的。
+     *
+     * 以前是直接 removeLast：一次长任务发出的请求比窗口还多时，正在被查的这条会被上一轮的
+     * 残留挤掉，查询方看到空列表就以为没抓到，于是重试或换方法，越查越乱。
+     */
+    private fun trimHistory() {
         while (trafficHistory.size > MAX_HISTORY_ENTRIES) {
-            trafficHistory.removeLast()
+            val stale = trafficHistory.lastOrNull { it.timestamp < captureStartedAtMs }
+            val removed = if (stale != null) {
+                trafficHistory.remove(stale)
+            } else {
+                trafficHistory.removeLast() != null
+            }
+            if (!removed) return
+            trimmedEntries.incrementAndGet()
         }
     }
 
@@ -347,6 +383,9 @@ class PhoneNetworkManager(
         }
 
         lastAttachAttemptMs = clockMs()
+        // 新一轮抓包开始：从这里往后的条目是"这次要查的"，淘汰历史时先保住它们。
+        captureStartedAtMs = lastAttachAttemptMs
+        trimmedEntries.set(0)
         Log.i(TAG, "Attaching network capture to target package: $target (mode=$mode)")
         val manager = getOrCreateAgentManager()
         return manager.enable(target, mode)
@@ -368,9 +407,15 @@ class PhoneNetworkManager(
         val flags = FeatureFlags.get(context)
         val enabled = flags.networkCaptureEnabled()
         val rooted = rootAvailable()
+        if (!enabled) return CapturePreheat.NOT_NEEDED
+        // 「这个 App 要不要进程内通道」只能从插件包看出来。注册表为空时下面必然答"不需要"，
+        // 于是热启动、错过 natives 注册，明文永远拿不到——而注册表原本要等到 attach 才加载，
+        // 那已经是这个判断之后了。先装再问（装载幂等，重复调用只是读一次 version）。
+        withContext(Dispatchers.IO) {
+            runCatching { CapturePluginProfileStore.forContext(context).loadIntoRegistry() }
+        }
         val wantsBridge = requiresProcessBridge(pkg)
         Log.i(TAG, "prepareCapture($pkg): enabled=$enabled root=$rooted bridge=$wantsBridge capturing=${isCapturing()}")
-        if (!enabled) return CapturePreheat.NOT_NEEDED
         // 免 root 的 VPN 模式拿到的是 TLS 之后、App 自己那一层之前的字节；没有进程内通道，也就没什么可提前挂的。
         // 这里只问"有没有 root"，不问引擎自己怎么判断设备——助手还没连上时那个判断会给出假阴性，
         // 而这条通道本来就只在 root 下存在。
@@ -581,7 +626,24 @@ class PhoneNetworkManager(
             activeMode = modeName,
             targetPackage = mgr?.targetPackage,
             error = mgr?.lastError ?: if (!capturing) "capture_not_active" else null,
-            warnings = if (plaintextBridgeMissing()) listOf(PLAINTEXT_BRIDGE_MISSING) else emptyList()
+            warnings = if (plaintextBridgeMissing()) listOf(PLAINTEXT_BRIDGE_MISSING) else emptyList(),
+            retention = retentionSnapshot(),
+        )
+    }
+
+    /**
+     * 历史窗口现状。
+     *
+     * [oldestKeptAt] 让调用方能判断"我要的那条是不是早于窗口"：比它还早的要么被淘汰，
+     * 要么根本没抓到——这是两件事，不该都答成"没有"。
+     */
+    override fun retentionSnapshot(): CaptureRetention {
+        val oldest = trafficHistory.minOfOrNull { it.timestamp }
+        return CaptureRetention(
+            kept = trafficHistory.size,
+            capacity = MAX_HISTORY_ENTRIES,
+            trimmed = trimmedEntries.get(),
+            oldestKeptAt = oldest,
         )
     }
 
@@ -732,13 +794,25 @@ class PhoneNetworkManager(
         }.getOrNull()
     }
 
+    /**
+     * 磁盘缓存淘汰：条数和总字节双限，都按"最久没写过的先删"。
+     *
+     * 只按条数限会在个别大响应上失控（单条上限 1MB × 800 条 = 800MB）；
+     * 只按字节限则会让大量小响应把目录撑成几十万个文件。
+     */
     private fun pruneDiskCacheIfNeeded(dir: File) {
         val files = dir.listFiles { f -> f.isFile && f.name.endsWith(".bin") } ?: return
-        if (files.size <= MAX_DISK_BODY_FILES) return
-        val excess = files.size - MAX_DISK_BODY_FILES
-        files.sortedBy { it.lastModified() }
-            .take(excess)
-            .forEach { it.delete() }
+        if (files.size <= MAX_DISK_BODY_FILES && files.sumOf { it.length() } <= MAX_DISK_BODY_BYTES) return
+        var count = files.size
+        var bytes = files.sumOf { it.length() }
+        for (file in files.sortedBy { it.lastModified() }) {
+            if (count <= MAX_DISK_BODY_FILES && bytes <= MAX_DISK_BODY_BYTES) break
+            val size = file.length()
+            if (file.delete()) {
+                count -= 1
+                bytes -= size
+            }
+        }
     }
 
     private fun clearDiskBodyCache() {
