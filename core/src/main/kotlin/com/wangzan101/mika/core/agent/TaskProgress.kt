@@ -148,11 +148,12 @@ internal object CompletionPlanBlock {
             val obj = value as? JsonObject ?: throw IllegalArgumentException("metric must be an object")
             require(obj.keys.all { it in METRIC_KEYS }) { "unknown metric field" }
             require(obj.isNotEmpty()) { "metric must not be empty" }
+            val (total, totalAsBoundary) = obj.totalOrBoundary()
             MetricUpdate(
                 obj.string("name")?.also { require(it.isNotBlank() && it.length <= MAX_NAME) { "invalid metric.name" } },
                 obj.int("done")?.also { require(it >= 0) { "metric.done must be non-negative" } },
-                obj.int("total")?.also { require(it > 0) { "metric.total must be positive" } },
-                obj.string("boundary")?.also { require(it.length <= MAX_BOUNDARY) { "metric.boundary is too long" } },
+                total?.also { require(it > 0) { "metric.total must be positive" } },
+                (obj.string("boundary") ?: totalAsBoundary)?.also { require(it.length <= MAX_BOUNDARY) { "metric.boundary is too long" } },
             ).also { change ->
                 if (change.done != null && change.total != null) require(change.done <= change.total) { "metric.done exceeds total" }
             }
@@ -167,9 +168,33 @@ internal object CompletionPlanBlock {
         (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.content ?: throw IllegalArgumentException("$key must be a string")
     }
 
-    private fun JsonObject.int(key: String): Int? = this[key]?.let {
-        (it as? JsonPrimitive)?.intOrNull ?: throw IllegalArgumentException("$key must be an integer")
+    /**
+     * 数值键。模型经常把数字写成字符串（`"20"`、`"20 个"`、`"约 20 条"`），
+     * 能认出的整数就照用：为一个引号丢掉整块进度、让任务只能跑到步数用尽是更坏的结局。
+     */
+    private fun JsonObject.int(key: String): Int? = this[key]?.let { element ->
+        val prim = element as? JsonPrimitive ?: throw IllegalArgumentException("$key must be a number")
+        prim.intOrNull ?: INT_PREFIX.find(prim.content.trim())?.groupValues?.get(1)?.toIntOrNull()
+        ?: throw IllegalArgumentException("$key must be a whole number such as 20")
     }
+
+    /**
+     * `total` 有两种写法都算数：真数字（20、"约 20 条"），或者开放采集的边界被塞进 total
+     * （`"total":"boundary"`、`"total":"第 3 页"`）。后者不是错误，是模型把「没有总数」直接说出来了，
+     * 当 boundary 用就行——为这点措辞丢掉整块进度、让任务只能跑到步数用尽，是更坏的结局。
+     */
+    private fun JsonObject.totalOrBoundary(): Pair<Int?, String?> {
+        val element = this["total"] ?: return null to null
+        val prim = element as? JsonPrimitive ?: throw IllegalArgumentException("total must be a number")
+        prim.intOrNull?.let { return it to null }
+        val content = prim.content.trim()
+        val leading = INT_PREFIX.find(content)?.groupValues?.get(1)?.toIntOrNull()
+        leading?.let { return it to null }
+        return null to content.takeIf { it.isNotEmpty() }
+    }
+
+    /** 数字前面可能带中文或说明（"共 20 个"、"about 20"），取第一段整数。 */
+    private val INT_PREFIX = Regex("^[^\\d-]*(-?\\d+)")
 
     private const val MAX_BLOCK = 8_000
     private const val MAX_CRITERIA = 12

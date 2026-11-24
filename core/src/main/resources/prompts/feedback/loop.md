@@ -55,6 +55,15 @@ Your acceptance criteria are satisfied or the confirmed count has reached its to
 ## no_new_data_closeout
 The last {{count}} data-collection results contained no new content. Stop scrolling, rereading and collecting. Reply with the requested result if the collected data is complete. Otherwise call end_not_done with the confirmed partial result, the latest boundary reached, and what is still missing. Do not call any other tool.{{progress}}
 
+## progress_rejected
+Your task_progress block was ignored: {{detail}}. Until a valid block is accepted this task has no completion condition, so it can only end at the step limit. Send it again as plain JSON with whole numbers, like <task_progress>{"criteria":["observable result"],"metric":{"name":"items confirmed","done":0,"total":20},"complete":false}</task_progress>.
+
+## progress_missing
+Half the steps are used and no measurable progress has been reported, so this task can only end at the step limit. Report it now — the criteria plus a count of the items you have confirmed, using "boundary" instead of "total" when the total is unknown — or reply with the result you already have.
+
+## metric_stalled
+Your reported count has not moved for several steps and the task is still gathering. Count the unique items you can already report in your next reply, or finish now with what you have confirmed and say what you covered. Do not keep scrolling or re-reading the same list to grow a number the user cannot see yet.{{progress}}
+
 ## screenshot_note
 Current screenshot for the observation above.
 
@@ -97,6 +106,12 @@ out of steps
 
 ## closeout_source
 task completion
+
+## metric_source
+progress count
+
+## progress_error_source
+task progress
 
 ## replay_source
 earlier way of doing this

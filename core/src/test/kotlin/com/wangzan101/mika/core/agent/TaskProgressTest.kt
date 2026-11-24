@@ -49,6 +49,33 @@ class TaskProgressTest {
         assertEquals("完成", parsed.text)
     }
 
+    @Test fun numbersWrittenAsTextStillCount() {
+        // 真机上就是这样丢掉整块进度的:total 写成 "20 个" → 整个任务没有完成条件
+        for (raw in listOf("20", "20 个", "共 20 条", "about 20")) {
+            val parsed = CompletionPlanBlock.extract(
+                """<task_progress>{"metric":{"name":"岗位已确认","done":"5","total":"$raw"}}</task_progress>""")
+            assertTrue(raw, parsed.errors.isEmpty())
+            val plan = CompletionPlan().apply(parsed.updates.single())
+            assertEquals(raw, 5, plan.metric?.done)
+            assertEquals(raw, 20, plan.metric?.total)
+        }
+    }
+
+    @Test fun totalWrittenAsABoundaryKeepsTheWholeBlock() {
+        // 真机实录:模型把开放采集的边界写进 total("total":"boundary")。
+        // 以前整块被丢 → 任务没有完成条件 → 一直跑到步数用尽。当 boundary 用才是它想说的。
+        // 带数字的("第 3 页")照旧当数字——那种写法至少还给了个数,不算说错。
+        for (raw in listOf("boundary", "很多", "还没读完")) {
+            val parsed = CompletionPlanBlock.extract(
+                """<task_progress>{"criteria":["岗位已读"],"metric":{"name":"岗位已确认","done":0,"total":"$raw"}}</task_progress>""")
+            assertTrue(raw, parsed.errors.isEmpty())
+            val plan = CompletionPlan().apply(parsed.updates.single())
+            assertEquals(raw, 0, plan.metric?.done)
+            assertNull(raw, plan.metric?.total)
+            assertEquals(raw, raw, plan.metric?.boundary)
+        }
+    }
+
     @Test fun malformedProgressIsRemovedAndReportedWithoutBreakingTheReply() {
         val parsed = CompletionPlanBlock.extract("""<task_progress>{"metric":{"done":-1}}</task_progress>继续""")
         assertEquals("继续", parsed.text)

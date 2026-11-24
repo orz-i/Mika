@@ -26,6 +26,10 @@ internal object TurnPolicy {
     private val PROGRESS_CHECKS = listOf(0.5, 0.75)
     private const val PROGRESS_CHECK_MIN_STEPS = 10
 
+    /** 申报的计数连续这么多步没变化就提醒一次;步数上限本身很小(短任务)时不提醒。 */
+    private const val METRIC_STALL_STEPS = 8
+    private const val METRIC_STALL_MIN_STEPS = 12
+
     /** 判断某工具是否为步数用完后最后一轮仍保留的终结工具。 */
     fun isFinalTool(traits: ToolTraits?): Boolean = traits?.terminatesRun == true
 
@@ -78,6 +82,36 @@ internal object TurnPolicy {
             "The last ${NewDataTracker.LIMIT} consecutive collection/browse actions produced no new data. " +
                 "Consider changing your query/approach, answering with what you have confirmed, or reporting what could not be found instead of repeating the same step.$confirmed",
         )
+    }
+
+    /**
+     * 模型写的 `<task_progress>` 被丢弃了([detail] 是理由):说出来,否则它以为已经申报成功。
+     *
+     * 一个格式错误(比如 `total` 写成 `"20 个"`)会让整块作废,任务因此没有完成条件,
+     * 只能一路做到步数用完——这是「任务跑不完」最隐蔽的一种成因。
+     */
+    fun progressRejected(detail: String): Notice =
+        Notice(Feedback["progress_error_source"], Feedback.format("progress_rejected", "detail" to detail))
+
+    /** 步数过半还没有任何可验收的完成条件:提醒一次,否则任务只会在步数用尽时失败。 */
+    fun progressMissing(step: Int, maxSteps: Int): Notice? {
+        if (maxSteps < METRIC_STALL_MIN_STEPS || step - 1 < maxSteps / 2) return null
+        return Notice(Feedback["progress_source"], Feedback["progress_missing"])
+    }
+
+    /**
+     * 自己申报的计数连续几步一个数都没动:提醒一次按已读到的条目如实更新,或就此交出结果。
+     *
+     * 这是「任务无限跑下去」最常见的形态——采集一直在正常出内容(所以无新数据的守卫不会响),
+     * 但模型不肯把已经读到的条目算成进度,`done` 停在 0,`complete` 就永远到不了,只能等步数用完。
+     * 只提醒,不叫停:真的在长任务里慢慢推进时,一句话的代价远小于一个跑不完的任务。
+     * [sinceStep] 是这个计数上一次变化的步数,[nudged] 为 true 表示已经提醒过。
+     */
+    fun metricStalled(step: Int, maxSteps: Int, sinceStep: Int, nudged: Boolean, progress: RunProgress.Task? = null): Notice? {
+        if (nudged || maxSteps < METRIC_STALL_MIN_STEPS) return null
+        if (step - sinceStep < METRIC_STALL_STEPS) return null
+        val confirmed = progress?.display?.takeIf { it.isNotBlank() }?.let { "\nLatest confirmed progress: $it" }.orEmpty()
+        return Notice(Feedback["metric_source"], Feedback.format("metric_stalled", "progress" to confirmed))
     }
 
     /** 完成或连续无新数据后的收尾:不再给操作工具，但仍可交出结果或如实报告部分完成。 */

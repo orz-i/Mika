@@ -7,8 +7,9 @@ import org.junit.Test
 class FeatureFlagsStepLimitTest {
     private fun flags() = FeatureFlags(FeatureFlagsCapsuleTest.MemoryPrefs())
 
-    @Test fun defaultsToNoLimit() {
-        assertNull(flags().taskStepLimit())
+    @Test fun defaultsToTheSafetyNet() {
+        // 默认不限制会让翻不完的任务跑到 Token 烧完,所以没设过时走安全网
+        assertEquals(FeatureFlags.DEFAULT_TASK_STEP_LIMIT, flags().taskStepLimit())
     }
 
     @Test fun keepsAChosenLimit() {

@@ -1,7 +1,7 @@
 outcome: Succeeded(answer=知乎热榜第一是「今日话题」, verified=true, note=null, sources=[AnswerSource(obsId=2, kind=read, place=https://www.zhihu.com/hot, title=知乎, step=2, mediaIds=[], source=web)], unconfirmed=[], reviewed=true)
 
 ## main #1
-system: len=9146 #4283d3e2 | You are Mika, a capable assistant that gets real work done for the user across ⏎…
+system: len=9879 #6a72368b | You are Mika, a capable assistant that gets real work done for the user across ⏎…
 tools: #c525bc08 [wait, ask_user, request_confirmation, end_not_done, tool_search, tool_activate, knowledge_search, knowledge_read, skill_search, skill_read, phone_list_apps, phone_launch_app, phone_set_alarm, phone_set_timer, phone_add_calendar_event, phone_calendar_bulk_insert, phone_inspect_network, web_navigate, web_read_page, run_command]
 user:
   text #110070e4 | 用网页看一下知乎热榜
@@ -12,7 +12,7 @@ user:
   ctx:runtime_state source="runtime" #7d60ad60 | Current place: no screen or page read yet ⏎…
 
 ## main #2
-system: len=13619 #b23e730a | You are Mika, a capable assistant that gets real work done for the user across ⏎…
+system: len=14352 #59572906 | You are Mika, a capable assistant that gets real work done for the user across ⏎…
 tools: #b3d6a45d [wait, ask_user, request_confirmation, end_not_done, tool_search, tool_activate, knowledge_search, knowledge_read, skill_search, skill_read, phone_list_apps, phone_launch_app, phone_set_alarm, phone_set_timer, phone_add_calendar_event, phone_calendar_bulk_insert, phone_inspect_network, web_navigate, web_read_page, run_command, web_tap, web_scroll, web_swipe, web_type_text, web_clear_text, web_back, web_press_key, web_interact, web_wait_for, web_observe, web_list_elements, web_diagnose, web_capture, view_past_screens, hand_to_user, handle_obstacle]
 … 3 messages unchanged
 assistant:

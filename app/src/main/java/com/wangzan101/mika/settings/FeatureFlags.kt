@@ -42,8 +42,15 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         prefs.edit().putInt(PARALLEL_MAX, max).commit()
     }
 
-    /** 每个任务最多走多少步;null 表示不限制。默认不限制,下次任务起生效。 */
-    fun taskStepLimit(): Int? = prefs.getInt(TASK_STEP_LIMIT, 0).takeIf { it in 1..MAX_TASK_STEP_LIMIT }
+    /**
+     * 每个任务最多走多少步;null 表示不限制。
+     * 没设过就走默认安全网 [DEFAULT_TASK_STEP_LIMIT]——"默认不限制"会让一个翻页翻不完的任务真的跑到
+     * Token 烧完(真机上 68 步、30 次 scroll、一条结论都没交);真要无限就在设置里显式选「不限制」(存 0)。
+     */
+    fun taskStepLimit(): Int? {
+        if (!prefs.contains(TASK_STEP_LIMIT)) return DEFAULT_TASK_STEP_LIMIT
+        return prefs.getInt(TASK_STEP_LIMIT, 0).takeIf { it in 1..MAX_TASK_STEP_LIMIT }
+    }
 
     fun setTaskStepLimit(limit: Int?) {
         prefs.edit().putInt(TASK_STEP_LIMIT, (limit ?: 0).coerceIn(0, MAX_TASK_STEP_LIMIT)).commit()
@@ -268,6 +275,8 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         const val PREFS = "feature_flags"
         /** 每个任务步数上限能设的最大值;0/null 表示不限制。 */
         const val MAX_TASK_STEP_LIMIT = 500
+        /** 没设过时的步数安全网:够复杂任务跑完,又不至于让翻页翻不完的任务一直烧 Token。 */
+        const val DEFAULT_TASK_STEP_LIMIT = 120
         private const val SPEED_FLAGS = "speed_flags"
         /**
          * 提速开关默认值的升级,按先后各做一次(键记下做过没有):v2 打开分级读屏、连续操作、按需看图;

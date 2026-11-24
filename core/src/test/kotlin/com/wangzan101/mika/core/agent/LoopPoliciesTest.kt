@@ -76,6 +76,32 @@ class LoopPoliciesTest {
         assertTrue(n.text, "Latest confirmed progress: 已收集 · 2 · 第 2 条" in n.text)
     }
 
+    /** 申报被丢弃要说出来,否则模型以为已经申报成功;走一半还没有任何完成条件也要提醒一次。 */
+    @Test fun rejectedOrMissingProgressIsNudged() {
+        val rejected = TurnPolicy.progressRejected("total must be a whole number such as 20")
+        assertEquals(Feedback["progress_error_source"], rejected.source)
+        assertTrue(rejected.text, "ignored" in rejected.text && "total must be a whole number" in rejected.text)
+        assertTrue(rejected.text, "step limit" in rejected.text && "<task_progress>" in rejected.text)
+
+        assertNull(TurnPolicy.progressMissing(10, 60))
+        val missing = TurnPolicy.progressMissing(31, 60)!!
+        assertEquals(Feedback["progress_source"], missing.source)
+        assertTrue(missing.text, "no measurable progress" in missing.text && "boundary" in missing.text)
+        assertNull(TurnPolicy.progressMissing(6, 10))
+    }
+
+    /** 申报的计数一直不动:提醒一次,让模型按已读到的条目更新或就此交出结果;步数上限太小或已提醒过都不再打扰。 */
+    @Test fun stalledCountIsNudgedOnceWithinTheStepBudget() {
+        val progress = RunProgress.Task("已确认岗位数", 0, 20, null)
+        assertNull(TurnPolicy.metricStalled(7, 60, 1, nudged = false, progress))
+        val n = TurnPolicy.metricStalled(9, 60, 1, nudged = false, progress)!!
+        assertEquals(Feedback["metric_source"], n.source)
+        assertTrue(n.text, "has not moved" in n.text && "do not" in n.text.lowercase())
+        assertTrue(n.text, "Latest confirmed progress: 已确认岗位数 · 0/20" in n.text)
+        assertNull(TurnPolicy.metricStalled(9, 60, 1, nudged = true, progress))
+        assertNull(TurnPolicy.metricStalled(9, 10, 1, nudged = false, progress))
+    }
+
     // ---- 停止 ----
 
     @Test fun giveUpEndsBeforeGuardStop() {

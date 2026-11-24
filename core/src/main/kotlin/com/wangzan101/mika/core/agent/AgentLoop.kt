@@ -575,12 +575,21 @@ class AgentLoop(
         var completion = CompletionPlan()
         val newData = NewDataTracker()
         fun progressState() = completion.metric?.state()
+        // 被丢弃的进度申报理由。只发事件模型看不到,下一次请求要把它说出来:
+        // 一个格式错误会让整个 <task_progress> 失效,任务于是没有完成条件,只能跑到步数用完。
+        val progressRejected = mutableListOf<String>()
+        var progressRejectedNudged = 0
         fun progressText(raw: String): String {
             val parsed = CompletionPlanBlock.extract(raw)
-            parsed.errors.forEach { emit(RunEvent.State(now(), "task_progress_invalid", RunEvent.clip(it))) }
+            parsed.errors.forEach {
+                emit(RunEvent.State(now(), "task_progress_invalid", RunEvent.clip(it)))
+                progressRejected += it
+            }
             parsed.updates.forEach { update ->
                 val next = try { completion.apply(update) } catch (e: IllegalArgumentException) {
-                    emit(RunEvent.State(now(), "task_progress_invalid", RunEvent.clip(e.message ?: "invalid progress")))
+                    val why = e.message ?: "invalid progress"
+                    emit(RunEvent.State(now(), "task_progress_invalid", RunEvent.clip(why)))
+                    progressRejected += why
                     return@forEach
                 }
                 if (next != completion) {
@@ -616,9 +625,41 @@ class AgentLoop(
             }
         }
 
+        // 自己申报的计数最后一次变化的步数:连续几步一个数都没动就提醒一次(见 TurnPolicy.metricStalled)
+        var metricDone: Int? = null
+        var metricSinceStep = 0
+        var metricNudged = false
+        var progressMissingNudged = false
+
         for (step in 1..maxSteps) {
             appendSteers(history, inbox)
             if (maxSteps != Int.MAX_VALUE) TurnPolicy.beforeStep(TurnSnapshot(step, maxSteps))?.let { history += ctx.notice(it.source, it.text) }
+            // 申报被丢弃的理由要回喂:模型只看到事件日志里的记录,不知道自己的进度没了
+            if (progressRejected.isNotEmpty() && progressRejectedNudged < PROGRESS_REJECTED_NUDGES) {
+                progressRejectedNudged++
+                val detail = progressRejected.distinct().takeLast(3).joinToString("; ").ifBlank { "invalid JSON" }
+                progressRejected.clear()
+                TurnPolicy.progressRejected(detail).let { history += ctx.notice(it.source, it.text) }
+            }
+            // 走到一半还没有任何可验收的完成条件:提醒一次,不然它只能跑到步数用完
+            if (!progressMissingNudged && completion.metric == null && completion.criteria.isEmpty()) {
+                TurnPolicy.progressMissing(step, maxSteps)?.let {
+                    progressMissingNudged = true
+                    history += ctx.notice(it.source, it.text)
+                }
+            }
+            // 只有报了数量的计数才可能「卡住」;用 boundary 描述的开放采集没有数可数
+            completion.metric?.done?.let { done ->
+                if (done != metricDone) {
+                    metricDone = done
+                    metricSinceStep = step
+                } else {
+                    TurnPolicy.metricStalled(step, maxSteps, metricSinceStep, metricNudged, completion.metric?.state())?.let {
+                        metricNudged = true
+                        history += ctx.notice(it.source, it.text)
+                    }
+                }
+            }
             appendRuntimeState(history, place, labels, step, completion)
             _state.value = TaskState.Running(step, note, progress = progressState())
             refreshOffer()
@@ -1505,6 +1546,8 @@ class AgentLoop(
         const val MAX_PARALLEL_TOOLS_PER_CAPABILITY = 2
         /** 正常任务没有固定步数截止；显式步数预算只用于评测和指定上限的子任务。 */
         const val UNLIMITED_STEPS = Int.MAX_VALUE
+        /** 进度申报被丢弃时最多回喂几次理由：够它改对，又不至于每步刷一遍。 */
+        const val PROGRESS_REJECTED_NUDGES = 2
         /** 核查期间界面上这一步的说明。 */
         const val VERIFYING_NOTE = "正在核实结果"
         val APPROVED_STEP_FIRST: String get() = Feedback["approved_step_first"]
