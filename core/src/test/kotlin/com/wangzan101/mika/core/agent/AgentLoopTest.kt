@@ -434,6 +434,14 @@ class AgentLoopTest {
         assertEquals("unknown_tool", r.json().s("error"))
     }
 
+    @Test fun progressBlockCalledAsToolIsToldItIsNotATool() = runTest {
+        val m = FakeModel(tools(call("task_progress", """{"criteria":["读出 10 条"]}""")), finish())
+        com.wangzan101.mika.core.testing.assertAnswered(DONE, loop(m).run("t"))
+        val r = m.requests[1].withoutRuntime().last().results().single().json()
+        assertEquals("unknown_tool", r.s("error"))
+        assertTrue("<task_progress>" in r.s("message"))
+    }
+
     @Test fun authErrorStopsWithReason() = runTest {
         val r = loop(FakeModel(ModelError.Auth())).run("t")
         assertTrue(r is TaskState.Failed && "API Key" in r.reason && r.kind == FailKind.Model)

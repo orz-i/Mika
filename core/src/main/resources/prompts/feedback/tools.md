@@ -592,6 +592,9 @@ From your next call on you also have the {{topics}} tools ({{examples}} and the 
 ## unknown_tool
 Unknown tool '{{name}}'. Use one of: {{tools}}.
 
+## unknown_tool_progress
+'{{name}}' is not a tool. Progress is a text block in your own reply: <task_progress>{"criteria":["…"],"metric":{"name":"…","done":0,"total":0},"complete":false}</task_progress>. It costs no tool call and no extra request; nothing was recorded from this call.
+
 ## unknown_tool_retired
 There is no tool '{{name}}' any more. To do that now, {{instead}}. Nothing was done.
 

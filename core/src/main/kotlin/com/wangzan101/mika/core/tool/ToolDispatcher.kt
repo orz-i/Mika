@@ -543,11 +543,15 @@ class ToolDispatcher internal constructor(
         put("ok", false); put("error", "unknown_tool"); put("tool", name)
         val now = legacy.replacements(name, args).filter { registry[it] != null }
         val instead = legacy.retiredAs(name)
-        put("message", if (instead != null) Feedback.format("unknown_tool_retired", "name" to name, "instead" to instead)
+        put("message", if (name in PROGRESS_AS_TOOL) Feedback.format("unknown_tool_progress", "name" to name)
+            else if (instead != null) Feedback.format("unknown_tool_retired", "name" to name, "instead" to instead)
             else if (now.isNotEmpty()) Feedback.format("unknown_tool_renamed", "name" to name, "tools" to now.joinToString(" or "))
             else Feedback.format("unknown_tool", "name" to name, "tools" to (registry.listedNames().joinToString())))
         put("recoverable", true)
     })
+
+    /** 进度块是回复里的文本,不是工具。模型想起来报进度却选了工具调用时,说清写法,别让它以为已经报上了。 */
+    private val PROGRESS_AS_TOOL = setOf("task_progress", "progress", "update_progress", "report_progress")
 
     /** 证据账本此刻的位置(见 [EvidenceLedger.lastId]);动作之前记下,之后用 [readSince] 看动作之后有没有重新读过。 */
     fun ledgerMark(): Int = synchronized(evidenceLock) { evidenceLog.ledger.lastId }
