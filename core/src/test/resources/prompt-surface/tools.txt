@@ -82,6 +82,8 @@ Clear the focused text field, or the one given by ref+snapshotId. The result's e
 
 ## phone_collect
 Read text across successive screens in the current Android app, scrolling locally between reads. Use for chat history, feeds, lists, and other long content. Choose the direction toward content you need. The tool merges overlapping lines and stops when no new text appears twice, the app changes, an action fails, or a resource limit is reached. Set fromY and toY to exclude fixed headers or bottom navigation when needed. Inspect the collected text and continue with another call if stopped by a limit. Each scroll is recorded as its own action. The app screen moves while collecting.
+
+The result lists what was read, then why it stopped. no_new_content, a reached limit and a failed scroll mean there is no further text that way; the lines already returned are content, so keep them. Call it again only to continue past the point it reached, never on the same unchanged screen. Two calls in a row returning only items you already have mean this list is done: change the sort, filter or query, or answer with what you collected.
 {"type":"object","properties":{"direction":{"type":"string","description":"Direction of newer content: up or down.","enum":["up","down"]},"pages":{"type":"integer","description":"Maximum screens to inspect, 1-30 (default 10).","minimum":1,"maximum":30},"maxItems":{"type":"integer","description":"Maximum lines to return, 1-1000 (default 300).","minimum":1,"maximum":1000},"fromY":{"type":"integer","description":"Top of the content area, normalized 0-999 (default 50).","minimum":0,"maximum":999},"toY":{"type":"integer","description":"Bottom of the content area, normalized 0-999 (default 950).","minimum":0,"maximum":999},"reason":{"type":"string","description":"Optional short note on why you are calling this, in the user's language; shown to the user as the step label."}},"required":["direction"],"additionalProperties":false}
 
 ## phone_describe
@@ -120,12 +122,21 @@ Draw a one-finger path or two simultaneous paths on the task's virtual display. 
 Extract the captured HTTP response body (typically JSON) for a specific network request by requestId or by matching a URL pattern.
 
 Use this when you need exact structured backend data (e.g., order ID, tracking number, status, detailed list items) directly from the API response instead of reading or parsing imperfect visual text from the screen.
+
+not_found means the body is not in the current capture window (wrong requestId, or it was evicted — see retention), not that the app has no such data: repeat the action to capture the request again or read the screen, instead of retrying the same requestId.
 {"type":"object","properties":{"requestId":{"type":"string","description":"Unique request ID returned from phone_wait_network or phone_inspect_network."},"urlPattern":{"type":"string","description":"URL substring or regex to find matching response if requestId is omitted."},"asString":{"type":"boolean","description":"Whether to return decoded text body, default true."},"reason":{"type":"string","description":"Optional short note on why you are calling this, in the user's language; shown to the user as the step label."}},"required":[],"additionalProperties":false}
 
 ## phone_inspect_network
 Inspect recent HTTP network requests and responses captured from the current target app on the virtual display.
 
 Returns recent network events with their requestId, URL, HTTP method, status code, and latency. Use this to discover API endpoints, verify if an action triggered a network call, or find the requestId for phone_get_network_response.
+
+The history is a rolling window, so the result also reports retention (kept, capacity, trimmed, oldestKeptAt). Read it before concluding anything:
+- capturing false, or captureError / warnings present: this app is not being decrypted, so querying again gives the same answer. Read the screen instead.
+- count 0 with trimmed above 0: the request happened earlier and was evicted. Repeat the app action, then inspect once.
+- count 0 with trimmed 0: nothing has been captured in this window yet. Make a request really happen (the action, or phone_wait_network), then inspect once.
+
+Two empty looks mean this route is unavailable for this task: fall back to reading the screen.
 {"type":"object","properties":{"limit":{"type":"integer","description":"Maximum number of recent network requests to return, 1-50 (default 10).","minimum":1,"maximum":50},"filter":{"type":"string","description":"Optional keyword or URL regex filter."},"reason":{"type":"string","description":"Optional short note on why you are calling this, in the user's language; shown to the user as the step label."}},"required":[],"additionalProperties":false}
 
 ## phone_inspect_network

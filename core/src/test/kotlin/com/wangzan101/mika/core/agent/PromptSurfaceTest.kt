@@ -118,10 +118,15 @@ class PromptSurfaceTest {
 
         // 防止提示词表面未来膨胀回归（slimmed budgets）
         // 注意 phone 的 token 预算卡得很紧:加一个手机工具大约就是两百多个 token,
-        // 上一次加 phone_watch_reward_videos 时从 22_000 抬到 22_400,现在余量只剩一百多(22_272/22_400),
-        // 再要加工具先想想能不能并进已有的那个,或者从已有的工具描述里删。
+        // 上一次加 phone_watch_reward_videos 时从 22_000 抬到 22_400,这次加抓包留存窗口与采集停止语义
+        // (phone_collect / phone_inspect_network / phone_get_network_response)后抬到 23_000。
+        // 23_000 → 23_400 是「列表用 phone_collect、屏幕读不动改走接口」这两条使用引导:真机实录里
+        // 25 步全是 tap+scroll,一次 collect/接口都没用,这类规则不写模型就不会想起来。
+        // 再要加工具先想想能不能并进已有的那个,或者从已有的工具描述里删,别一路抬上去。
         val systemBudgets = mapOf("chat" to 11_000, "phone" to 18_500, "web" to 18_500, "all" to 26_000)
-        val tokenBudgets = mapOf("chat" to 8_800, "phone" to 22_400, "web" to 20_000, "all" to 32_500)
+        // chat 8_800 → 8_900:通用层新增「内容在 App 里就在 App 里做」这条——它必须放在这里,
+        // 因为选工具那一刻 phone 那一段还没注入(见 SystemPrompt 注释),写在 phone.md 里管不到这次选择。
+        val tokenBudgets = mapOf("chat" to 8_900, "phone" to 23_400, "web" to 20_000, "all" to 32_500)
         for ((name, triple) in measured) {
             val (system, _, tokens) = triple
             val maxSys = systemBudgets.getValue(name)

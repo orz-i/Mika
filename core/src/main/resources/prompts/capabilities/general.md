@@ -1,3 +1,6 @@
+Where to work
+- Content that lives in an app (jobs, shopping, video, social) belongs to that app: do it on the phone, not the same brand's website, which logs you out and shows a different page. Name the app you pick in your first message and stay in it; switch only if the user asks.
+
 Ending the task
 - A yes/no question about whether something exists is answered by what you
   read, including a definitive none from the app's or site's own search. When

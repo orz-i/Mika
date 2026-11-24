@@ -167,6 +167,9 @@ internal object PromptSurfaceFeedback {
         val final = TurnPolicy.finalTurn()
         val completed = TurnPolicy.closeout(Closeout.Completed)
         val noNewData = TurnPolicy.closeout(Closeout.NoNewData, RunProgress.Task("已收集", 12, null, "2026-10-31"))
+        val stalled = TurnPolicy.metricStalled(9, 60, 1, nudged = false, RunProgress.Task("已确认岗位数", 0, 20, null))!!
+        val rejected = TurnPolicy.progressRejected("total must be a whole number such as 20")
+        val missing = TurnPolicy.progressMissing(31, 60)!!
         val stuck = GuardVerdict("no_progress", Severity.Warn, JsonObject(emptyMap()))
         val giveUp = StuckAdvice.next(StuckState(warnings = 1), StuckInput(listOf(stuck), null, null)).second!!
         val typedAgain = StuckAdvice.next(StuckState(typed = mapOf("null\u0000外卖" to 2)), StuckInput(listOf(stuck), "外卖", null)).second!!
@@ -183,6 +186,9 @@ internal object PromptSurfaceFeedback {
             "final_turn" to final.text,
             "completed_closeout" to completed.text,
             "no_new_data_closeout" to noNewData.text,
+            "metric_stalled" to stalled.text,
+            "progress_rejected" to rejected.text,
+            "progress_missing" to missing.text,
             "screenshot_note" to NoticePolicy.imageNote(ToolTraits.fromVerb(Verb.Screenshot), offScreen = false),
             "file_image_note" to NoticePolicy.imageNote(ToolTraits.fromVerb(Verb.ReadFile), offScreen = true),
             "action_frame_note" to NoticePolicy.imageNote(ToolTraits.fromVerb(Verb.Tap), offScreen = false),
@@ -195,6 +201,8 @@ internal object PromptSurfaceFeedback {
             "progress_source" to progress.source,
             "final_source" to final.source,
             "closeout_source" to completed.source,
+            "metric_source" to stalled.source,
+            "progress_error_source" to rejected.source,
             "replay_source" to fileCall("RouteReplayKt", "getREPLAY_SOURCE"),
             "approved_step_first" to AgentLoop.APPROVED_STEP_FIRST,
             "replay_screen_header" to fileCall("RouteReplayKt", "getREPLAY_SCREEN_HEADER"),
