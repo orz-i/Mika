@@ -249,3 +249,81 @@ filesDir/capture_plugins_builtin/    # 内置包，由 assets 安装
 5. **`when` 是否命中**：把条件临时删掉试试，能解就是条件写错了（常见：大小写、
    头的名字带了 `:`、二进制魔数该用 `magicHex`）。
 6. **容器头部字段位置**：`payloadLen` / `rawLen` 的 `at` 是相对响应体起点，不是相对头部。
+
+---
+
+## 七、真机验证记录（2026-11-24）
+
+环境：`3B15AN00MNB00000`，KSU root，Mika 0.1.39 debug（`app-debug.apk`，versionCode 见 `app/build.gradle.kts`）。
+样本：BOSS 直聘（`com.hpbr.bosszhipin`），场景为「成都 全栈开发 / AI Agent 开发」岗位卡片列表。
+**结论：抓包链路通过。**
+
+| 检查项 | 结果 | 证据 |
+| --- | --- | --- |
+| 内置包已安装 | 4/4 | `files/capture_plugins_builtin/` 下 `bosszhipin`(2490B) `douyin`(1286B) `generic-cronet`(366B) `xiaohongshu`(1001B) 的 `plugin.json` 齐全 |
+| 用户覆盖仍在（升级安装后） | 3 条 | `Loaded 3 JSON capture plugin override(s) from …/aau_capture_plugins.json`；文件 mtime 仍是 11-21，说明没被安装覆盖 |
+| 进程内通道判断 | 通过 | `prepareCapture(com.hpbr.bosszhipin): enabled=true root=true bridge=true` → 随后 `capturing=true`。这一行是「先加载插件源、再判断要不要 bridge」修复的直接证据——修复前这里恒为 `false`，预热走暖启、错过 native 方法注册的时机 |
+| SSL 点位：规则命中 | 通过 | `ssl-offsets …/libzp-sdk-transport.so source=rule write=0x1e1ec8 read=0x1e1a6c`，紧接着 `native attached` |
+| SSL 点位：启发式兜底 | 通过 | `libzp-sdk-im.so source=openssl_heuristic write=0x1e1f3c`、`libzp-sdk-rtc.so source=openssl_heuristic`，均 `native attached` |
+| ART JNI 探针 | 通过 | `jni_register_probe` / `jni_region_probe` / `jni_array_len_probe` / `jni_array_get_probe`，偏移全部落在 `/apex/com.android.art/lib64/libart.so` |
+| 明文 | 通过 | `decoded jni body method=2 bytes=35402`；从磁盘响应体缓存取出该 `/api/zpgeek/app/geek/search/cardlist` 响应，解析出 15 条岗位卡片（含薪资、公司、区域、HR 在线状态）。另一轮 68 步里累计 `decoded jni` 20 次 |
+
+覆盖文件的兼容性单测同时通过：
+`:aau-common:testDebugUnitTest --tests '*BuiltinPluginPackagesTest*'` 8/8、
+`:app:testDebugUnitTest --tests '*CapturePluginProfileStoreTest*'` 10/10，
+含 `replacingOffsetsKeepsTheDecoderPipeline`（只换偏移不动解码管道）、
+`replacingOffsetsKeepsTheBuiltinJniSignatures`（只换偏移不动内置签名）、
+`oldOverrideStillMergesWithTheBuiltinPackage`（旧格式 override 与内置包合并）、
+`wildcardExternalPackageDoesNotRelabelEveryBuiltinEntry`。
+
+### 7.1 三条用户 override 实测（抖音 / 小红书 / 起点）
+
+上表是 BOSS 的整链路；这一节单独跑设备上那三条 override，绕开 Agent 直接用 Mika 自带的
+`libaau_ebpf.so` 抓指定 uid，参数与 Mika 运行时一致（`--ssl-offsets` / `--cronet-offsets` /
+`--cronet-abi` / `--cronet-slots` / `--cronet-sig`），stdout 按 `wire_tls_hdr`
+（magic `AAUE`，60 字节头 + 原始明文）解析。这样出来的结论不再受 Agent 跑偏影响。
+
+| App | 版本 | 目标库 | 解析来源 | 抓到什么 |
+| --- | --- | --- | --- | --- |
+| 抖音 `com.ss.android.ugc.aweme` | 41.1.0 | `libttboringssl.so` | `dynsym` | 10,859 帧 / 31.7 MB：`HTTP/1.1 200` 响应头、`ftypheic` 图片、`ftypisom`+`moov/mvhd` 视频 |
+| 小红书 `com.xingin.xhs` | 9.54.0 | `libcronet.114.0.5735.38.so` | **`rule`** | 1,090 帧 / 3.7 MB：cronet 路径（dir=4/6）90–100% 为可读 JSON，含真实 feed（`{"code":0,...,"data":[{"id":"6ae16d…","name":"成都60天线下新版AIGC实操班来咯！"…`） |
+| 起点 `com.qidian.QDReader` | 7.9.486 | `libssl.so` | `dynsym` | 104 帧 / 420 KB：完整 `POST /ywslogcpt/… HTTP/1.1` 请求明文、`HTTP/1.1 200 … application/json` 响应 |
+
+三条的点位证据：
+
+```
+# 抖音
+INFO:ssl-offsets …/libttboringssl.so source=dynsym write=0x44bb0 read=0x4494c sni=0x45ec4
+ATTACHED:…/libttboringssl.so
+# 小红书（唯一真正走规则分支的）
+INFO:ssl-offsets …/libcronet.114.0.5735.38.so source=rule write=0x4ea720 read=0x4ea438 sni=0x4eb0c8
+ATTACHED:…/libcronet.114.0.5735.38.so
+ATTACHED_CRONET:…/libcronet.114.0.5735.38.so
+# 起点
+INFO:ssl-offsets …/libssl.so source=dynsym write=0x3d364 read=0x3d2b8 sni=0x0
+ATTACHED:…/libssl.so
+```
+
+**偏移语义**：引擎给 uprobe PMU 的是**文件偏移**（`attr.config2`）。抖音符号表里
+`SSL_write=0x48bb0`，可执行段 `p_vaddr - p_offset = 0x4000`，所以文件偏移是 `0x44bb0` ——
+与覆盖值一致；`resolve_elf_symbol_offset()` 里也做了这层换算（`(vaddr - p_vaddr) + p_offset`），
+符号路径和规则路径因此是同一套坐标。起点 `libssl.so` 的可执行段 `p_offset == p_vaddr`，
+两者相等，所以两种写法看起来一样。
+
+**两条记在案的结论**：
+
+1. **有符号表的库上 `sslOffsetRules` 走不到。** 解析顺序是 dynsym → rule → heuristic
+   （见 `inspect_library_offsets`，注释说明了原因：规则按子串匹配，一条 `libssl.so:…`
+   会同时命中 `/apex` 和 `/system` 下偏移完全不同的同名库）。抖音、起点都带 `.dynsym`，
+   所以这两条 override 属于「值正确但未被使用」。要让覆盖真正生效，只能针对无符号表的库
+   （如小红的 `libcronet`）。
+2. **覆盖不能顺手把内置签名一起吃掉。** 抖音内置包给了两条 cronet JNI 签名，用户覆盖只写了
+   一条；`replaceBuiltinOffsets` 跳过内置包时若只保留 `declarative`，签名会剩一条。
+   已改为把被跳过插件的 `responseCodecs` / `diagnose` / `hostFix` /
+   `cronetAbiRule.jniSignatures` 都并进来，只让 ABI **布局**听覆盖的。
+
+Mika 自身链路回归（装新包后跑「打开抖音，往下刷三条视频」）：
+`prepareCapture(com.ss.android.ugc.aweme): enabled=true root=true bridge=false`
+（抖音没有 `jniHookRules`，不需要进程内通道）→ `Loaded 3 JSON capture plugin override(s)`
+→ `READY:…/libttboringssl.so` → `TlsStreamParser: no wait … already plaintext`。
+
