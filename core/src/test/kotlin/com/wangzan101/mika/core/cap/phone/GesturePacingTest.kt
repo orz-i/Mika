@@ -58,17 +58,33 @@ class GesturePacingTest {
             val cx = (left + left + w) shr 1; val cy = (top + top + h) shr 1
             assertTrue("x=$x outside", x in left until left + w)
             assertTrue("y=$y outside", y in top until top + h)
-            val reachX = if (w < lim.minJitterSpanPx) 0 else minOf((w * lim.jitterFraction).toInt(), lim.maxJitterPx)
-            val reachY = if (h < lim.minJitterSpanPx) 0 else minOf((h * lim.jitterFraction).toInt(), lim.maxJitterPx)
+            val reachX = reachOf(w)
+            val reachY = reachOf(h)
             assertTrue("dx ${x - cx} > $reachX (w=$w)", abs(x - cx) <= reachX)
             assertTrue("dy ${y - cy} > $reachY (h=$h)", abs(y - cy) <= reachY)
         }
     }
 
-    @Test fun tinyElementsAreTappedAtTheirCentre() {
-        repeat(200) { i ->
-            assertEquals(110 to 210, GesturePacing.human(Random(i)).within(100, 200, 120, 220))
-        }
+    /** 与实现里的 reach 一致:不超过比例与上限,至少 1px,且不越出元素。 */
+    private fun reachOf(span: Int): Int {
+        if (span < lim.minJitterSpanPx) return 0
+        val room = maxOf((span - 1) / 2, 0)
+        val wanted = minOf((span * lim.jitterFraction).toInt(), lim.maxJitterPx)
+        return minOf(wanted.coerceAtLeast(1), room)
+    }
+
+    @Test fun tinyElementsStillGetDistinctLandingPoints() {
+        // 元素小也不固定在中心:同坐标连点正是 BOSS 数得最准的特征
+        val points = (0 until 200).map { GesturePacing.human(Random(it)).within(100, 200, 120, 220) }.toSet()
+        assertTrue("only ${points.size} distinct points", points.size > 3)
+        assertTrue(points.all { (x, y) -> x in 100..119 && y in 200..219 })
+    }
+
+    @Test fun repeatedTapsOnTheSameElementNeverReuseAPoint() {
+        val p = GesturePacing.human(Random(7))
+        val seen = HashSet<Pair<Int, Int>>()
+        repeat(lim.repeatWindow) { seen += p.within(100, 200, 400, 260) }
+        assertEquals(lim.repeatWindow, seen.size)
     }
 
     @Test fun jitterActuallyVaries() {
@@ -95,8 +111,8 @@ class GesturePacingTest {
             val d = r.nextLong(50, 5001)
             val s = GesturePacing.human(Random(i)).stroke(listOf(from, to), d, bow = true, bounds = 1080 to 2400)
             val pts = s.points
-            assertEquals(from, pts.first().x to pts.first().y)
-            assertEquals(to, pts.last().x to pts.last().y)
+            assertTrue("start ${pts.first()}", abs(pts.first().x - from.first) <= lim.endpointPx + 1e-6 && abs(pts.first().y - from.second) <= lim.endpointPx + 1e-6)
+            assertTrue("end ${pts.last()}", abs(pts.last().x - to.first) <= lim.endpointPx + 1e-6 && abs(pts.last().y - to.second) <= lim.endpointPx + 1e-6)
             assertEquals(0L, pts.first().t)
             assertTrue(pts.zipWithNext().all { (a, b) -> b.t >= a.t })
             assertTrue(pts.size <= lim.maxPoints)
@@ -122,13 +138,18 @@ class GesturePacingTest {
             val dist = hypot(to.first - from.first, to.second - from.second)
             if (dist < lim.stillPx) return@repeat
             val pts = GesturePacing.human(Random(i)).stroke(listOf(from, to), 400, bow = true).points
-            val maxOff = minOf(dist * lim.bowFraction, lim.maxBowPx)
+            // 端点会被微调,几何关系按实际的首尾点算
+            val p0 = pts.first()
+            val p1 = pts.last()
+            val len = hypot(p1.x - p0.x, p1.y - p0.y)
+            if (len < 1.0) return@repeat
+            val maxOff = minOf(len * lim.bowFraction, lim.maxBowPx)
             for (p in pts) {
-                val off = abs((to.second - from.second) * p.x - (to.first - from.first) * p.y + to.first * from.second - to.second * from.first) / dist
+                val off = abs((p1.y - p0.y) * p.x - (p1.x - p0.x) * p.y + p1.x * p0.y - p1.y * p0.x) / len
                 // 二次贝塞尔离直线最远是控制点偏移的一半
                 assertTrue("off $off > $maxOff", off <= maxOff / 2 + 1e-6)
             }
-            val proj = pts.map { ((it.x - from.first) * (to.first - from.first) + (it.y - from.second) * (to.second - from.second)) / dist }
+            val proj = pts.map { ((it.x - p0.x) * (p1.x - p0.x) + (it.y - p0.y) * (p1.y - p0.y)) / len }
             assertTrue(proj.zipWithNext().all { (a, b) -> b >= a - 1e-6 })
         }
     }
@@ -154,9 +175,11 @@ class GesturePacingTest {
     @Test fun drawnPathsAreFollowedWithoutBow() {
         val path = listOf(100.0 to 100.0, 100.0 to 500.0, 600.0 to 500.0)
         val pts = GesturePacing.human(Random(3)).stroke(path, 600, bow = true).points
-        // 每个点都在两段折线上
-        assertTrue(pts.all { abs(it.x - 100.0) < 1e-6 || abs(it.y - 500.0) < 1e-6 })
-        assertEquals(600.0 to 500.0, pts.last().x to pts.last().y)
+        // 多点路径:中间的点都在折线上,只有收尾在终点附近微调(收尾同样会被同坐标计数)
+        val inner = pts.subList(1, pts.size - 1)
+        assertTrue(inner.all { abs(it.x - 100.0) < 1e-6 || abs(it.y - 500.0) < 1e-6 })
+        assertTrue(abs(pts.first().x - 100.0) < 1e-6 && abs(pts.first().y - 100.0) < 1e-6)
+        assertTrue(abs(pts.last().x - 600.0) <= lim.endpointPx + 1e-6 && abs(pts.last().y - 500.0) <= lim.endpointPx + 1e-6)
     }
 
     @Test fun holdInPlaceOnlyGetsLonger() {

@@ -66,3 +66,6 @@ reverse/**/shot*.png
 
 # gallery3d 是另一个逆向项目的 jadx 源码树(1.1G,与 Mika 无关)
 reverse/gallery3d/
+
+# host build of the evdev injector; the shipped copy lives in aau-common/src/main/assets/evdev
+tools/evdev/evinject

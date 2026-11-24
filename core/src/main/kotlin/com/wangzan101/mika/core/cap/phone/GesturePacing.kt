@@ -14,11 +14,16 @@ import kotlin.random.Random
  * [Instant] 不加任何停顿、偏差和弧度,时长和以前一样(点按 [TAP_MS]、双击间隔 [DOUBLE_TAP_GAP_MS]、滑动按给定时长匀速走直线)。
  */
 class GesturePacing(private val random: Random?, val limits: Limits = Limits()) {
+    /** 最近的落点(按调用顺序),用来避免连续几次点在同一像素上 —— 精确同坐标连点是最容易被数出来的特征。 */
+    private val recent = ArrayList<Pair<Int, Int>>(16)
+
     /**
      * 上下限。时长单位毫秒,距离单位像素。
      * [approachMs]:手指落下前的停顿;[pressMs]:单击按住;[doublePressMs] / [doubleGapMs]:双击每下按住、两下之间
      * (系统认双击要两下间隔 40–300 毫秒);[jitterFraction] / [maxJitterPx] / [minJitterSpanPx]:点元素时落点偏离中心
      * 不超过元素宽(高)的这一比例和这么多像素,比 [minJitterSpanPx] 窄(矮)的方向不偏;[pointJitterPx]:按坐标点时的偏差;
+     * [repeatWindow]:落点去重窗口,新的落点若与最近这么多次里的任何一个重合就重取(见 [GesturePacing.within]);
+     * [liftPx]:抬起点相对按下点的最大偏移;
      * [durationJitter]:滑动时长上下浮动的比例;[holdStretch]:原地按住(起终点几乎重合,如长按)只加长、不缩短,至多加这一比例;
      * [stillPx]:起终点相距不到这么远算原地按住;[bowFraction] / [maxBowPx]:弧线偏离直线的最大幅度;
      * [sampleMs]:手指移动时相邻两点的时间间隔;[maxPoints]:一笔最多这么多点;
@@ -32,8 +37,11 @@ class GesturePacing(private val random: Random?, val limits: Limits = Limits()) 
         val doubleGapMs: LongRange = 80L..140L,
         val jitterFraction: Double = 0.2,
         val maxJitterPx: Int = 12,
-        val minJitterSpanPx: Int = 24,
+        val minJitterSpanPx: Int = 3,
         val pointJitterPx: Int = 3,
+        val repeatWindow: Int = 8,
+        val liftPx: Int = 2,
+        val endpointPx: Int = 6,
         val durationJitter: Double = 0.08,
         val holdStretch: Double = 0.12,
         val stillPx: Double = 3.0,
@@ -66,25 +74,86 @@ class GesturePacing(private val random: Random?, val limits: Limits = Limits()) 
     /**
      * 点元素([left],[top])–([right],[bottom])(右、下不含)时的落点:中心(和 Rect.centerX/centerY 一样取整)附近,
      * 偏离不超过宽(高)的 [Limits.jitterFraction] 与 [Limits.maxJitterPx],靠中心的更多;窄的方向不偏。落点总在元素里。
+     *
+     * 落点若与最近 [Limits.repeatWindow] 次里的任何一个完全相同,就重取(最多 [MAX_REPICK] 次)。
+     * BOSS 的 `t.a.b$f` 用 `PointF` 精确相等计数,同一坐标第 5 次直接上报 `type_cheat_position`;
+     * 元素再小也至少偏 1px,连续点同一个控件不会落在同一像素上。
      */
     fun within(left: Int, top: Int, right: Int, bottom: Int): Pair<Int, Int> {
         val cx = (left + right) shr 1
         val cy = (top + bottom) shr 1
         val r = random ?: return cx to cy
-        fun reach(span: Int) = if (span < limits.minJitterSpanPx) 0 else minOf((span * limits.jitterFraction).toInt(), limits.maxJitterPx)
-        return (cx + offset(r, reach(right - left))).coerceIn(left, maxOf(left, right - 1)) to
-            (cy + offset(r, reach(bottom - top))).coerceIn(top, maxOf(top, bottom - 1))
+        val reachX = reach(right - left)
+        val reachY = reach(bottom - top)
+        var x = cx
+        var y = cy
+        for (attempt in 0 until MAX_REPICK) {
+            x = (cx + offset(r, reachX)).coerceIn(left, maxOf(left, right - 1))
+            y = (cy + offset(r, reachY)).coerceIn(top, maxOf(top, bottom - 1))
+            if (!isRepeat(x, y)) break
+        }
+        remember(x, y)
+        return x to y
     }
 
-    /** 按坐标点时的落点:给定点附近 [Limits.pointJitterPx] 以内(不到 1dp,不会点偏到别的控件);坐标不小于 0。 */
+    /** 按坐标点时的落点:给定点附近 [Limits.pointJitterPx] 以内(不到 1dp,不会点偏到别的控件);坐标不小于 0。同样做落点去重。 */
     fun near(x: Int, y: Int): Pair<Int, Int> {
         val r = random ?: return x to y
-        return (x + offset(r, limits.pointJitterPx)).coerceAtLeast(0) to (y + offset(r, limits.pointJitterPx)).coerceAtLeast(0)
+        var nx = x
+        var ny = y
+        for (attempt in 0 until MAX_REPICK) {
+            nx = (x + offset(r, limits.pointJitterPx)).coerceAtLeast(0)
+            ny = (y + offset(r, limits.pointJitterPx)).coerceAtLeast(0)
+            if (!isRepeat(nx, ny)) break
+        }
+        remember(nx, ny)
+        return nx to ny
+    }
+
+    /**
+     * 按下点([x],[y])抬起时的位置:附近 [Limits.liftPx] 以内。
+     * 真手指按下与抬起几乎不会落在同一像素,而系统注入的点击起终点完全重合 —— 这也是一个可数的特征。
+     */
+    fun lift(x: Int, y: Int): Pair<Int, Int> {
+        val r = random ?: return x to y
+        return (x + offset(r, limits.liftPx)).coerceAtLeast(0) to (y + offset(r, limits.liftPx)).coerceAtLeast(0)
+    }
+
+    /** 滑动端点:给定点附近 [Limits.endpointPx] 以内。 */
+    private fun nudge(r: Random, p: Pair<Double, Double>): Pair<Double, Double> =
+        (p.first + offset(r, limits.endpointPx)) to (p.second + offset(r, limits.endpointPx))
+
+    /** 收尾点:抖动后再做一次落点去重,连续几次滑动不会停在同一像素。 */
+    private fun nudgeEnd(r: Random, p: Pair<Double, Double>): Pair<Double, Double> {
+        var out = nudge(r, p)
+        for (attempt in 0 until MAX_REPICK) {
+            out = nudge(r, p)
+            if (!isRepeat(out.first.roundToInt(), out.second.roundToInt())) break
+        }
+        remember(out.first.roundToInt(), out.second.roundToInt())
+        return out
+    }
+
+    /** 元素这个方向上最多偏多少:不超过元素宽(高)的 [Limits.jitterFraction] 与 [Limits.maxJitterPx],且不越出元素。 */
+    private fun reach(span: Int): Int {
+        if (span < limits.minJitterSpanPx) return 0
+        // 留一半的余量给两侧,保证落点仍在元素内
+        val room = maxOf((span - 1) / 2, 0)
+        val wanted = minOf((span * limits.jitterFraction).toInt(), limits.maxJitterPx)
+        return minOf(wanted.coerceAtLeast(1), room)
     }
 
     // 两个均匀数之和(三角分布):落在中心附近的多,不超过 ±reach
     private fun offset(r: Random, reach: Int): Int =
         if (reach <= 0) 0 else ((r.nextDouble() + r.nextDouble() - 1.0) * reach).roundToInt().coerceIn(-reach, reach)
+
+    private fun isRepeat(x: Int, y: Int): Boolean = recent.any { it.first == x && it.second == y }
+
+    private fun remember(x: Int, y: Int) {
+        if (limits.repeatWindow <= 0) return
+        if (recent.size >= limits.repeatWindow) recent.removeAt(0)
+        recent.add(x to y)
+    }
 
     /** 几根手指一起动的手势(不经 [stroke] 排点)的时长:给定值上下浮动 [Limits.durationJitter]。 */
     fun duration(durationMs: Long): Long {
@@ -93,7 +162,8 @@ class GesturePacing(private val random: Random?, val limits: Limits = Limits()) 
     }
 
     /**
-     * 一根手指沿 [path](至少两个点)走 [durationMs] 左右的一笔。起点、终点不变;[bow] 为 true 时两点之间走一小段弧线
+     * 一根手指沿 [path](至少两个点)走 [durationMs] 左右的一笔。起终点各在 [Limits.endpointPx] 内微调
+     * (多点路径只调整首尾,中间的点照给定画);[bow] 为 true 时两点之间走一小段弧线
      * (只对两个点的路径,多点路径是调用方画好的,照着走)。[bounds] 给了(宽,高)时点都夹在屏内。
      * 起终点几乎重合时是原地按住:只有起点和终点,时长只加长不缩短(长按仍然够长)。
      * [Instant]:点就是 [path],按路径长短匀速分配时间,时长正是 [durationMs]。
@@ -102,10 +172,15 @@ class GesturePacing(private val random: Random?, val limits: Limits = Limits()) 
         require(path.size >= 2) { "a stroke needs at least two points" }
         val total = durationMs.coerceAtLeast(1)
         val r = random ?: return Stroke(uniform(path, total))
-        val start = path.first()
-        val end = path.last()
-        val length = lengthOf(path)
-        if (length < limits.stillPx) {
+        // 原地按住(长按)不能抖:几像素的位移会让长按变成微小滑动
+        val still = lengthOf(path) < limits.stillPx
+        // 起终点也抖一下:连续几次滑动的收尾若落在同一像素,同样会被 PointF 精确计数(type_cheat_position)。
+        // 多点路径只调整收尾,中间的点是调用方画好的。
+        val start = if (still || path.size > 2) path.first() else nudge(r, path.first())
+        val end = if (still) path.last() else nudgeEnd(r, path.last())
+        val shaped = if (path.size == 2) listOf(start, end) else path
+        val length = lengthOf(shaped)
+        if (still) {
             val hold = (total * (1 + r.nextDouble(0.0, limits.holdStretch))).roundToLong()
             return Stroke(listOf(Point(start.first, start.second, 0), Point(end.first, end.second, hold)))
         }
@@ -113,7 +188,7 @@ class GesturePacing(private val random: Random?, val limits: Limits = Limits()) 
         val shape = if (bow && path.size == 2) {
             val c = Pace.control(start, end, Pace.bow(r, length, limits.bowFraction, limits.maxBowPx))
             (0..CURVE_SEGMENTS).map { Pace.bezier(start, c, end, it.toDouble() / CURVE_SEGMENTS) }
-        } else path
+        } else shaped
         val endSpeed = if (t >= limits.dragMs) 0.0 else r.nextDouble(limits.flingEndSpeed.start, limits.flingEndSpeed.endInclusive)
         val step = Pace.pick(r, limits.sampleMs).coerceAtLeast(1)
         val n = ceil(t.toDouble() / step).toInt().coerceIn(1, limits.maxPoints - 1)
@@ -133,6 +208,9 @@ class GesturePacing(private val random: Random?, val limits: Limits = Limits()) 
     companion object {
         /** 不加节奏时点按按住的时长。 */
         const val TAP_MS = 50L
+
+        /** 落点与最近几次重合时最多重取几次;仍然重合就接受(元素太小,取不到新值)。 */
+        private const val MAX_REPICK = 6
 
         /** 弧线拆成这么多小段再按时间取点。 */
         private const val CURVE_SEGMENTS = 32
