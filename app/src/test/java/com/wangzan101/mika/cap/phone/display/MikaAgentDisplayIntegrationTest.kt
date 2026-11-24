@@ -112,6 +112,9 @@ class MikaAgentDisplayIntegrationTest {
             putString("output", "ok")
         }
         override fun topActivity(displayId: Int): String = "com.test.app.MainActivity"
+        override fun inspectUi(maxDepth: Int, maxNodes: Int): String = """{"ok":false,"reason":"not_supported"}"""
+        override fun focusDisplay(displayId: Int): Boolean = false
+        override fun focusMainDisplay(): Boolean = false
         override fun injectCtrlKey(displayId: Int, keyCode: Int): Int = 1
         override fun listUsers(): String = "Users:\nUserInfo{0:Owner:13}\n"
         override fun listPackages(userId: Int): String = "package:com.test.app\n"

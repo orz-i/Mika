@@ -1,6 +1,5 @@
 package com.wangzan101.mika.cap.phone.a11y
 
-import android.view.accessibility.AccessibilityNodeInfo
 import com.wangzan101.mika.core.cap.phone.PHONE_SNAPSHOT_PREFIX
 import com.wangzan101.mika.core.uistate.ElementLocator
 import com.wangzan101.mika.core.uistate.UiElement
@@ -9,8 +8,11 @@ import java.util.UUID
 /** 手机读屏的 snapshotId:手机的前缀加随机串(看编号就知道是手机的,和网页的分得开)。 */
 internal fun snapshotId(): String = PHONE_SNAPSHOT_PREFIX + UUID.randomUUID()
 
-/** 快照里的一个元素:交给模型的 [element]、认元素用的 [locator]、可直接操作的 [node]。 */
-internal class NodeEntry(val element: UiElement, val locator: ElementLocator, val node: AccessibilityNodeInfo)
+/**
+ * 快照里的一个元素:交给模型的 [element]、认元素用的 [locator]、可直接操作的 [node]。
+ * [node] 可能是引用型(无障碍读的)也可能是快照型(免无障碍读的),看 [NodeHandle.isLive]。
+ */
+internal class NodeEntry(val element: UiElement, val locator: ElementLocator, val node: NodeHandle)
 
 internal class NodeSnapshot(val id: String, val entries: List<NodeEntry>) {
     val locators: List<ElementLocator> get() = entries.map { it.locator }

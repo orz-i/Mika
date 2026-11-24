@@ -127,7 +127,7 @@ internal object ScreenReader {
                             states = uiStates(n),
                         )
                         val locator = ElementLocator(nodeRole, label, nodeRid, rect.centerX(), rect.centerY(), lastLabel, element.hint, inList)
-                        entries += NodeEntry(element, locator, n)
+                        entries += NodeEntry(element, locator, LiveNode(n))
                         if (label.isNotEmpty()) lastLabel = label
                     }
                 }

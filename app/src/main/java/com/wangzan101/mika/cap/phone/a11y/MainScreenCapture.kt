@@ -35,7 +35,7 @@ internal object MainScreenCapture {
     }
 
     /** 只查看窗口根的归属,不遍历文本;有未知归属时拒绝分享。 */
-    fun sourcePackages(service: ScreenAccessibility): Set<String>? {
+    fun sourcePackages(service: ScreenAccess): Set<String>? {
         val windows = service.windowsOn(Display.DEFAULT_DISPLAY).filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
         if (windows.isEmpty()) return null
         val packages = windows.map { it.root?.packageName?.toString() }
@@ -44,7 +44,7 @@ internal object MainScreenCapture {
     }
 
     /** 截图(调用方已把浮层藏好)。读树要在截图的同一时刻:截完马上读。 */
-    suspend fun shoot(service: ScreenAccessibility): Pair<ScreenAccessibility.MainShot, ScreenRead?> {
+    suspend fun shoot(service: ScreenAccess): Pair<MainShot, ScreenRead?> {
         val shot = service.takeMainScreenshot()
         val read = runCatching { readTree(service) }.getOrNull()
         return shot to read
@@ -52,23 +52,23 @@ internal object MainScreenCapture {
 
     /** 截下的画面和树整理成一屏(在后台:编码、认字);[topInset]/[bottomInset] 是状态栏、导航条占掉的像素。 */
     suspend fun build(
-        service: ScreenAccessibility, shot: ScreenAccessibility.MainShot, read: ScreenRead?,
+        service: ScreenAccess, shot: MainShot, read: ScreenRead?,
         topInset: Int, bottomInset: Int, appLabel: (String) -> String,
     ): Result = withContext(Dispatchers.Default) {
         val pkg = read?.topPackage
         if (pkg == service.packageName) {
-            (shot as? ScreenAccessibility.MainShot.Ok)?.bitmap?.recycle()
+            (shot as? MainShot.Ok)?.bitmap?.recycle()
             return@withContext Result.Self
         }
         val now = System.currentTimeMillis()
         val label = pkg?.let(appLabel)
         when (shot) {
-            is ScreenAccessibility.MainShot.Failed -> {
+            is MainShot.Failed -> {
                 Log.w(TAG, "screenshot failed: ${shot.code}")
                 Result.Unavailable
             }
-            ScreenAccessibility.MainShot.Secure -> Result.Captured(CapturedScreen(null, UserScreen("", now, pkg, label, blocked = true)))
-            is ScreenAccessibility.MainShot.Ok -> {
+            MainShot.Secure -> Result.Captured(CapturedScreen(null, UserScreen("", now, pkg, label, blocked = true)))
+            is MainShot.Ok -> {
                 val bmp = shot.bitmap
                 try {
                     val jpeg = ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }.toByteArray()
@@ -90,10 +90,10 @@ internal object MainScreenCapture {
     }
 
     /** 主屏上属于 App 的窗口(状态栏、导航栏、输入法、浮层不算)读成元素。 */
-    private fun readTree(service: ScreenAccessibility): ScreenRead {
+    private fun readTree(service: ScreenAccess): ScreenRead {
         val windows = service.windowsOn(Display.DEFAULT_DISPLAY).filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
         val m = service.resources.displayMetrics
-        val size = runCatching { service.overlays().area() }.getOrNull()
+        val size = service.overlayArea()
         return ScreenReader.read(windows, size?.width ?: m.widthPixels, size?.height ?: m.heightPixels)
     }
 

@@ -254,6 +254,12 @@ class MikaAgentShellBridge(private val mikaShell: IMikaShell) : IAgentShell {
     }
 
     override fun captureCapability(): Bundle = mikaShell.captureCapability()
+
+    override fun inspectUi(maxDepth: Int, maxNodes: Int): String = mikaShell.inspectUi(maxDepth, maxNodes)
+
+    override fun focusDisplay(displayId: Int): Boolean = mikaShell.focusDisplay(displayId)
+
+    override fun focusMainDisplay(): Boolean = mikaShell.focusMainDisplay()
 }
 
 /** 扩展方法：将 IMikaShell 转换为 IAgentShell */

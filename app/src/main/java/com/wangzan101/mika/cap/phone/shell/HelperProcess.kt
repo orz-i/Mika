@@ -14,6 +14,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.Process
+import android.os.SystemClock
 import android.util.Log
 import com.wangzan101.mika.core.shell.HelperHandoff
 import com.wangzan101.mika.core.shell.HelperRestorePolicy
@@ -60,6 +61,21 @@ object HelperProcess {
         service.recoverMuted()
         val helper = Helper(service, packageName, appUid, certPin)
         helper.start(launchNonce)
+        // 预热免无障碍读屏通道：首次连接 UiAutomation 要 100~300ms，
+        // 放在启动时做，别让第一次读屏替它付这笔钱。顺带在日志里留一次可用性证据。
+        Handler(Looper.getMainLooper()).post {
+            runCatching {
+                val started = SystemClock.uptimeMillis()
+                val json = service.inspectUi(24, 400)
+                val reply = runCatching { org.json.JSONObject(json) }.getOrNull()
+                Log.i(
+                    TAG,
+                    "uiAutomation warmup ${SystemClock.uptimeMillis() - started}ms " +
+                        "ok=${reply?.optBoolean("ok")} pkg=${reply?.optString("pkg")} " +
+                        "nodes=${reply?.optInt("count")} bytes=${json.length}",
+                )
+            }.onFailure { Log.w(TAG, "uiAutomation warmup failed", it) }
+        }
         Looper.loop()
     }
 

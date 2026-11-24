@@ -9,6 +9,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.res.Resources
+import android.graphics.Bitmap
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Bundle
@@ -57,6 +58,7 @@ import com.wangzan101.mika.core.uistate.TextField
 import com.wangzan101.mika.core.uistate.typeAndVerify
 import com.wangzan101.mika.core.uistate.relocate
 import com.wangzan101.mika.core.uistate.RELOCATE_MAX_SHIFT
+import com.wangzan101.mika.cap.phone.display.AgentDisplay
 import com.wangzan101.mika.cap.phone.display.FrameMath
 import com.wangzan101.mika.cap.phone.display.LazyAgentDisplay
 import com.wangzan101.mika.cap.phone.shell.ShellService
@@ -111,7 +113,11 @@ private val packageNamePattern = Regex("[A-Za-z0-9._]+")
  * 屏建好不等于打开过 App:只跑系统命令的任务屏上是空的。
  */
 class AndroidScreen(
-    private val a11y: ScreenAccessibility,
+    /**
+     * 这一层系统能力:无障碍服务开着时是 [ScreenAccessibility],没开时是 [ShellScreenAccess]。
+     * 上层只认 [ScreenAccess],所以读法能退化、任务不中断。
+     */
+    private val a11y: ScreenAccess,
     private val shell: IMikaShell,
     private val display: LazyAgentDisplay,
     /** 剪贴板暂时换成 Mika 的文字时为 true,还原后为 false;任务服务据此记下,进程意外结束后下次启动还原。 */
@@ -156,6 +162,11 @@ class AndroidScreen(
     @param:androidx.annotation.VisibleForTesting
     private val isSystemPackageOverride: ((String) -> Boolean)? = null,
 ) : ScreenPort, Closeable {
+    /**
+     * 这一屏脚下的系统能力,给任务侧看两件事:[ScreenAccess.live](接管时能不能数用户在主屏上的点击)、
+     * [ScreenAccess.windowGeneration](界面有没有换代,用来省掉一次核对)。
+     */
+    val access: ScreenAccess get() = a11y
     /** 屏还没建时为 -1;只在确认屏已建好之后用。 */
     private val displayId get() = display.current?.displayId ?: -1
     /** 屏已经建好(不等于打开过 App)。 */
@@ -163,6 +174,11 @@ class AndroidScreen(
     private val screenWidth get() = display.current?.width ?: display.width
     private val screenHeight get() = display.current?.height ?: display.height
     private val ids = NodeIds()
+    /**
+     * shell 读屏要串行:helper 那边只有一条 UiAutomation 连接,
+     * 两次读屏交错会互相等连接、把彼此的超时耗光。
+     */
+    private val shellReadLock = kotlinx.coroutines.sync.Mutex()
     private val localIcons = lazy { LocalIcons.create(a11y.assets) }
     override val supportsLocalIcons get() = LocalIcons.supported
     private enum class WindowProtection { Clear, Protected, Unknown }
@@ -204,6 +220,104 @@ class AndroidScreen(
         ScreenReader.read(windows(), screenWidth, screenHeight, collectSignature = collectSignature)
     private fun treeHash() = ScreenReader.hash(windows())
 
+    /**
+     * 免无障碍的整屏读法:经 shell 通道读一份快照,整理成和 [ScreenReader.read] 同形的 [ScreenRead]。
+     * UiAutomation 读的是**有焦点的屏**,读到用户主屏时尺寸对不上,直接丢掉。
+     */
+    private suspend fun frozenRead(collectSignature: Boolean = false): ScreenRead? {
+        shellSnapshot()?.let { return FrozenReader.read(it, screenWidth, screenHeight, collectSignature) }
+        // UiAutomation 只能读焦点屏,而 Mika 的任务在 overlay 虚拟屏上——焦点换不过去(见 shellScreen)。
+        // 这时改用虚拟屏自己的最新帧 + 端侧 OCR:拿得到每行文字的位置,够按文字找元素、按坐标点。
+        val d = display.current ?: return null
+        // 屏刚建好、App 刚起来的那一下常还一帧都没到(ImageReader 那头还没收到),这时等一小会儿,
+        // 别把「还没画出来」当成「这一屏一个字都没有」交上去——上层会据此判成这个 App 读不进来。
+        val bitmap = d.latestFrameBitmap() ?: firstFrame(d)
+        if (bitmap == null) {
+            Log.i(TAG, "frozenRead: no frame from display ${d.displayId} (lastFrameAt=${d.lastFrameAt()})")
+            return null
+        }
+        val width = bitmap.width
+        val height = bitmap.height
+        val ocr = OcrScreen.read(bitmap, d.displayId)
+        if (ocr == null) {
+            Log.i(TAG, "frozenRead: ocr found no text on ${width}x$height")
+            return null
+        }
+        Log.i(TAG, "frozenRead: ocr lines=${ocr.count - 1} on ${width}x$height")
+        return FrozenReader.read(ocr, width, height, collectSignature)
+    }
+
+    /**
+     * 等虚拟屏的第一帧。只有「一帧都没到」时才等:已经有了却一直不更新,说明画面本来就停着,
+     * 那是要看的事实,不能靠等把它抹平。等到时限还没有就返回 null,由调用方照实说读不到。
+     */
+    private suspend fun firstFrame(d: AgentDisplay): Bitmap? {
+        val deadline = SystemClock.uptimeMillis() + FIRST_FRAME_WAIT_MS
+        while (SystemClock.uptimeMillis() < deadline) {
+            delay(FIRST_FRAME_POLL_MS)
+            d.latestFrameBitmap()?.let { return it }
+        }
+        return d.latestFrameBitmap()
+    }
+
+    /** 经 shell 的 UiAutomation 读一次,结果确认是**这块屏**才返回;读到别的屏(尺寸不符)当没读到。 */
+    private suspend fun shellSnapshot(): ShellScreen? {
+        val screen = shellScreen()
+        if (screen == null) {
+            Log.i(TAG, "frozenRead: shell snapshot unavailable (inspectUi returned nothing parsable)")
+            return null
+        }
+        val root = screen.roots.firstOrNull()?.bounds
+        if (root == null) {
+            Log.i(TAG, "frozenRead: snapshot has no root node (nodes=${screen.count} pkg=${screen.packageName})")
+            return null
+        }
+        // UiAutomation 只能读有焦点的屏,读到用户主屏时尺寸对不上。这里如实说出读到的是哪一屏。
+        if (root.width() != screenWidth || root.height() != screenHeight) {
+            Log.i(
+                TAG,
+                "frozenRead: snapshot is another display root=${root.width()}x${root.height()} " +
+                    "want=${screenWidth}x$screenHeight pkg=${screen.packageName} nodes=${screen.count}",
+            )
+            return null
+        }
+        return screen
+    }
+
+    /**
+     * 免无障碍读屏：经 shell 进程的 UiAutomation 通道读**当前有焦点的屏**。
+     *
+     * 与常规读屏的差别：这条通道不注册 AccessibilityService，应用侧
+     * `getEnabledAccessibilityServiceList` 看不到它；代价是拿不到多窗口列表，
+     * 也拿不到节点引用，只能得到一份只读快照（后续动作必须按坐标做）。
+     */
+    internal suspend fun shellScreen(maxDepth: Int = 30, maxNodes: Int = 1200): ShellScreen? =
+        withContext(Dispatchers.IO) {
+            val started = SystemClock.uptimeMillis()
+            // UiAutomation 只读焦点屏,而 Mika 的任务在 overlay 虚拟屏上:实测 focusTopTask / setFocusedTask
+            // 都换不动 mTopFocusedDisplayId(Android 17 已移除 DisplayManager.setFocusedDisplay),
+            // 所以这里不再尝试抢焦点——抢不到白折腾,还会打断用户主屏。读不到就交给帧 + OCR 兜底。
+            // 串行仍然必要:并发读屏会把这个进程唯一的那条 UiAutomation 连接用满。
+            shellReadLock.lock()
+            val json = try {
+                runCatching { shell.inspectUi(maxDepth, maxNodes) }.getOrNull()
+            } finally {
+                shellReadLock.unlock()
+            }
+            val screen = ShellScreenParser.parse(json)
+            // 服务端取不到可靠的 displayId（getWindow() 常返回空），
+            // 这里用根节点尺寸判断读到的是不是这一屏：两块屏尺寸不同时能直接分辨。
+            val root = screen?.roots?.firstOrNull()?.bounds
+            val sameSize = root != null && root.width() == screenWidth && root.height() == screenHeight
+            Log.i(
+                TAG,
+                "shellScreen want=$displayId got=${screen?.displayId} pkg=${screen?.packageName} " +
+                    "nodes=${screen?.count} bytes=${json?.length ?: 0} " +
+                    "cost=${SystemClock.uptimeMillis() - started}ms sameSize=$sameSize",
+            )
+            screen
+        }
+
     /** 显式使用系统命令或事件工具时按需建屏;普通任务等到第一次打开 App 才建。 */
     suspend fun ensureDisplay() {
         display.get()
@@ -221,8 +335,12 @@ class AndroidScreen(
         if (!hasDisplay) return@withContext ScreenSnapshot(snapshotId(), null, emptyList(), screenWidth, screenHeight, hasWindow = false)
         // 上一个动作过了一会儿才开到用户主屏上的:先消费常驻托管事件再读(只在模型要读的这一屏上做,不在判效果的那一眼里做)
         val late = if (register) settledSpill.getAndSet(null) ?: custodian.drainAndTakeLatestSpill()?.opened else null
-        val r = read(collectSignature = true)
-        val after = treeHash()
+        val live = read(collectSignature = true)
+        // 无障碍读不到这一屏(服务没开/没连上)时,改用 shell 的 UiAutomation 读一份快照顶上:
+        // 元素、文字、界面签名都在,只是节点没有引用,动作按坐标做。
+        val frozen = if (!live.anyAppWindow) frozenRead(collectSignature = true) else null
+        val r = frozen ?: live
+        val after = if (frozen == null) treeHash() else r.hash
         val foreground = if (r.topPackage == null) foregroundTaskPackage() else null
         val currentPkg = r.topPackage ?: foreground
         val windowProtection = currentWindowProtection()
@@ -237,14 +355,16 @@ class AndroidScreen(
         if (register) ids.put(snap)
         ScreenSnapshot(
             snapshotId = snap.id,
-            packageName = r.topPackage,
+            // 读屏通道给不出顶层包名时(OCR 只认字、不认包)退回前台任务所属的包
+            packageName = currentPkg,
             elements = r.entries.map { it.element },
             width = screenWidth,
             height = screenHeight,
             changedDuringRead = after != r.hash,
             protected = screenProtected,
             hasWindow = r.anyAppWindow,
-            unreadableApp = foreground,
+            // 整屏一个字都读不到(连 OCR/快照都没内容)才算"这个 App 读不进来",上层据此提示用户
+            unreadableApp = if (!r.anyAppWindow) foreground else null,
             windows = r.windows,
             // 还在等用户在主屏/确认弹窗处理:照样说一声
             opened = late ?: custodyState.value?.toWaitingOpened(),
@@ -297,7 +417,7 @@ class AndroidScreen(
     override suspend fun findLocalIcon(icon: LocalIcon, region: LocalIconRegion): LocalIconResult = withContext(Dispatchers.IO) {
         if (!supportsLocalIcons) return@withContext LocalIconResult.Miss.Unavailable
         val current = display.current ?: return@withContext LocalIconResult.Miss.NoApp
-        val generation = ScreenAccessibility.windowGeneration()
+        val generation = a11y.windowGeneration()
         val page = read()
         if (page.passwordField) return@withContext LocalIconResult.Miss.Protected
         if (!page.anyAppWindow || page.topPackage == null) return@withContext LocalIconResult.Miss.NoApp
@@ -345,10 +465,10 @@ class AndroidScreen(
 
     private fun localIconFrame(): LocalIconFrame? {
         val d = display.current ?: return null
-        val generation = ScreenAccessibility.windowGeneration()
+        val generation = a11y.windowGeneration()
         if (!frameServable() || frameBlack() != false) return null
         val stamp = d.visibleFrameStamp() ?: return null
-        if (display.current !== d || generation != ScreenAccessibility.windowGeneration()) return null
+        if (display.current !== d || generation != a11y.windowGeneration()) return null
         return LocalIconFrame(d.displayId, stamp.timestampNanos, generation,
             stamp.geometry.logicalWidth, stamp.geometry.logicalHeight, stamp.geometry.rotation)
     }
@@ -608,7 +728,9 @@ class AndroidScreen(
             val event = a11y.eventsFor(displayId).first { e ->
                 (packageName == null || e.packageName?.toString() == packageName) && when (kind) {
                     "window" -> e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED || e.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
-                    "content" -> e.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || e.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+                    // 没有无障碍事件流时(见 ShellScreenAccess)拿不到细粒度的内容事件,轮询到的页面变化就是能等到的最细一级
+                    "content" -> !a11y.live || e.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+                        e.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
                     else -> true
                 }
             }
@@ -644,9 +766,14 @@ class AndroidScreen(
 
     override suspend fun tapRef(ref: String, snapshotId: String): ActionResult = withContext(Dispatchers.IO) {
         if (!hasDisplay) return@withContext NO_APP_OPEN
-        val (node, relocatedTo) = resolve(ref, snapshotId) ?: return@withContext ActionResult.Failed("ref_expired")
+        val (handle, relocatedTo) = resolve(ref, snapshotId) ?: return@withContext ActionResult.Failed("ref_expired")
+        val rect = handle.bounds()
+        val node = handle.raw
+        // 快照型:没有节点引用,就在这块区域里点一下(和点坐标同一条路)
+        if (node == null) return@withContext verified(relocatedTo = relocatedTo) {
+            touch(pacing.within(rect.left, rect.top, rect.right, rect.bottom))
+        }
         val target = ancestorOrSelf(node) { isClickableTarget(it) }
-        val rect = Rect().also(node::getBoundsInScreen)
         val touchFallback: suspend (EventClock) -> Boolean = { clock ->
             clock.mark()
             touch(pacing.within(rect.left, rect.top, rect.right, rect.bottom))
@@ -684,7 +811,7 @@ class AndroidScreen(
             val px = x * (frame.width - 1) / 999f
             val py = y * (frame.height - 1) / 999f
             // Strict reference: no second gesture or fallback on a possibly changed frame.
-            a11y.gesture(frame.displayId, Path().apply { moveTo(px, py) }, pacing.press())
+            a11y.taps(frame.displayId, px, py, 1, pacing.press(), 0L)
         }
         if (stale) ActionResult.Failed("located_stale") else r
     }
@@ -692,7 +819,7 @@ class AndroidScreen(
     override suspend fun doubleTapRef(ref: String, snapshotId: String): ActionResult = withContext(Dispatchers.IO) {
         if (!hasDisplay) return@withContext NO_APP_OPEN
         val target = resolve(ref, snapshotId) ?: return@withContext ActionResult.Failed("ref_expired")
-        val rect = android.graphics.Rect().also { target.first.getBoundsInScreen(it) }
+        val rect = target.first.bounds()
         verified(relocatedTo = target.second) { doubleTapAt(pacing.within(rect.left, rect.top, rect.right, rect.bottom)) }
     }
 
@@ -733,9 +860,9 @@ class AndroidScreen(
         } else {
             read().entries.firstOrNull { it.element.scrollable }?.node
         }
-        val node = start?.let { ancestorOrSelf(it) { n -> n.isScrollable } }
-        if (node == null) {
-            // 没有可滚动的控件时用屏幕中部的滑动代替
+        val node = start?.scrollTarget()
+        // 没有可滚动的控件、或手里只有快照(发不了滚动动作)时,用屏幕中部的滑动代替
+        if (node == null || !node.isLive) {
             return@withContext verified(relocatedTo = relocatedTo) { fingerScroll(down) }
         }
         val action = if (down) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
@@ -765,7 +892,7 @@ class AndroidScreen(
         if (!hasDisplay || imeBox() != null || focusedEditable() != null) return@withContext false
         if (ScreenReader.contentWindows(windows()).count { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } > 1) return@withContext false
         val area = read().entries.filter { it.element.scrollable }
-            .map { e -> android.graphics.Rect().also { e.node.getBoundsInScreen(it) } }
+            .map { e -> e.node.bounds() }
             .maxByOrNull { it.width().toLong() * it.height() } ?: return@withContext false
         if (area.width().toLong() * area.height() < screenWidth.toLong() * screenHeight * IDLE_MIN_AREA) return@withContext false
         val dist = (screenHeight * kotlin.math.abs(fraction)).roundToInt().coerceAtMost(area.height() / 2)
@@ -791,6 +918,11 @@ class AndroidScreen(
         if (!hasDisplay) return@withContext NO_APP_OPEN
         val found = when (val f = findField(ref, snapshotId)) {
             is Field.Found -> f
+            // 免无障碍读到的快照:没有节点引用,点它一下再照「树里看不到的输入框」粘贴
+            is Field.Snapshot -> {
+                val b = f.node.bounds()
+                return@withContext typeAt(b.centerX(), b.centerY(), text)
+            }
             is Field.Missing -> return@withContext when {
                 f.reason == "not_editable" -> {
                     if (ref != null && snapshotId != null) {
@@ -892,6 +1024,10 @@ class AndroidScreen(
         if (!hasDisplay) return@withContext NO_APP_OPEN
         val found = when (val f = findField(ref, snapshotId, tapToFocus = false)) {
             is Field.Found -> f
+            is Field.Snapshot -> {
+                val b = f.node.bounds()
+                return@withContext clearAt(b.centerX(), b.centerY())
+            }
             is Field.Missing -> return@withContext when {
                 f.reason != NO_FOCUS -> ActionResult.Failed(f.reason)
                 !somethingHoldsInputFocus() -> ActionResult.Failed(NO_FOCUS)
@@ -930,7 +1066,7 @@ class AndroidScreen(
         if (!hasDisplay) return@withContext NO_APP_OPEN
         val hit = pointHit(x, y)
         val anchor = hit?.contextPasteAnchor()
-        val target = hit?.node?.takeIf(ScreenReader::canSetText) ?: anchor
+        val target = hit?.node?.raw?.takeIf(ScreenReader::canSetText) ?: anchor
         val original = anchor?.let(FieldShape::of)
         val keyTask = if (anchor != null && AsciiTextKeys.supports(text)) {
             runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)
@@ -952,6 +1088,8 @@ class AndroidScreen(
                 }
                 return@withContext typeField(focused, text)
             }
+            // 焦点框只在有引用时认得出,快照型走下面的粘贴路径
+            is Field.Snapshot -> Unit
         }
         val typed = if (target != null && pointEditorFocusMismatch(target)) {
             // 点击没有让目标拿到焦点,另一个隐藏编辑框还拿着焦点时,按键会写进那个框;这次正文尚未发送。
@@ -1033,7 +1171,7 @@ class AndroidScreen(
     override suspend fun clearAt(x: Int, y: Int): ActionResult = withContext(Dispatchers.IO) {
         if (!hasDisplay) return@withContext NO_APP_OPEN
         val hit = pointHit(x, y)
-        val target = hit?.node?.takeIf(ScreenReader::canSetText) ?: hit?.contextPasteAnchor()
+        val target = hit?.node?.raw?.takeIf(ScreenReader::canSetText) ?: hit?.contextPasteAnchor()
         val tapped = verified { tapAt(x, y) }
         if (tapped !is ActionResult.Ok) return@withContext tapped
         // 点了开出了别的 App(开到用户主屏上又挪回来的也是):不清空,照实报这一下点的结果
@@ -1051,6 +1189,8 @@ class AndroidScreen(
                 }
                 return@withContext clearField(focused)
             }
+            // 焦点框只在有引用时认得出,快照型走下面的粘贴路径
+            is Field.Snapshot -> Unit
         }
         if (target != null && pointEditorFocusMismatch(target)) {
             return@withContext ActionResult.Failed(
@@ -1128,22 +1268,23 @@ class AndroidScreen(
             ?.takeIf { it.type == AccessibilityWindowInfo.TYPE_APPLICATION } ?: return null
         val entries = ScreenReader.read(listOf(window), screenWidth, screenHeight).entries
         return entries.mapNotNull { entry ->
-            val bounds = Rect().also(entry.node::getBoundsInScreen)
+            val bounds = entry.node.bounds()
             if (bounds.contains(x, y)) entry to bounds.width().toLong() * bounds.height() else null
         }.minByOrNull { it.second }?.first
     }
 
-    private fun NodeEntry.contextPasteAnchor(): AccessibilityNodeInfo? = node.takeIf { contextPasteCandidate(this) }
+    private fun NodeEntry.contextPasteAnchor(): AccessibilityNodeInfo? =
+        node.raw?.takeIf { contextPasteCandidate(this) }
 
     private fun contextPasteAnchor(ref: String, snapshotId: String): AccessibilityNodeInfo? {
         if (handedOver()) return null
-        val node = resolve(ref, snapshotId)?.first ?: return null
-        val entry = read().entries.firstOrNull { it.node == node } ?: return null
+        val node = resolve(ref, snapshotId)?.first?.raw ?: return null
+        val entry = read().entries.firstOrNull { it.node.raw == node } ?: return null
         return node.takeIf { contextPasteCandidate(entry) }
     }
 
     private fun contextPasteCandidate(entry: NodeEntry): Boolean = ContextPastePolicy.canProbe(
-        entry.node.isEnabled, entry.node.isPassword, entry.locator.inList, entry.element.role,
+        entry.node.enabled, entry.node.password, entry.locator.inList, entry.element.role,
     )
 
     /** The editor must still be present, with only its own app's windows above it. */
@@ -1186,7 +1327,7 @@ class AndroidScreen(
             return menu.isPaste(node.viewIdResourceName, node.className?.toString()?.substringAfterLast('.'), label)
         }
         fun controls(scoped: List<AccessibilityWindowInfo>) =
-            ScreenReader.read(scoped, screenWidth, screenHeight).entries.filter { it.node.isClickable && it.node.isEnabled }
+            ScreenReader.read(scoped, screenWidth, screenHeight).entries.filter { it.node.clickable && it.node.enabled }
         fun near(bounds: Rect, controls: List<NodeEntry>): List<AccessibilityNodeInfo> {
             val margin = min(screenWidth, screenHeight) / 5
             val vicinity = Rect(bounds).apply { inset(-margin, -margin) }
@@ -1195,7 +1336,7 @@ class AndroidScreen(
                 val x = entry.element.centerX
                 val y = entry.element.centerY
                 vicinity.contains(x, y) && ime?.contains(x, y) != true
-            }.map { it.node }
+            }.mapNotNull { it.node.raw }
         }
         val context = currentCoroutineContext()
         val pasted = withClipboardText(text) {
@@ -1203,14 +1344,15 @@ class AndroidScreen(
             val (startBounds, scoped) = contextPasteScope(anchor, original) ?: return@withClipboardText AsciiTextKeys.NOT_SENT
             val before = controls(scoped)
             if (near(startBounds, before).any(::isPaste)) return@withClipboardText AsciiTextKeys.NOT_SENT
-            val existing = before.map { it.node }.toSet()
+            val existing = before.mapNotNull { it.node.raw }.toSet()
+            val existingIds = before.map { it.node.identity }.toSet()
             // 自绘编辑器的长按阈值可能比系统设置更长。
             val hold = maxOf(PASTE_MENU_MIN_HOLD_MS, ViewConfiguration.getLongPressTimeout().toLong() + 2 * POLL_MS)
             for (attempt in 0..1) {
                 context.ensureActive()
                 val (bounds, windows) = contextPasteScope(anchor, original) ?: return@withClipboardText AsciiTextKeys.NOT_SENT
                 if (attempt > 0 && (!anchor.isFocused || windows.singleOrNull()?.isFocused != true ||
-                        controls(windows).any { it.node !in existing })) {
+                        controls(windows).any { it.node.identity !in existingIds })) {
                     return@withClipboardText AsciiTextKeys.NOT_SENT
                 }
                 val point = GesturePacing.Point(bounds.centerX().toDouble(), bounds.centerY().toDouble(), 0)
@@ -1222,7 +1364,7 @@ class AndroidScreen(
                     context.ensureActive()
                     val (currentBounds, currentWindows) = contextPasteScope(anchor, original) ?: return@withClipboardText AsciiTextKeys.NOT_SENT
                     val current = controls(currentWindows)
-                    sawNewControl = sawNewControl || current.any { it.node !in existing }
+                    sawNewControl = sawNewControl || current.any { it.node.identity !in existingIds }
                     // Some editors add a clickable backdrop around the existing field.
                     // Its ancestors are containers, not newly offered edit commands.
                     val containers = generateSequence(anchor) { it.parent }.toSet()
@@ -1546,7 +1688,7 @@ class AndroidScreen(
         val label = appLabel(packageName) ?: return null
         val entries = ScreenReader.read(listOf(w), screenWidth, screenHeight).entries
         val picked = LaunchChooser.optionIndices(label, entries.map { it.element }) ?: return null
-        return picked.map { i -> android.graphics.Rect().also(entries[i].node::getBoundsInScreen).let { it.centerX() to it.centerY() } }
+        return picked.map { i -> entries[i].node.bounds().let { it.centerX() to it.centerY() } }
     }
 
     /**
@@ -1681,7 +1823,7 @@ class AndroidScreen(
         val beforeTree = treeHash()
         val startedAt = System.nanoTime()
         // 接手的页面要求的权限(设闹钟)shell 可能没有:备一个以 Mika 身份启动的
-        val asMika = PendingIntent.getActivity(a11y, SYSTEM_ACTION_REQUEST, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val asMika = PendingIntent.getActivity(a11y.context, SYSTEM_ACTION_REQUEST, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         // 悄悄设好的(闹钟、计时器)不开界面,不去静它:时钟到点要响
         if (!action.silent) beforeOpen(pkg, null)
         val code = runCatching { shell.startSystemAction(id, intent, asMika) }.getOrDefault(ShellService.START_ERROR)
@@ -1732,7 +1874,7 @@ class AndroidScreen(
     }
 
     override suspend fun bulkCalendarInsert(events: List<SystemAction.AddCalendarEvent>): SystemActionResult =
-        withContext(Dispatchers.IO) { CalendarBulkWriter.insert(a11y, events) }
+        withContext(Dispatchers.IO) { CalendarBulkWriter.insert(a11y.context, events) }
 
     private fun hintNotInFront(top: String?, expected: String) =
         "$expected took the action, but the screen shows ${top ?: "no app yet"}. Observe before acting."
@@ -1741,7 +1883,9 @@ class AndroidScreen(
 
     override suspend fun setWheel(ref: String, snapshotId: String, value: String): WheelOutcome = withContext(Dispatchers.IO) {
         if (!hasDisplay) return@withContext WheelOutcome(false, null, null, 0, "none", error = "no_app_open")
-        val (node, _) = resolve(ref, snapshotId) ?: return@withContext WheelOutcome(false, null, null, 0, "none", error = "ref_expired")
+        val (handle, _) = resolve(ref, snapshotId) ?: return@withContext WheelOutcome(false, null, null, 0, "none", error = "ref_expired")
+        // 滚轮要靠节点引用读子项和发动作;快照型做不到,如实报,不假装转过
+        val node = handle.raw ?: return@withContext WheelOutcome(false, null, null, 0, "none", error = "no_node_reference")
         val driver = WheelDriver(
             screenWidth, screenHeight,
             quiet = { q, cap -> withEventClock { it.awaitQuiet(q, cap) } },
@@ -1888,7 +2032,7 @@ class AndroidScreen(
         if (prev.isNotEmpty() && now - cachedAppsAtMs in 0L until 10_000L) {
             return prev
         }
-        return a11y.applicationPackagesForCustody(homeApps).also {
+        return a11y.context.applicationPackagesForCustody(homeApps).also {
             if (it.isNotEmpty()) {
                 cachedApps = it
                 cachedAppsAtMs = now
@@ -1898,7 +2042,7 @@ class AndroidScreen(
 
     private val classifier: InterstitialClassifier by lazy {
         InterstitialClassifier.fromAndroidContext(
-            context = a11y,
+            context = a11y.context,
             systemPickers = systemPickers,
             isSystemByShell = { pkg -> runCatching { shell.isSystemPackage(pkg) }.getOrDefault(false) },
             installedAppsProvider = ::cachedApplicationPackages,
@@ -2137,11 +2281,12 @@ class AndroidScreen(
      * 把编号解析成可操作的节点;经过重定位时第二个值是找回的元素现在的名字,否则为 null。
      * 最新快照里的节点还在且没变就直接用;快照过期或节点变了,按原元素特征在当前界面里找唯一对应者。
      */
-    private fun resolve(ref: String, snapshotId: String): Pair<AccessibilityNodeInfo, String?>? {
+    private fun resolve(ref: String, snapshotId: String): Pair<NodeHandle, String?>? {
         val (entry, snapshot) = when (val l = ids.lookup(ref, snapshotId)) {
             is NodeIds.Lookup.Unknown -> return null
             is NodeIds.Lookup.Current -> {
-                if (unchanged(l.entry)) return l.entry.node to null
+                // 快照型没有引用可确认「还是原来那个」,但它就是刚读的这一屏,动作本来就按它记下的坐标做
+                if (!l.entry.node.isLive || unchanged(l.entry)) return l.entry.node to null
                 l.entry to l.snapshot
             }
             is NodeIds.Lookup.Old -> l.entry to l.snapshot
@@ -2155,7 +2300,8 @@ class AndroidScreen(
 
     /** 节点还在,且类型、名字、资源 ID、位置都和快照时一样(列表复用后同一个节点可能换了内容)。 */
     private fun unchanged(entry: NodeEntry): Boolean {
-        val n = entry.node
+        // 快照型没有引用,确认不了「还是原来那个」,按变了处理(走重定位)
+        val n = entry.node.raw ?: return false
         if (!n.refresh()) return false
         val now = ScreenReader.locatorOf(n, screenWidth, screenHeight) ?: return false
         return now == entry.locator.copy(context = null)
@@ -2164,6 +2310,8 @@ class AndroidScreen(
     private sealed interface Field {
         /** [tapped]:给的元素本身不是输入框,点了它之后才出现(或聚焦了)真正的输入框。 */
         class Found(val node: AccessibilityNodeInfo, val tapped: Boolean = false, val relocatedTo: String? = null) : Field
+        /** 只有快照(免无障碍读的),拿不到节点引用:只能按坐标点它再走粘贴。 */
+        class Snapshot(val node: NodeHandle) : Field
         class Missing(val reason: String) : Field
     }
 
@@ -2174,7 +2322,8 @@ class AndroidScreen(
      */
     private suspend fun findField(ref: String?, snapshotId: String?, tapToFocus: Boolean = true): Field {
         if (ref != null && snapshotId != null) {
-            val (node, relocatedTo) = resolve(ref, snapshotId) ?: return Field.Missing("ref_expired")
+            val (handle, relocatedTo) = resolve(ref, snapshotId) ?: return Field.Missing("ref_expired")
+            val node = handle.raw ?: return Field.Snapshot(handle)
             val editable = if (ScreenReader.canSetText(node)) node
                 else descendant(node) { ScreenReader.canSetText(it) && visibleInputTarget(it) }
             if (editable != null) {
@@ -2273,7 +2422,7 @@ class AndroidScreen(
         val entries = ScreenReader.read(listOf(window), screenWidth, screenHeight).entries
         val rect = Rect()
         val hitEntries = entries.filter { entry ->
-            entry.node.getBoundsInScreen(rect)
+            entry.node.bounds().let { rect.set(it) }
             rect.intersect(0, 0, screenWidth, screenHeight) && rect.contains(x, y)
         }
         if (hitEntries.isEmpty()) return false
@@ -2281,7 +2430,8 @@ class AndroidScreen(
         val seen = HashSet<AccessibilityNodeInfo>()
         val candidates = mutableListOf<ClickFallback.Candidate<AccessibilityNodeInfo>>()
         for (entry in hitEntries) {
-            val target = ancestorOrSelf(entry.node) { isClickableTarget(it) } ?: continue
+            val anchor = entry.node.raw ?: continue
+            val target = ancestorOrSelf(anchor) { isClickableTarget(it) } ?: continue
             if (!seen.add(target) || !target.isVisibleToUser) continue
             target.getBoundsInScreen(rect)
             if (!rect.intersect(0, 0, screenWidth, screenHeight) || rect.isEmpty) continue
@@ -2309,14 +2459,29 @@ class AndroidScreen(
 
     private suspend fun tapAt(x: Int, y: Int): Boolean = touch(pacing.near(x, y))
 
-    /** 在这一点上点一下:先停一会儿再落指,按住随机的一小会儿。无障碍手势不行时由内置助手注入触摸。 */
+    /**
+     * 在这一点上点一下:先停一会儿再落指,按住随机的一小会儿。
+     *
+     * 虚拟屏上优先用定向注入:无障碍手势在这条路上交给应用的是 `toolType=0` 加无障碍标记,
+     * 是反自动化检测最直接的判据;定向注入能带上真实触摸屏的 deviceId 和手指类型。
+     * 主屏不必绕这一圈,无障碍手势在那条路上本来就会转成内核注入。
+     */
     private suspend fun touch(at: Pair<Int, Int>): Boolean {
         val (x, y) = at
         delay(pacing.approach())
         val press = pacing.press()
-        if (a11y.gesture(displayId, Path().apply { moveTo(x.toFloat(), y.toFloat()) }, press)) return true
-        if (pacing.paced && injectStroke(listOf(GesturePacing.Point(x.toDouble(), y.toDouble(), 0), GesturePacing.Point(x.toDouble(), y.toDouble(), press)))) return true
-        return shell.injectTap(displayId, x, y)
+        // 抬起点略微离开按下点:真手指按下与抬起几乎不会落在同一像素,系统注入的点击起终点则完全重合
+        val (liftX, liftY) = pacing.lift(x, y)
+        // 虚拟屏不看节奏开关:选"快"时也要避开无障碍手势的 toolType=0 特征,注入点自带亚像素差异
+        if (displayId != Display.DEFAULT_DISPLAY && injectStroke(
+                listOf(
+                    GesturePacing.Point(x.toDouble(), y.toDouble(), 0),
+                    GesturePacing.Point(liftX.toDouble(), liftY.toDouble(), press),
+                )
+            )
+        ) return true
+        if (a11y.taps(displayId, x.toFloat(), y.toFloat(), 1, press, 0L)) return true
+        return shell.injectTap(displayId, liftX, liftY)
     }
 
     /**
@@ -2324,10 +2489,12 @@ class AndroidScreen(
      * 助手注不了时退回无障碍手势沿同一条弧线走(系统按路径匀速走,只少了快慢)。不加节奏时和以前一样:无障碍手势按给定时长匀速走折线。
      */
     private suspend fun drag(points: List<Pair<Int, Int>>, durationMs: Long, bow: Boolean): Boolean {
-        if (!pacing.paced) return a11y.gesture(displayId, pathOf(points), durationMs)
-        delay(pacing.approach())
+        // 虚拟屏不看节奏开关:选"快"时也要避开无障碍手势的 toolType=0 特征
+        if (!pacing.paced && displayId == Display.DEFAULT_DISPLAY) return a11y.gesture(displayId, pathOf(points), durationMs)
+        if (pacing.paced) delay(pacing.approach())
         val stroke = pacing.stroke(points.map { it.first.toDouble() to it.second.toDouble() }, durationMs, bow, screenWidth to screenHeight)
-        if (injectStroke(stroke.points)) return true
+        // 主屏交给无障碍手势,它会在内核通道上走;虚拟屏先试定向注入(事件带真实触摸屏来源)
+        if (displayId != Display.DEFAULT_DISPLAY && injectStroke(stroke.points)) return true
         return a11y.gesture(displayId, pathOf(stroke.points.map { it.x.roundToInt() to it.y.roundToInt() }), stroke.durationMs)
     }
 
@@ -2523,6 +2690,9 @@ class AndroidScreen(
         const val IN_USE_RETRY_MS = 3_000L
         const val IN_USE_POLL_MS = 500L
         const val POLL_MS = 100L
+        /** 免无障碍读屏时等虚拟屏的第一帧:屏刚建好、App 刚起来那一刻 ImageReader 那头还没收到画面。 */
+        const val FIRST_FRAME_WAIT_MS = 1_500L
+        const val FIRST_FRAME_POLL_MS = 60L
         /** 设闹钟后等系统的下一个闹钟变,最多这么久、这么久看一次。 */
         const val ALARM_WAIT_MS = 3_000L
         const val ALARM_POLL_MS = 150L

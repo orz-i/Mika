@@ -276,6 +276,12 @@ class ShellService(
 
     override fun captureCapability(): Bundle = engine.captureCapability(false)
 
+    override fun inspectUi(maxDepth: Int, maxNodes: Int): String = engine.inspectUi(maxDepth, maxNodes)
+
+    override fun focusDisplay(displayId: Int): Boolean = engine.focusDisplay(displayId)
+
+    override fun focusMainDisplay(): Boolean = engine.focusMainDisplay()
+
     override fun setRestoreWish(flags: Int) {
         onRestoreWish?.invoke(flags)
     }

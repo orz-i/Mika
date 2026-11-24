@@ -2268,7 +2268,7 @@ internal class DisplayCustodian(
 
         /** 构造接入真实 Android Shell 与 Accessibility 服务的默认运行时实现。 */
         fun createAndroidRuntime(
-            a11y: ScreenAccessibility,
+            a11y: ScreenAccess,
             shell: IAgentShell,
             displayIdProvider: () -> Int,
             metricsProvider: () -> DisplayMetrics,
@@ -2277,7 +2277,7 @@ internal class DisplayCustodian(
     }
 
     private class AndroidCustodyRuntime(
-        private val a11y: ScreenAccessibility,
+        private val a11y: ScreenAccess,
         private val shell: IAgentShell,
         private val displayIdProvider: () -> Int,
         private val metricsProvider: () -> DisplayMetrics,
@@ -2412,8 +2412,8 @@ internal class DisplayCustodian(
                 ) {
                     secureChecked = true
                     val shot = runCatching { a11y.takeMainScreenshot() }.getOrNull()
-                    (shot as? ScreenAccessibility.MainShot.Ok)?.bitmap?.recycle()
-                    if (shot is ScreenAccessibility.MainShot.Secure) {
+                    (shot as? MainShot.Ok)?.bitmap?.recycle()
+                    if (shot is MainShot.Secure) {
                         finalSnap = initialSnap.copy(
                             inspection = initialSnap.inspection.copy(isFlagSecure = true),
                         )

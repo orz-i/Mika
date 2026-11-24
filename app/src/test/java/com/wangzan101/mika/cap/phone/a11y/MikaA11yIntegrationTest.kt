@@ -48,10 +48,10 @@ class MikaA11yIntegrationTest {
     fun disconnectedScreenshotReturnsNoAccessibilityAccess() = runBlocking {
         val service = ScreenAccessibility()
         val shot = service.takeMainScreenshot()
-        assertTrue(shot is ScreenAccessibility.MainShot.Failed)
+        assertTrue(shot is MainShot.Failed)
         assertEquals(
             AccessibilityService.ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS,
-            (shot as ScreenAccessibility.MainShot.Failed).code,
+            (shot as MainShot.Failed).code,
         )
     }
 }

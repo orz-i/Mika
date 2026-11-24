@@ -655,7 +655,7 @@ class CapsuleController(
             } } ?: return null
             val (shot, read) = capture
             if (MainScreenCapture.sourcePackages(service) != sources || sources.any { !store.current().canShare(it) }) {
-                (shot as? ScreenAccessibility.MainShot.Ok)?.bitmap?.recycle()
+                (shot as? com.wangzan101.mika.cap.phone.a11y.MainShot.Ok)?.bitmap?.recycle()
                 return null
             }
             flash++

@@ -146,6 +146,18 @@ interface IMikaShell {
     // 到主屏、释放屏或助手退出时自动撤掉，不写 AppOps，不提供音频数据。
     boolean setTaskMediaMuted(int displayId, String packageName, int userId, boolean muted, boolean preparing) = 60;
 
+    // 免无障碍读屏：读当前焦点屏的节点树，返回扁平 JSON（nodes 数组用 parent 指父节点下标）。
+    // 通道是 UiAutomation，不注册 AccessibilityService，应用侧 getEnabledAccessibilityServiceList 查不到它。
+    // 失败时返回 {"ok":false,"reason":"..."}，reason 为 connect/root/noroot/timeout/...
+    String inspectUi(int maxDepth, int maxNodes) = 61;
+
+    // 把系统焦点挪到这块屏。UiAutomation（inspectUi 那条通道）只读焦点屏，虚拟屏不是焦点屏时
+    // 读到的永远是用户主屏。成功返回 true；不是 Mika 的屏、或系统拒绝（缺 MANAGE_DISPLAYS）返回 false。
+    boolean focusDisplay(int displayId) = 62;
+
+    // 把焦点还给用户主屏（0 号屏）。读完虚拟屏之后调用。
+    boolean focusMainDisplay() = 63;
+
     // 沿用早先定下的销毁事务号;AIDL 要求要么全部方法编号要么都不编号
     void destroy() = 16777114;
 }
