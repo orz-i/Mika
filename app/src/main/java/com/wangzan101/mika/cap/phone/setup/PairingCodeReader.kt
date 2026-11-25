@@ -6,11 +6,11 @@ import android.view.Display
 import android.view.accessibility.AccessibilityNodeInfo
 import com.wangzan101.mika.cap.phone.a11y.ScreenAccessibility
 import com.wangzan101.mika.cap.phone.a11y.SystemPickers
-import com.wangzan101.mika.core.shell.BuiltinShellControl
-import com.wangzan101.mika.core.shell.PairingDiscovery
-import com.wangzan101.mika.core.shell.PairingScreen
-import com.wangzan101.mika.core.shell.PhoneSetupFlow
-import com.wangzan101.mika.core.shell.PairingScreenReading
+import com.agent.use.shell.BuiltinShellControl
+import com.agent.use.shell.PairingDiscovery
+import com.agent.use.shell.PairingScreen
+import com.agent.use.shell.PhoneSetupFlow
+import com.agent.use.shell.PairingScreenReading
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.conflate

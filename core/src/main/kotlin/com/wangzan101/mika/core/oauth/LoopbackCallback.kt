@@ -1,6 +1,6 @@
 package com.wangzan101.mika.core.oauth
 
-import com.wangzan101.mika.core.adb.OwnListeningPorts
+import com.agent.use.shell.adb.OwnListeningPorts
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext

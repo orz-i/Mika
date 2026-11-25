@@ -1,10 +1,10 @@
 package com.wangzan101.mika.cap.phone.setup
 
 import android.content.Context
-import com.wangzan101.mika.core.shell.HelperHandoff
-import com.wangzan101.mika.core.shell.RootGrant
-import com.wangzan101.mika.core.shell.RootStart
-import com.wangzan101.mika.core.shell.SuAnswer
+import com.agent.use.shell.HelperHandoff
+import com.agent.use.shell.RootGrant
+import com.agent.use.shell.RootStart
+import com.agent.use.shell.SuAnswer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow

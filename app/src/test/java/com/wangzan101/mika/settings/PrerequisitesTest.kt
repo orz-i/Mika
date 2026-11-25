@@ -1,7 +1,7 @@
 package com.wangzan101.mika.settings
 
-import com.wangzan101.mika.core.shell.BuiltinShellFailure
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.agent.use.shell.BuiltinShellFailure
+import com.agent.use.shell.BuiltinShellStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

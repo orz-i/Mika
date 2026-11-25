@@ -2,12 +2,12 @@ package com.wangzan101.mika.settings
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.wangzan101.mika.core.shell.A11yLoss
-import com.wangzan101.mika.core.shell.A11yLossRecord
-import com.wangzan101.mika.core.shell.RecoveryCapability
-import com.wangzan101.mika.core.shell.RecoveryConsent
-import com.wangzan101.mika.core.shell.RecoveryConsentStore
-import com.wangzan101.mika.core.shell.RestoreOutcome
+import com.agent.use.shell.A11yLoss
+import com.agent.use.shell.A11yLossRecord
+import com.agent.use.shell.RecoveryCapability
+import com.agent.use.shell.RecoveryConsent
+import com.agent.use.shell.RecoveryConsentStore
+import com.agent.use.shell.RestoreOutcome
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

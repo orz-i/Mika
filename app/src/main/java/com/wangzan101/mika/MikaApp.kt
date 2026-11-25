@@ -406,6 +406,9 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
 
     override fun onCreate() {
         super.onCreate()
+        // 配对、助手交接与无障碍修复的品牌(助手类名、服务组件、证书 CN):App 进程最早处装一次。
+        // 助手进程由 app_process 起、不经过这里，单独在 HelperProcess.main 装。
+        com.wangzan101.mika.shell.MikaShellBrand.install()
         // 上次进程在复制或绑定分享草稿途中退出时留下的临时文件;目录至多保留一份有效草稿。
         runCatching { sharedDrafts.cleanup() }
         // 界面以外的文字(通知、服务、悬浮胶囊)按 App 语言取

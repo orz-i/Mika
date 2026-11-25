@@ -10,12 +10,12 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.util.Log
 import com.wangzan101.mika.cap.phone.PhoneServices
-import com.wangzan101.mika.core.shell.HandoffDiagnostics
-import com.wangzan101.mika.core.shell.HandoffNonces
-import com.wangzan101.mika.core.shell.HelperHandoff
-import com.wangzan101.mika.core.shell.HelperRestoreReport
-import com.wangzan101.mika.core.shell.NonceSlots
-import com.wangzan101.mika.core.shell.NonceStore
+import com.agent.use.shell.HandoffDiagnostics
+import com.agent.use.shell.HandoffNonces
+import com.agent.use.shell.HelperHandoff
+import com.agent.use.shell.HelperRestoreReport
+import com.agent.use.shell.NonceSlots
+import com.agent.use.shell.NonceStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -154,7 +154,12 @@ class HelperHub(context: Context) {
  * 安全靠 MikaApp.phone 与 [HelperHub] 里口令都是同步的 lazy(谁先到谁建、只建一次),[HelperHub.offer] 本身也加了锁,不依赖 onCreate 先跑完。
  */
 open class HandoffProvider : ContentProvider() {
-    override fun onCreate() = true
+    override fun onCreate(): Boolean {
+        // ContentProvider 早于 Application.onCreate 初始化:交接本身只用协议常量,但同一进程里
+        // 之后的脚本生成、无障碍修复都读品牌,这里幂等地先装好。
+        com.wangzan101.mika.shell.MikaShellBrand.install()
+        return true
+    }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         if (method != HelperHandoff.METHOD_ATTACH) return null

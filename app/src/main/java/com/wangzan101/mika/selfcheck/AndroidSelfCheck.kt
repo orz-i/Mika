@@ -41,8 +41,8 @@ import com.wangzan101.mika.core.selfcheck.CheckOutcome
 import com.wangzan101.mika.core.selfcheck.DeviceFacts
 import com.wangzan101.mika.core.selfcheck.SelfCheck
 import com.wangzan101.mika.core.selfcheck.SelfCheckPort
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
-import com.wangzan101.mika.core.shell.PhoneSetupFlow
+import com.agent.use.shell.BuiltinShellStatus
+import com.agent.use.shell.PhoneSetupFlow
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.UiElement

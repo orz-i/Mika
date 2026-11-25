@@ -31,6 +31,8 @@ protobuf {
 dependencies {
     // 连接电脑的协议骨架（HTTP/MCP/任务 API/USB 引导/出站网关）在 aau-remote，Mika 只提供端口实现
     api(project(":aau-remote"))
+    // 配对、ADB 协议、助手交接与看门狗在 aau-shell（纯 JVM）；Mika 只提供 BuiltinShellPlatform
+    api(project(":aau-shell"))
     implementation(libs.protobuf.lite)
     traceSchemas(libs.otel.proto)
     implementation(libs.okhttp)

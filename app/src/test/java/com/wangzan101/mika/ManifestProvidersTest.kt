@@ -151,10 +151,11 @@ class ManifestProvidersTest {
         assertEquals("", a.getAttributeNS(androidNs, "taskAffinity"))
     }
 
-    /** 内置助手进程按这个全名启动。 */
+    /** 内置助手进程按这个全名启动;类是 Mika 的,得先装 Mika 的品牌(库的默认值指向 AAU 自己的示例类)。 */
     @Test
     fun helperEntryClassExists() {
-        val c = Class.forName(com.wangzan101.mika.core.shell.HelperHandoff.HELPER_CLASS, false, javaClass.classLoader)
+        com.wangzan101.mika.shell.MikaShellBrand.install()
+        val c = Class.forName(com.agent.use.shell.HelperHandoff.HELPER_CLASS, false, javaClass.classLoader)
         assertTrue(c.methods.any { it.name == "main" && java.lang.reflect.Modifier.isStatic(it.modifiers) })
     }
 }

@@ -8,7 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.wangzan101.mika.cap.phone.PhoneServices
 import com.wangzan101.mika.cap.phone.display.AgentDisplay
 import com.wangzan101.mika.cap.phone.shell.ShellService
-import com.wangzan101.mika.core.shell.HelperHandoff
+import com.agent.use.shell.HelperHandoff
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.Verification
 import kotlinx.coroutines.flow.filterNotNull

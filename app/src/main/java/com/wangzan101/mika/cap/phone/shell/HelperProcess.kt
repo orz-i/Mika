@@ -16,11 +16,11 @@ import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
 import android.util.Log
-import com.wangzan101.mika.core.shell.HelperHandoff
-import com.wangzan101.mika.core.shell.HelperRestorePolicy
-import com.wangzan101.mika.core.shell.PermissionCommands
-import com.wangzan101.mika.core.shell.RestoreCommands
-import com.wangzan101.mika.core.shell.RestoreWish
+import com.agent.use.shell.HelperHandoff
+import com.agent.use.shell.HelperRestorePolicy
+import com.agent.use.shell.PermissionCommands
+import com.agent.use.shell.RestoreCommands
+import com.agent.use.shell.RestoreWish
 import java.io.File
 import java.lang.reflect.Proxy
 import kotlin.system.exitProcess
@@ -40,6 +40,8 @@ object HelperProcess {
 
     @JvmStatic
     fun main(args: Array<String>) {
+        // 助手是 app_process 起的独立进程，不经过 Application：品牌得在这里装上，后面写无障碍列表和解析退出码才用对
+        com.wangzan101.mika.shell.MikaShellBrand.install()
         if (args.size < 3) {
             Log.e(TAG, "usage: HelperMain <package> <uid> <cert-sha256> (nonce on stdin)")
             exitProcess(2)

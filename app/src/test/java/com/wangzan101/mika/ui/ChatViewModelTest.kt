@@ -27,7 +27,7 @@ import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.settings.AccessibilityState
 import com.wangzan101.mika.settings.Prerequisites
 import com.wangzan101.mika.settings.Problem
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.agent.use.shell.BuiltinShellStatus
 import com.wangzan101.mika.settings.SystemStatus
 import com.wangzan101.mika.takeover.Takeover
 import com.wangzan101.mika.task.SteerNote

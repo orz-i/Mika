@@ -27,6 +27,10 @@ project(":aau-client").projectDir = file("aau/aau-client")
 include(":aau-a11y")
 project(":aau-a11y").projectDir = file("aau/aau-a11y")
 
+// 配对、ADB 协议与助手交接的纯 JVM 内核:aau-setup 的 Android 壳与 :core 共用同一份实现。
+include(":aau-shell")
+project(":aau-shell").projectDir = file("aau/aau-shell")
+
 include(":aau-setup")
 project(":aau-setup").projectDir = file("aau/aau-setup")
 

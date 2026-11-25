@@ -13,7 +13,7 @@ import android.os.Process
 import android.os.UserManager
 import android.provider.Settings
 import com.wangzan101.mika.cap.phone.a11y.ScreenAccessibility
-import com.wangzan101.mika.core.shell.BuiltinShellControl
+import com.agent.use.shell.BuiltinShellControl
 import com.wangzan101.mika.cap.phone.setup.DeveloperSettings
 import com.wangzan101.mika.cap.phone.setup.PairingNotifier
 import kotlinx.coroutines.CoroutineScope

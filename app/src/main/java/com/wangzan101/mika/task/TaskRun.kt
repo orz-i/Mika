@@ -14,8 +14,8 @@ import com.wangzan101.mika.core.policy.PacingPolicy
 import com.wangzan101.mika.core.policy.RunProfile
 import com.wangzan101.mika.core.policy.SensitiveUiPacingPolicy
 import com.wangzan101.mika.core.usage.RunUsageTally
-import com.wangzan101.mika.core.shell.AccessibilityRepair
-import com.wangzan101.mika.core.shell.HelperRestart
+import com.agent.use.shell.AccessibilityRepair
+import com.agent.use.shell.HelperRestart
 import com.wangzan101.mika.ui.StatusCopy
 import com.wangzan101.mika.core.cap.sandbox.SandboxStatus
 import com.wangzan101.mika.cap.sandbox.SandboxState

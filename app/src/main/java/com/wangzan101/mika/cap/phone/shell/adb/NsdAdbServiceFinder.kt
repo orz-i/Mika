@@ -2,7 +2,7 @@ package com.wangzan101.mika.cap.phone.shell.adb
 
 import android.content.Context
 import com.agent.use.setup.WirelessAdbLauncher
-import com.wangzan101.mika.core.adb.AdbServiceFinder
+import com.agent.use.shell.adb.AdbServiceFinder
 
 /**
  * 用系统 mDNS 发现本机 adbd 无线调试端口，委托给 AAU [WirelessAdbLauncher.findLocalAdbPorts]。

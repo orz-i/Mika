@@ -1,8 +1,8 @@
 package com.wangzan101.mika.settings
 
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
-import com.wangzan101.mika.core.shell.HelperRestart
-import com.wangzan101.mika.core.shell.PairingChannelHealth
+import com.agent.use.shell.BuiltinShellStatus
+import com.agent.use.shell.HelperRestart
+import com.agent.use.shell.PairingChannelHealth
 
 enum class AccessibilityState {
     Off,

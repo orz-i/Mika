@@ -2,10 +2,10 @@ package com.wangzan101.mika.ui
 
 import org.junit.Rule
 import com.wangzan101.mika.i18n.ChineseTexts
-import com.wangzan101.mika.core.shell.AutoOnBlock
-import com.wangzan101.mika.core.shell.HelperRestart
-import com.wangzan101.mika.core.shell.RecoveryCapability
-import com.wangzan101.mika.core.shell.RecoveryConsent
+import com.agent.use.shell.AutoOnBlock
+import com.agent.use.shell.HelperRestart
+import com.agent.use.shell.RecoveryCapability
+import com.agent.use.shell.RecoveryConsent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull

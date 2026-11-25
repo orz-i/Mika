@@ -1,7 +1,7 @@
 package com.wangzan101.mika.cap.phone.setup
 
-import com.wangzan101.mika.core.shell.SuAnswer
-import com.wangzan101.mika.core.shell.SuProbe
+import com.agent.use.shell.SuAnswer
+import com.agent.use.shell.SuProbe
 import java.io.File
 import java.io.InputStream
 import java.util.concurrent.CompletableFuture

@@ -1,6 +1,6 @@
 package com.wangzan101.mika.ui
 
-import com.wangzan101.mika.core.shell.HelperRestart
+import com.agent.use.shell.HelperRestart
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -14,15 +14,15 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.wangzan101.mika.core.shell.BuiltinShellFailure
-import com.wangzan101.mika.core.shell.BuiltinShellFix
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
-import com.wangzan101.mika.core.shell.PairingChannelHealth
-import com.wangzan101.mika.core.shell.PairingDiscovery
-import com.wangzan101.mika.core.shell.PhoneSetupFlow
-import com.wangzan101.mika.core.shell.SetupInputs
-import com.wangzan101.mika.core.shell.SetupStep
-import com.wangzan101.mika.core.shell.SetupSuspect
+import com.agent.use.shell.BuiltinShellFailure
+import com.agent.use.shell.BuiltinShellFix
+import com.agent.use.shell.BuiltinShellStatus
+import com.agent.use.shell.PairingChannelHealth
+import com.agent.use.shell.PairingDiscovery
+import com.agent.use.shell.PhoneSetupFlow
+import com.agent.use.shell.SetupInputs
+import com.agent.use.shell.SetupStep
+import com.agent.use.shell.SetupSuspect
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test

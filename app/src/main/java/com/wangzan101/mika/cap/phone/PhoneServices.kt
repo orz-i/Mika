@@ -10,7 +10,7 @@ import com.wangzan101.mika.cap.phone.shell.BuiltinShellConnection
 import com.wangzan101.mika.cap.phone.shell.HelperHub
 import com.wangzan101.mika.cap.phone.shell.SharedShell
 import com.wangzan101.mika.cap.phone.shell.asAgentShell
-import com.wangzan101.mika.core.shell.BuiltinShellControl
+import com.agent.use.shell.BuiltinShellControl
 import com.wangzan101.mika.settings.RecoverySettings
 
 /**

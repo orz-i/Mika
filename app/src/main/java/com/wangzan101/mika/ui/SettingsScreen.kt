@@ -30,7 +30,7 @@ import com.wangzan101.mika.capsule.CapsuleMode
 import com.wangzan101.mika.core.agent.SpeedFlags
 import com.wangzan101.mika.core.cap.sandbox.SandboxStatus
 import com.wangzan101.mika.core.model.ModelRole
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.agent.use.shell.BuiltinShellStatus
 import com.wangzan101.mika.record.RunStore
 import com.wangzan101.mika.settings.AccessibilityState
 import com.wangzan101.mika.settings.FeatureFlags

@@ -1,6 +1,6 @@
 package com.wangzan101.mika.ui
 
-import com.wangzan101.mika.core.shell.HelperRestart
+import com.agent.use.shell.HelperRestart
 import com.wangzan101.mika.ChineseUi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.getValue
@@ -29,7 +29,7 @@ import com.wangzan101.mika.core.cap.sandbox.SandboxStatus
 import com.wangzan101.mika.core.custody.JumpConfirmProfile
 import com.wangzan101.mika.core.custody.JumpConfirmProfileState
 import com.wangzan101.mika.core.custody.JumpProfileSource
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.agent.use.shell.BuiltinShellStatus
 import com.wangzan101.mika.settings.AccessibilityState
 import com.wangzan101.mika.settings.Problem
 import com.wangzan101.mika.settings.SystemStatus

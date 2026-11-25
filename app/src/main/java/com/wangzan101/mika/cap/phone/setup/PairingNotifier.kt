@@ -10,11 +10,11 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.wangzan101.mika.R
-import com.wangzan101.mika.core.shell.BuiltinShellFix
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
-import com.wangzan101.mika.core.shell.PairingChannelHealth
-import com.wangzan101.mika.core.shell.PairingDiscovery
-import com.wangzan101.mika.core.shell.PhoneSetupFlow
+import com.agent.use.shell.BuiltinShellFix
+import com.agent.use.shell.BuiltinShellStatus
+import com.agent.use.shell.PairingChannelHealth
+import com.agent.use.shell.PairingDiscovery
+import com.agent.use.shell.PhoneSetupFlow
 import com.wangzan101.mika.ui.MainActivity
 import com.wangzan101.mika.ui.PhoneSetupCopy
 import com.wangzan101.mika.setup.PairingCodeReceiver

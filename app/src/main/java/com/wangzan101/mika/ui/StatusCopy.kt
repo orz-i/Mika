@@ -9,9 +9,9 @@ import com.wangzan101.mika.settings.ChannelLevel
 import com.wangzan101.mika.settings.ChannelRow
 import com.wangzan101.mika.settings.NotificationSummary
 import com.wangzan101.mika.settings.Problem
-import com.wangzan101.mika.core.shell.BuiltinShellFailure
-import com.wangzan101.mika.core.shell.BuiltinShellFix
-import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.agent.use.shell.BuiltinShellFailure
+import com.agent.use.shell.BuiltinShellFix
+import com.agent.use.shell.BuiltinShellStatus
 import com.wangzan101.mika.ui.components.ValueTone
 
 /** 设置页能直接做的修复动作。 */
