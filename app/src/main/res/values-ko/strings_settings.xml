@@ -415,4 +415,21 @@
     <string name="network_capture_packs_channel_codec">응답 디코더 ×%1$d</string>
     <string name="network_capture_packs_channel_host">호스트 보정</string>
     <string name="network_capture_packs_channel_code">dex 코드</string>
+    <string name="network_capture_packs_import">플러그인 패키지 가져오기</string>
+    <string name="network_capture_packs_import_sub">.zip 또는 plugin.json을 선택하세요. 설치 전에 선언 내용을 먼저 보여 줍니다.</string>
+    <string name="network_capture_packs_import_reading">패키지를 읽는 중…</string>
+    <string name="network_capture_packs_import_title">“%1$s” 가져오기</string>
+    <string name="network_capture_packs_import_install">설치</string>
+    <string name="network_capture_packs_import_replace">설치된 v%1$d 버전을 교체합니다.</string>
+    <string name="network_capture_packs_import_code">이 패키지는 dex 코드를 포함하며 Mika 프로세스 안에서 실행됩니다.</string>
+    <string name="network_capture_packs_import_failed">“%1$s” 가져오기 실패</string>
+    <string name="network_capture_packs_import_reason_no_manifest">파일에 plugin.json이 없습니다.</string>
+    <string name="network_capture_packs_import_reason_ambiguous">압축 파일에 plugin.json이 여러 개 들어 있습니다.</string>
+    <string name="network_capture_packs_import_reason_too_large">패키지가 8 MB를 넘습니다.</string>
+    <string name="network_capture_packs_import_reason_unsafe">압축 파일에 패키지 밖으로 나가는 경로가 있습니다.</string>
+    <string name="network_capture_packs_import_reason_unreadable">파일을 읽을 수 없습니다.</string>
+    <string name="network_capture_packs_import_reason_invalid">패키지가 검증을 통과하지 못했습니다.</string>
+    <string name="network_capture_packs_remove">이 플러그인 패키지 삭제</string>
+    <string name="network_capture_packs_remove_title">“%1$s” 삭제할까요?</string>
+    <string name="network_capture_packs_remove_body">파일이 이 기기에서 삭제되고, 이 패키지의 규칙은 즉시 적용되지 않습니다.</string>
 </resources>

@@ -465,4 +465,21 @@
     <string name="network_capture_packs_channel_codec">مفكّكات الاستجابة ×%1$d</string>
     <string name="network_capture_packs_channel_host">تصحيح المضيف</string>
     <string name="network_capture_packs_channel_code">شيفرة dex</string>
+    <string name="network_capture_packs_import">استيراد حزمة إضافة</string>
+    <string name="network_capture_packs_import_sub">اختر ملف .zip أو plugin.json — سنعرض ما تُقرّ به الحزمة قبل التثبيت.</string>
+    <string name="network_capture_packs_import_reading">جارٍ قراءة الحزمة…</string>
+    <string name="network_capture_packs_import_title">استيراد «%1$s»</string>
+    <string name="network_capture_packs_import_install">تثبيت</string>
+    <string name="network_capture_packs_import_replace">سيستبدل الإصدار %1$d المثبَّت.</string>
+    <string name="network_capture_packs_import_code">تحتوي هذه الحزمة على شيفرة dex وتعمل داخل عملية Mika.</string>
+    <string name="network_capture_packs_import_failed">تعذّر استيراد «%1$s»</string>
+    <string name="network_capture_packs_import_reason_no_manifest">لا يحتوي الملف على plugin.json.</string>
+    <string name="network_capture_packs_import_reason_ambiguous">يحتوي الأرشيف على أكثر من ملف plugin.json.</string>
+    <string name="network_capture_packs_import_reason_too_large">حجم الحزمة يتجاوز 8 ميغابايت.</string>
+    <string name="network_capture_packs_import_reason_unsafe">يحتوي الأرشيف على مسار يخرج عن الحزمة.</string>
+    <string name="network_capture_packs_import_reason_unreadable">تعذّرت قراءة الملف.</string>
+    <string name="network_capture_packs_import_reason_invalid">لم تجتز الحزمة التحقق.</string>
+    <string name="network_capture_packs_remove">حذف حزمة الإضافة هذه</string>
+    <string name="network_capture_packs_remove_title">حذف «%1$s»؟</string>
+    <string name="network_capture_packs_remove_body">تُحذف ملفاتها من هذا الجهاز وتتوقف قواعدها فورًا.</string>
 </resources>

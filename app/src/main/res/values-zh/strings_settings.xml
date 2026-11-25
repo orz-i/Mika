@@ -415,4 +415,21 @@
     <string name="network_capture_packs_channel_codec">响应解码 ×%1$d</string>
     <string name="network_capture_packs_channel_host">域名补全</string>
     <string name="network_capture_packs_channel_code">dex 代码</string>
+    <string name="network_capture_packs_import">导入插件包</string>
+    <string name="network_capture_packs_import_sub">选一个 .zip 或 plugin.json；装之前会先把它的声明摆给你看。</string>
+    <string name="network_capture_packs_import_reading">正在读取插件包…</string>
+    <string name="network_capture_packs_import_title">导入「%1$s」</string>
+    <string name="network_capture_packs_import_install">安装</string>
+    <string name="network_capture_packs_import_replace">会替换已安装的 v%1$d。</string>
+    <string name="network_capture_packs_import_code">这个包带 dex 代码，会跑在 Mika 的进程里。</string>
+    <string name="network_capture_packs_import_failed">没能导入「%1$s」</string>
+    <string name="network_capture_packs_import_reason_no_manifest">文件里没有 plugin.json。</string>
+    <string name="network_capture_packs_import_reason_ambiguous">压缩包里有不止一份 plugin.json。</string>
+    <string name="network_capture_packs_import_reason_too_large">包超过 8 MB。</string>
+    <string name="network_capture_packs_import_reason_unsafe">压缩包里有跳出包目录的路径。</string>
+    <string name="network_capture_packs_import_reason_unreadable">文件读不出来。</string>
+    <string name="network_capture_packs_import_reason_invalid">包里有一项校验没通过。</string>
+    <string name="network_capture_packs_remove">删除这个插件包</string>
+    <string name="network_capture_packs_remove_title">删除「%1$s」？</string>
+    <string name="network_capture_packs_remove_body">它的文件会从这台设备上删掉，它提供的规则立刻失效。</string>
 </resources>

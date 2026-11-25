@@ -415,4 +415,21 @@
     <string name="network_capture_packs_channel_codec">レスポンスデコーダ ×%1$d</string>
     <string name="network_capture_packs_channel_host">ホスト補正</string>
     <string name="network_capture_packs_channel_code">dex コード</string>
+    <string name="network_capture_packs_import">プラグインパッケージを読み込む</string>
+    <string name="network_capture_packs_import_sub">.zip または plugin.json を選びます。インストール前に宣言内容を表示します。</string>
+    <string name="network_capture_packs_import_reading">パッケージを読み込み中…</string>
+    <string name="network_capture_packs_import_title">「%1$s」を読み込む</string>
+    <string name="network_capture_packs_import_install">インストール</string>
+    <string name="network_capture_packs_import_replace">インストール済みの v%1$d を置き換えます。</string>
+    <string name="network_capture_packs_import_code">このパッケージは dex コードを含み、Mika のプロセス内で動作します。</string>
+    <string name="network_capture_packs_import_failed">「%1$s」を読み込めませんでした</string>
+    <string name="network_capture_packs_import_reason_no_manifest">ファイルに plugin.json がありません。</string>
+    <string name="network_capture_packs_import_reason_ambiguous">アーカイブに複数の plugin.json が含まれています。</string>
+    <string name="network_capture_packs_import_reason_too_large">パッケージが 8 MB を超えています。</string>
+    <string name="network_capture_packs_import_reason_unsafe">アーカイブにパッケージ外へ出るパスが含まれています。</string>
+    <string name="network_capture_packs_import_reason_unreadable">ファイルを読み取れませんでした。</string>
+    <string name="network_capture_packs_import_reason_invalid">パッケージが検証を通りませんでした。</string>
+    <string name="network_capture_packs_remove">このプラグインパッケージを削除</string>
+    <string name="network_capture_packs_remove_title">「%1$s」を削除しますか？</string>
+    <string name="network_capture_packs_remove_body">ファイルはこの端末から削除され、このパッケージのルールは即座に無効になります。</string>
 </resources>

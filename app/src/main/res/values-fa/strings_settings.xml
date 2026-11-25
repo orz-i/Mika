@@ -436,4 +436,21 @@
     <string name="network_capture_packs_channel_codec">رمزگشاهای پاسخ ×%1$d</string>
     <string name="network_capture_packs_channel_host">اصلاح میزبان</string>
     <string name="network_capture_packs_channel_code">کد dex</string>
+    <string name="network_capture_packs_import">درون‌ریزی بستهٔ افزونه</string>
+    <string name="network_capture_packs_import_sub">یک فایل .zip یا plugin.json انتخاب کنید — پیش از نصب، اظهارنامهٔ آن را می‌بینید.</string>
+    <string name="network_capture_packs_import_reading">در حال خواندن بسته…</string>
+    <string name="network_capture_packs_import_title">درون‌ریزی «%1$s»</string>
+    <string name="network_capture_packs_import_install">نصب</string>
+    <string name="network_capture_packs_import_replace">نسخهٔ %1$d نصب‌شده را جایگزین می‌کند.</string>
+    <string name="network_capture_packs_import_code">این بسته کد dex دارد و درون فرآیند Mika اجرا می‌شود.</string>
+    <string name="network_capture_packs_import_failed">درون‌ریزی «%1$s» ممکن نشد</string>
+    <string name="network_capture_packs_import_reason_no_manifest">فایل هیچ plugin.json ندارد.</string>
+    <string name="network_capture_packs_import_reason_ambiguous">آرشیو بیش از یک plugin.json دارد.</string>
+    <string name="network_capture_packs_import_reason_too_large">حجم بسته بیش از 8 مگابایت است.</string>
+    <string name="network_capture_packs_import_reason_unsafe">آرشیو مسیری دارد که از بسته بیرون می‌زند.</string>
+    <string name="network_capture_packs_import_reason_unreadable">فایل خوانده نشد.</string>
+    <string name="network_capture_packs_import_reason_invalid">بسته از اعتبارسنجی عبور نکرد.</string>
+    <string name="network_capture_packs_remove">حذف این بستهٔ افزونه</string>
+    <string name="network_capture_packs_remove_title">«%1$s» حذف شود؟</string>
+    <string name="network_capture_packs_remove_body">فایل‌هایش از این دستگاه حذف می‌شود و قواعدش بی‌درنگ اعمال نمی‌شود.</string>
 </resources>

@@ -435,4 +435,21 @@
     <string name="network_capture_packs_channel_codec">Decodificadores de resposta ×%1$d</string>
     <string name="network_capture_packs_channel_host">Correção de host</string>
     <string name="network_capture_packs_channel_code">Código dex</string>
+    <string name="network_capture_packs_import">Importar pacote de extensão</string>
+    <string name="network_capture_packs_import_sub">Escolha um .zip ou um plugin.json; você vê o que ele declara antes de instalar.</string>
+    <string name="network_capture_packs_import_reading">Lendo o pacote…</string>
+    <string name="network_capture_packs_import_title">Importar «%1$s»</string>
+    <string name="network_capture_packs_import_install">Instalar</string>
+    <string name="network_capture_packs_import_replace">Substitui a v%1$d instalada.</string>
+    <string name="network_capture_packs_import_code">Este pacote traz código dex e roda dentro do processo do Mika.</string>
+    <string name="network_capture_packs_import_failed">Não foi possível importar «%1$s»</string>
+    <string name="network_capture_packs_import_reason_no_manifest">O arquivo não contém nenhum plugin.json.</string>
+    <string name="network_capture_packs_import_reason_ambiguous">O arquivo compactado tem mais de um plugin.json.</string>
+    <string name="network_capture_packs_import_reason_too_large">O pacote passa de 8 MB.</string>
+    <string name="network_capture_packs_import_reason_unsafe">O arquivo compactado contém um caminho que sai do pacote.</string>
+    <string name="network_capture_packs_import_reason_unreadable">Não foi possível ler o arquivo.</string>
+    <string name="network_capture_packs_import_reason_invalid">O pacote não passou na validação.</string>
+    <string name="network_capture_packs_remove">Excluir este pacote de extensão</string>
+    <string name="network_capture_packs_remove_title">Excluir «%1$s»?</string>
+    <string name="network_capture_packs_remove_body">Os arquivos são removidos deste dispositivo e as regras deixam de valer na hora.</string>
 </resources>

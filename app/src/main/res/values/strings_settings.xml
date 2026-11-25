@@ -436,4 +436,21 @@
     <string name="network_capture_packs_channel_codec">Response decoders ×%1$d</string>
     <string name="network_capture_packs_channel_host">Host fixup</string>
     <string name="network_capture_packs_channel_code">dex code</string>
+    <string name="network_capture_packs_import">Import plugin package</string>
+    <string name="network_capture_packs_import_sub">Pick a .zip or a plugin.json. What it declares is shown before anything is installed.</string>
+    <string name="network_capture_packs_import_reading">Reading the package…</string>
+    <string name="network_capture_packs_import_title">Import “%1$s”</string>
+    <string name="network_capture_packs_import_install">Install</string>
+    <string name="network_capture_packs_import_replace">This replaces the installed v%1$d.</string>
+    <string name="network_capture_packs_import_code">This package carries dex code and runs inside Mika’s process.</string>
+    <string name="network_capture_packs_import_failed">Could not import “%1$s”</string>
+    <string name="network_capture_packs_import_reason_no_manifest">The file contains no plugin.json.</string>
+    <string name="network_capture_packs_import_reason_ambiguous">The archive holds more than one plugin.json.</string>
+    <string name="network_capture_packs_import_reason_too_large">The package is larger than 8 MB.</string>
+    <string name="network_capture_packs_import_reason_unsafe">The archive contains a path that escapes the package.</string>
+    <string name="network_capture_packs_import_reason_unreadable">The file could not be read.</string>
+    <string name="network_capture_packs_import_reason_invalid">The package did not pass validation.</string>
+    <string name="network_capture_packs_remove">Delete this plugin package</string>
+    <string name="network_capture_packs_remove_title">Delete “%1$s”?</string>
+    <string name="network_capture_packs_remove_body">Its files are removed from this device and its rules stop applying immediately.</string>
 </resources>

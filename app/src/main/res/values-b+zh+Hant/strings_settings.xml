@@ -415,4 +415,21 @@
     <string name="network_capture_packs_channel_codec">回應解碼 ×%1$d</string>
     <string name="network_capture_packs_channel_host">網域補全</string>
     <string name="network_capture_packs_channel_code">dex 程式碼</string>
+    <string name="network_capture_packs_import">匯入外掛套件</string>
+    <string name="network_capture_packs_import_sub">選一個 .zip 或 plugin.json；裝之前會先把它的宣告擺給你看。</string>
+    <string name="network_capture_packs_import_reading">正在讀取外掛套件…</string>
+    <string name="network_capture_packs_import_title">匯入「%1$s」</string>
+    <string name="network_capture_packs_import_install">安裝</string>
+    <string name="network_capture_packs_import_replace">會取代已安裝的 v%1$d。</string>
+    <string name="network_capture_packs_import_code">這個套件帶 dex 程式碼，會跑在 Mika 的行程裡。</string>
+    <string name="network_capture_packs_import_failed">沒能匯入「%1$s」</string>
+    <string name="network_capture_packs_import_reason_no_manifest">檔案裡沒有 plugin.json。</string>
+    <string name="network_capture_packs_import_reason_ambiguous">壓縮檔裡有不只一份 plugin.json。</string>
+    <string name="network_capture_packs_import_reason_too_large">套件超過 8 MB。</string>
+    <string name="network_capture_packs_import_reason_unsafe">壓縮檔裡有跳出套件目錄的路徑。</string>
+    <string name="network_capture_packs_import_reason_unreadable">檔案讀不出來。</string>
+    <string name="network_capture_packs_import_reason_invalid">套件裡有一項校驗沒通過。</string>
+    <string name="network_capture_packs_remove">刪除這個外掛套件</string>
+    <string name="network_capture_packs_remove_title">刪除「%1$s」？</string>
+    <string name="network_capture_packs_remove_body">它的檔案會從這台裝置上刪掉，它提供的規則立刻失效。</string>
 </resources>

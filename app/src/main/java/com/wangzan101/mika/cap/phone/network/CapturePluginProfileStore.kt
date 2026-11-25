@@ -99,10 +99,77 @@ class CapturePluginProfileStore(
     val stateFile: File?
         get() = filesDir?.let { File(it, STATE_FILE_NAME) }
 
+    /** 导入插件包时的暂存根目录：和 `capture_plugins` 平级，加载器扫不到。 */
+    val stagingDir: File?
+        get() = filesDir?.let { File(it, CapturePluginImporter.STAGING_DIR_NAME) }
+
     fun ensurePluginsDir(): File? = pluginsDir?.apply { if (!isDirectory) mkdirs() }
+
+    /**
+     * 装一个已经解好、校验过、用户也确认过的包，然后立刻重装注册表。
+     *
+     * 装完不清禁用状态：同一个 id 之前被用户关掉过，这次导入不该把它悄悄打开——
+     * 那是用户的决定，不是包的属性。
+     */
+    @Synchronized
+    fun importPack(staged: CapturePluginImporter.Staged): CapturePluginImporter.InstallResult {
+        val dir = pluginsDir ?: return CapturePluginImporter.InstallResult.Failed(
+            CapturePluginImporter.Reason.Unreadable,
+            "no files dir",
+        )
+        synchronized(LOAD_LOCK) {
+            val result = CapturePluginImporter.install(staged, dir)
+            if (result is CapturePluginImporter.InstallResult.Installed) {
+                Log.i(TAG, "Imported capture plugin ${result.id} from ${staged.sourceName} (replaced=${result.replaced})")
+                loadIntoRegistry()
+            }
+            return result
+        }
+    }
+
+    /**
+     * 删掉一个**外部**插件包。内置包不给删：它在 assets 里，删了下次启动又回来，
+     * 对它该做的是关掉开关。
+     *
+     * 只删 `capture_plugins` 的直接子目录，不看注册表给的路径——注册表里的路径来自插件自己。
+     */
+    @Synchronized
+    fun removePack(id: String): Boolean {
+        val root = pluginsDir ?: return false
+        val pack = try {
+            ExternalCapturePluginLoader.inspect(root, EXTERNAL_PLUGIN_ID_PREFIX, verifyChecksum = false)
+                .firstOrNull { it.id == id }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to inspect capture plugins: ${t.message}")
+            return false
+        } ?: return false
+        val dir = File(pack.dir)
+        if (dir.parentFile?.canonicalFile != root.canonicalFile) {
+            Log.w(TAG, "Refusing to delete ${dir.absolutePath}: not a direct child of $root")
+            return false
+        }
+        if (!dir.deleteRecursively()) return false
+        synchronized(LOAD_LOCK) {
+            val left = readDisabledPacks() - id
+            writeDisabledPacks(left)
+            loadIntoRegistry()
+        }
+        Log.i(TAG, "Removed capture plugin $id")
+        return true
+    }
+
+    /** 清掉没走完的导入（进程被杀在确认框上时留下的暂存目录）。 */
+    fun clearStaging() {
+        CapturePluginImporter.clearStaging(stagingDir)
+    }
 
     fun loadIntoRegistry(): Int = synchronized(LOAD_LOCK) {
         val disabled = readDisabledPacks()
+        // 上一次导入被杀在改名前后留下的中间目录。加载器本来就不扫 `.` 开头的目录，
+        // 但它会一直占着地方，而且用户看不见。
+        pluginsDir?.listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith(CapturePluginImporter.INSTALL_TMP_PREFIX) }
+            ?.forEach { it.deleteRecursively() }
         // 先把上一次注册的包摘掉：关掉一个包之后它要是还挂在注册表里，等于没关。
         for (id in NetworkCapturePluginRegistry.listPluginIds()) {
             if (id.startsWith(BUILTIN_PLUGIN_ID_PREFIX) || id.startsWith(EXTERNAL_PLUGIN_ID_PREFIX)) {

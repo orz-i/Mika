@@ -445,4 +445,21 @@
     <string name="network_capture_packs_channel_codec">Декодеры ответов ×%1$d</string>
     <string name="network_capture_packs_channel_host">Исправление хоста</string>
     <string name="network_capture_packs_channel_code">Код dex</string>
+    <string name="network_capture_packs_import">Импорт пакета расширения</string>
+    <string name="network_capture_packs_import_sub">Выберите .zip или plugin.json — перед установкой мы покажем, что заявляет пакет.</string>
+    <string name="network_capture_packs_import_reading">Чтение пакета…</string>
+    <string name="network_capture_packs_import_title">Импорт «%1$s»</string>
+    <string name="network_capture_packs_import_install">Установить</string>
+    <string name="network_capture_packs_import_replace">Заменит установленную версию %1$d.</string>
+    <string name="network_capture_packs_import_code">Пакет содержит код dex и работает внутри процесса Mika.</string>
+    <string name="network_capture_packs_import_failed">Не удалось импортировать «%1$s»</string>
+    <string name="network_capture_packs_import_reason_no_manifest">В файле нет plugin.json.</string>
+    <string name="network_capture_packs_import_reason_ambiguous">В архиве больше одного plugin.json.</string>
+    <string name="network_capture_packs_import_reason_too_large">Размер пакета больше 8 МБ.</string>
+    <string name="network_capture_packs_import_reason_unsafe">В архиве есть путь, выходящий за пределы пакета.</string>
+    <string name="network_capture_packs_import_reason_unreadable">Не удалось прочитать файл.</string>
+    <string name="network_capture_packs_import_reason_invalid">Пакет не прошёл проверку.</string>
+    <string name="network_capture_packs_remove">Удалить этот пакет расширения</string>
+    <string name="network_capture_packs_remove_title">Удалить «%1$s»?</string>
+    <string name="network_capture_packs_remove_body">Его файлы будут удалены с устройства, а его правила сразу перестанут действовать.</string>
 </resources>

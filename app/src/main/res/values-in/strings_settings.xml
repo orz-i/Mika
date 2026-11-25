@@ -415,4 +415,21 @@
     <string name="network_capture_packs_channel_codec">Dekoder respons ×%1$d</string>
     <string name="network_capture_packs_channel_host">Perbaikan host</string>
     <string name="network_capture_packs_channel_code">Kode dex</string>
+    <string name="network_capture_packs_import">Impor paket plugin</string>
+    <string name="network_capture_packs_import_sub">Pilih .zip atau plugin.json; isi deklarasinya ditampilkan sebelum dipasang.</string>
+    <string name="network_capture_packs_import_reading">Membaca paket…</string>
+    <string name="network_capture_packs_import_title">Impor «%1$s»</string>
+    <string name="network_capture_packs_import_install">Pasang</string>
+    <string name="network_capture_packs_import_replace">Menggantikan v%1$d yang terpasang.</string>
+    <string name="network_capture_packs_import_code">Paket ini membawa kode dex dan berjalan di dalam proses Mika.</string>
+    <string name="network_capture_packs_import_failed">Tidak bisa mengimpor «%1$s»</string>
+    <string name="network_capture_packs_import_reason_no_manifest">Berkas tidak berisi plugin.json.</string>
+    <string name="network_capture_packs_import_reason_ambiguous">Arsip berisi lebih dari satu plugin.json.</string>
+    <string name="network_capture_packs_import_reason_too_large">Ukuran paket melebihi 8 MB.</string>
+    <string name="network_capture_packs_import_reason_unsafe">Arsip berisi jalur yang keluar dari paket.</string>
+    <string name="network_capture_packs_import_reason_unreadable">Berkas tidak bisa dibaca.</string>
+    <string name="network_capture_packs_import_reason_invalid">Paket tidak lolos validasi.</string>
+    <string name="network_capture_packs_remove">Hapus paket plugin ini</string>
+    <string name="network_capture_packs_remove_title">Hapus «%1$s»?</string>
+    <string name="network_capture_packs_remove_body">Berkasnya dihapus dari perangkat ini dan aturannya langsung tidak berlaku.</string>
 </resources>

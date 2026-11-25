@@ -1,5 +1,10 @@
 package com.wangzan101.mika.ui
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +28,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +49,7 @@ import com.agent.use.common.network.plugin.external.ExternalCapturePluginLoader
 import com.wangzan101.mika.R
 import com.wangzan101.mika.cap.phone.a11y.launchableApps
 import com.wangzan101.mika.cap.phone.network.CapturePluginEntry
+import com.wangzan101.mika.cap.phone.network.CapturePluginImporter
 import com.wangzan101.mika.cap.phone.network.CapturePluginPack
 import com.wangzan101.mika.cap.phone.network.CapturePluginProfileStore
 import com.wangzan101.mika.ui.components.FooterNote
@@ -61,7 +69,9 @@ import com.wangzan101.mika.ui.theme.MikaIcons
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 internal data class CapturePluginDraft(
     val isNew: Boolean = true,
@@ -355,6 +365,17 @@ internal object CapturePluginCopy {
 
 private enum class PluginAppPickMode { DraftPackage, ScanTarget }
 
+/** 导入框的状态。两步之间只留暂存目录，装与不装都不影响已经在跑的抓包。 */
+private sealed interface PackImportState {
+    data class Confirm(val staged: CapturePluginImporter.Staged) : PackImportState
+
+    data class Failed(
+        val reason: CapturePluginImporter.Reason,
+        val detail: String?,
+        val sourceName: String,
+    ) : PackImportState
+}
+
 /**
  * 设置 › 高级与其他 › 端侧网络抓包 › eBPF 探测规则：展示并配置小红书 `libcronet.114.0.5735.38.so` 等快速偏移与 ABI 参数，并支持 `--discover-only` 一键扫描。
  */
@@ -362,9 +383,12 @@ private enum class PluginAppPickMode { DraftPackage, ScanTarget }
 fun CapturePluginProfilesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember(context) { CapturePluginProfileStore.forContext(context) }
+    val scope = rememberCoroutineScope()
     var entries by remember { mutableStateOf(emptyList<CapturePluginEntry>()) }
     var packs by remember { mutableStateOf(emptyList<CapturePluginPack>()) }
     var installedApps by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var importState by remember { mutableStateOf<PackImportState?>(null) }
+    var importing by remember { mutableStateOf(false) }
 
     fun refreshEntries() {
         entries = store.snapshotEntries()
@@ -375,7 +399,26 @@ fun CapturePluginProfilesScreen(onBack: () -> Unit) {
         store.loadIntoRegistry()
         refreshEntries()
         installedApps = withContext(Dispatchers.IO) {
+            // 上一次导入要是被杀在确认框上，暂存目录还在；顺手清掉。
+            store.clearStaging()
             runCatching { launchableApps(context.packageManager, context.packageName) }.getOrDefault(emptyList())
+        }
+    }
+
+    // 选文件只是把字节落下来；装不装由后面的确认框决定。
+    val pickPack = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val name = displayNameOf(context, uri)
+            importing = true
+            scope.launch {
+                val outcome = withContext(Dispatchers.IO) { stagePickedPack(context, store, uri, name) }
+                importing = false
+                importState = when (outcome) {
+                    is CapturePluginImporter.Outcome.Ready -> PackImportState.Confirm(outcome.staged)
+                    is CapturePluginImporter.Outcome.Failed ->
+                        PackImportState.Failed(outcome.reason, outcome.detail, name)
+                }
+            }
         }
     }
 
@@ -383,6 +426,7 @@ fun CapturePluginProfilesScreen(onBack: () -> Unit) {
         entries = entries,
         packs = packs,
         installedApps = installedApps,
+        importing = importing,
         onBack = onBack,
         onSaveProfile = { pkg, profile ->
             store.saveProfile(pkg, profile)
@@ -400,6 +444,22 @@ fun CapturePluginProfilesScreen(onBack: () -> Unit) {
             store.setPackEnabled(id, enabled)
             refreshEntries()
         },
+        onImportPack = {
+            pickPack.launch(
+                arrayOf(
+                    "application/zip",
+                    "application/json",
+                    "text/plain",
+                    "application/octet-stream",
+                ),
+            )
+        },
+        onRemovePack = { id ->
+            scope.launch {
+                withContext(Dispatchers.IO) { store.removePack(id) }
+                refreshEntries()
+            }
+        },
         onDiscoverPackage = { pkg ->
             withContext(Dispatchers.IO) {
                 LocalRootEbpfCaptureEngine.discoverAppProfile(context, pkg, useHeuristicsOnly = true)
@@ -407,6 +467,205 @@ fun CapturePluginProfilesScreen(onBack: () -> Unit) {
         },
     )
 
+    when (val s = importState) {
+        is PackImportState.Confirm -> ImportPackDialog(
+            staged = s.staged,
+            installed = packs.firstOrNull { it.id == s.staged.info.id },
+            onDismiss = {
+                CapturePluginImporter.discard(s.staged)
+                importState = null
+            },
+            onInstall = {
+                val staged = s.staged
+                importState = null
+                importing = true
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { store.importPack(staged) }
+                    importing = false
+                    if (result is CapturePluginImporter.InstallResult.Failed) {
+                        importState = PackImportState.Failed(result.reason, result.detail, staged.sourceName)
+                    } else {
+                        refreshEntries()
+                    }
+                }
+            },
+        )
+
+        is PackImportState.Failed -> ImportFailedDialog(
+            state = s,
+            onDismiss = { importState = null },
+        )
+
+        null -> Unit
+    }
+}
+
+/** 显示名只用来说明"在导入哪个文件"，取不到就退回 uri 的末段。 */
+private fun displayNameOf(context: Context, uri: Uri): String = runCatching {
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        if (c.moveToFirst()) c.getString(0)?.takeIf { it.isNotBlank() } else null
+    }
+}.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "plugin"
+
+/**
+ * 把选中的文件落到暂存区再解包。复制这一层是必要的：
+ * SAF 给的 uri 只在这次回调前后有效，而解包可能很慢，不能边读 uri 边解。
+ */
+private fun stagePickedPack(
+    context: Context,
+    store: CapturePluginProfileStore,
+    uri: Uri,
+    displayName: String,
+): CapturePluginImporter.Outcome {
+    val staging = store.stagingDir
+        ?: return CapturePluginImporter.Outcome.Failed(CapturePluginImporter.Reason.Unreadable, "no files dir")
+    if (!staging.isDirectory && !staging.mkdirs()) {
+        return CapturePluginImporter.Outcome.Failed(CapturePluginImporter.Reason.Unreadable, "mkdirs")
+    }
+    val incoming = File(staging, "incoming-" + System.nanoTime().toString(36))
+    return try {
+        val opened = context.contentResolver.openInputStream(uri)
+            ?: return CapturePluginImporter.Outcome.Failed(CapturePluginImporter.Reason.Unreadable, "open")
+        opened.use { input ->
+            incoming.outputStream().use { output -> input.copyTo(output) }
+        }
+        CapturePluginImporter.stage(incoming, displayName, staging)
+    } catch (t: Throwable) {
+        CapturePluginImporter.Outcome.Failed(
+            CapturePluginImporter.Reason.Unreadable,
+            t.message ?: t::class.java.simpleName,
+        )
+    } finally {
+        incoming.delete()
+    }
+}
+
+/**
+ * 装之前的确认框：和插件包详情用的是同一套「自述 + 通道」两栏。
+ *
+ * 带 dex 的包单独警告一行——它会和 Mika 同进程跑，这句话不该藏在详情里。
+ */
+@Composable
+private fun ImportPackDialog(
+    staged: CapturePluginImporter.Staged,
+    installed: CapturePluginPack?,
+    onDismiss: () -> Unit,
+    onInstall: () -> Unit,
+) {
+    val info = staged.info
+    val c = MikaTheme.colors
+    MikaDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.network_capture_packs_import_title, info.title ?: staged.specId)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    stringResource(R.string.network_capture_packs_meta, info.version, info.apiVersion),
+                    style = MikaType.Caption,
+                    color = c.ink3,
+                )
+                info.description?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, Modifier.padding(top = 8.dp), style = MikaType.Body, color = c.ink)
+                }
+                info.author?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        stringResource(R.string.network_capture_packs_author, it),
+                        Modifier.padding(top = 6.dp),
+                        style = MikaType.Hint,
+                        color = c.ink3,
+                    )
+                }
+                Text(
+                    stringResource(R.string.network_capture_packs_scope, packScopeText(info)),
+                    Modifier.padding(top = 8.dp),
+                    style = MikaType.Caption,
+                    color = c.ink2,
+                )
+                packChannelText(info).takeIf { it.isNotEmpty() }?.let {
+                    Text(
+                        stringResource(R.string.network_capture_packs_touches, it),
+                        Modifier.padding(top = 4.dp),
+                        style = MikaType.Caption,
+                        color = c.ink2,
+                    )
+                }
+                if (info.declares.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.network_capture_packs_notes_title),
+                        Modifier.padding(top = 12.dp),
+                        style = MikaType.Caption,
+                        color = c.ink2,
+                    )
+                    info.declares.forEach { note ->
+                        Text(
+                            "• $note",
+                            Modifier.padding(top = 4.dp),
+                            style = MikaType.Hint,
+                            color = c.ink3,
+                        )
+                    }
+                }
+                if (info.hasCode) {
+                    Text(
+                        stringResource(R.string.network_capture_packs_import_code),
+                        Modifier.padding(top = 12.dp),
+                        style = MikaType.Caption,
+                        color = c.warn,
+                    )
+                }
+                if (installed != null) {
+                    Text(
+                        stringResource(R.string.network_capture_packs_import_replace, installed.info.version),
+                        Modifier.padding(top = 10.dp),
+                        style = MikaType.Caption,
+                        color = c.ink3,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onInstall) {
+                Text(stringResource(R.string.network_capture_packs_import_install))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ImportFailedDialog(state: PackImportState.Failed, onDismiss: () -> Unit) {
+    val c = MikaTheme.colors
+    val reason = when (state.reason) {
+        CapturePluginImporter.Reason.NotAPackage -> stringResource(R.string.network_capture_packs_import_reason_no_manifest)
+        CapturePluginImporter.Reason.Ambiguous -> stringResource(R.string.network_capture_packs_import_reason_ambiguous)
+        CapturePluginImporter.Reason.TooLarge -> stringResource(R.string.network_capture_packs_import_reason_too_large)
+        CapturePluginImporter.Reason.UnsafeEntry -> stringResource(R.string.network_capture_packs_import_reason_unsafe)
+        CapturePluginImporter.Reason.Unreadable -> stringResource(R.string.network_capture_packs_import_reason_unreadable)
+        CapturePluginImporter.Reason.Invalid -> stringResource(R.string.network_capture_packs_import_reason_invalid)
+    }
+    MikaDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.network_capture_packs_import_failed, state.sourceName)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(reason, style = MikaType.Body, color = c.ink)
+                // 具体哪一条校验没过（`api_version_mismatch:2!=1` 这种）照原样给出来：
+                // 用户要拿它去改包，转述一遍只会丢信息。
+                state.detail?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, Modifier.padding(top = 8.dp), style = MikaType.Hint, color = c.ink3)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.done))
+            }
+        },
+    )
 }
 
 @Composable
@@ -415,6 +674,7 @@ fun CapturePluginProfilesContent(
     packs: List<CapturePluginPack> = emptyList(),
     installedApps: List<Pair<String, String>> = emptyList(),
     onBack: () -> Unit,
+    importing: Boolean = false,
     onSaveProfile: (packageName: String, profile: EbpfProbeProfile) -> Unit = { _, _ -> },
     onResetPackage: (packageName: String) -> Unit = {},
     onResetAll: () -> Unit = {},
@@ -422,6 +682,9 @@ fun CapturePluginProfilesContent(
     /** 关/开一个插件包。关掉只是不加载，磁盘上的包不动。 */
     onTogglePack: (id: String, enabled: Boolean) -> Unit = { _, _ -> },
     /** 选一个 .zip / plugin.json 导入。真正装不装，由调用方再问一次。 */
+    onImportPack: () -> Unit = {},
+    /** 删掉一个外部插件包。内置包不给删，对它该做的是关掉开关。 */
+    onRemovePack: (id: String) -> Unit = {},
 ) {
     val appLabels = remember(installedApps) { installedApps.toMap() }
     var draft by remember { mutableStateOf<CapturePluginDraft?>(null) }
@@ -430,6 +693,7 @@ fun CapturePluginProfilesContent(
     var appSearch by remember { mutableStateOf("") }
     var confirmingResetAll by remember { mutableStateOf(false) }
     var packDetail by remember { mutableStateOf<CapturePluginPack?>(null) }
+    var removingPack by remember { mutableStateOf<CapturePluginPack?>(null) }
     var scanInputOpen by remember { mutableStateOf(false) }
     var scanPackageInput by remember { mutableStateOf("com.xingin.xhs") }
     var scanningPackage by remember { mutableStateOf<String?>(null) }
@@ -501,12 +765,34 @@ fun CapturePluginProfilesContent(
 
         GroupLabel(stringResource(R.string.network_capture_plugins_actions))
         GroupCard {
+            // 导入排第一：现在装一个包不用再拿文件管理器往私有目录里塞。
+            ListRow(
+                icon = MikaIcons.Download,
+                title = stringResource(R.string.network_capture_packs_import),
+                subtitle = if (importing) {
+                    stringResource(R.string.network_capture_packs_import_reading)
+                } else {
+                    stringResource(R.string.network_capture_packs_import_sub)
+                },
+                first = true,
+                onClick = if (importing) null else onImportPack,
+            ) {
+                if (importing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 4.dp).size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MikaTheme.colors.ink3,
+                    )
+                } else {
+                    RowChevron()
+                }
+            }
             if (onDiscoverPackage != null) {
                 ListRow(
                     MikaIcons.Search,
                     stringResource(R.string.network_capture_plugins_auto_scan),
                     stringResource(R.string.network_capture_plugins_auto_scan_sub),
-                    first = true,
+                    first = false,
                     onClick = {
                         scanPackageInput = "com.xingin.xhs"
                         scanInputOpen = true
@@ -518,7 +804,7 @@ fun CapturePluginProfilesContent(
             ListRow(
                 MikaIcons.Plus,
                 stringResource(R.string.network_capture_plugins_add),
-                first = onDiscoverPackage == null,
+                first = false,
                 onClick = {
                     invalidDraft = false
                     draft = CapturePluginDraft()
@@ -1177,11 +1463,60 @@ fun CapturePluginProfilesContent(
                             enabled = info.error == null,
                         )
                     }
+                    // 内置包在 assets 里，删了下次启动又回来——对它该做的是关掉上面的开关。
+                    if (detail.isExternal) {
+                        TextButton(
+                            onClick = {
+                                removingPack = detail
+                                packDetail = null
+                            },
+                            modifier = Modifier.padding(top = 6.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.network_capture_packs_remove),
+                                color = MikaTheme.colors.bad,
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { packDetail = null }) {
                     Text(stringResource(R.string.done))
+                }
+            },
+        )
+    }
+
+    val removing = removingPack
+    if (removing != null) {
+        MikaDialog(
+            onDismissRequest = { removingPack = null },
+            title = {
+                Text(
+                    stringResource(
+                        R.string.network_capture_packs_remove_title,
+                        removing.displayTitle,
+                    ),
+                )
+            },
+            text = { Text(stringResource(R.string.network_capture_packs_remove_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        removingPack = null
+                        onRemovePack(removing.id)
+                    },
+                ) {
+                    Text(
+                        stringResource(R.string.network_capture_packs_remove),
+                        color = MikaTheme.colors.bad,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { removingPack = null }) {
+                    Text(stringResource(R.string.cancel))
                 }
             },
         )

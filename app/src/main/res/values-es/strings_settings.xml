@@ -435,4 +435,21 @@
     <string name="network_capture_packs_channel_codec">Decodificadores de respuesta ×%1$d</string>
     <string name="network_capture_packs_channel_host">Corrección de host</string>
     <string name="network_capture_packs_channel_code">Código dex</string>
+    <string name="network_capture_packs_import">Importar paquete de extensión</string>
+    <string name="network_capture_packs_import_sub">Elige un .zip o un plugin.json; verás lo que declara antes de instalar nada.</string>
+    <string name="network_capture_packs_import_reading">Leyendo el paquete…</string>
+    <string name="network_capture_packs_import_title">Importar «%1$s»</string>
+    <string name="network_capture_packs_import_install">Instalar</string>
+    <string name="network_capture_packs_import_replace">Reemplaza la v%1$d instalada.</string>
+    <string name="network_capture_packs_import_code">Este paquete incluye código dex y se ejecuta dentro del proceso de Mika.</string>
+    <string name="network_capture_packs_import_failed">No se pudo importar «%1$s»</string>
+    <string name="network_capture_packs_import_reason_no_manifest">El archivo no contiene ningún plugin.json.</string>
+    <string name="network_capture_packs_import_reason_ambiguous">El archivo comprimido tiene más de un plugin.json.</string>
+    <string name="network_capture_packs_import_reason_too_large">El paquete supera los 8 MB.</string>
+    <string name="network_capture_packs_import_reason_unsafe">El archivo comprimido contiene una ruta que sale del paquete.</string>
+    <string name="network_capture_packs_import_reason_unreadable">No se pudo leer el archivo.</string>
+    <string name="network_capture_packs_import_reason_invalid">El paquete no pasó la validación.</string>
+    <string name="network_capture_packs_remove">Eliminar este paquete de extensión</string>
+    <string name="network_capture_packs_remove_title">¿Eliminar «%1$s»?</string>
+    <string name="network_capture_packs_remove_body">Sus archivos se borran de este dispositivo y sus reglas dejan de aplicarse de inmediato.</string>
 </resources>
