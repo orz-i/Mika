@@ -1,7 +1,7 @@
 package com.wangzan101.mika.core.agent
 
 import com.wangzan101.mika.core.assembly.toolDispatcher
-import com.wangzan101.mika.core.atlas.InMemoryAtlasStore
+import com.agent.use.ui.InMemoryAtlasStore
 import com.wangzan101.mika.core.tool.FakeScreen
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

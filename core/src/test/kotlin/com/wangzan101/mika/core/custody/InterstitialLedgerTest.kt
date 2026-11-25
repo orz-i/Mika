@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import com.agent.use.ui.Resolved
 
 class InterstitialLedgerTest {
 

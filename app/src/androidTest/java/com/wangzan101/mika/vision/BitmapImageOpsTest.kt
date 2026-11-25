@@ -7,7 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.SETTINGS
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.vision.hamming
 import kotlinx.coroutines.runBlocking
 import org.junit.After

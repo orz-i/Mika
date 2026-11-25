@@ -2,8 +2,8 @@ package com.wangzan101.mika.cap.web
 
 import com.wangzan101.mika.core.uistate.KeyCombo
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenCheck
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenCheck
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.cap.web.CapturedResponse
 import com.wangzan101.mika.core.cap.web.DownloadInfo
 import com.wangzan101.mika.core.cap.web.EvalJs

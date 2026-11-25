@@ -2,8 +2,8 @@ package com.wangzan101.mika.core.testing
 
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 
 /** 剧本里的一屏。 */
 data class Screen(val app: String, val elements: List<UiElement>)

@@ -1,16 +1,19 @@
 package com.wangzan101.mika.core.atlas
 
 import com.wangzan101.mika.core.record.RunEvent
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.Selector
-import com.wangzan101.mika.core.uistate.ScreenSig
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.Selector
+import com.agent.use.ui.ScreenSig
+import com.agent.use.ui.ScreenSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.MAX_ATLAS_SCREENS
+import com.agent.use.ui.ENTRY_SIG_ID
+import com.agent.use.ui.ATLAS_ENTRY_TOOL
 
 /** P0 改造的回归测试：弱成功边、入口边、页面重命名与删除、从入口寻路、弱边提示。 */
 class AtlasP0Test {

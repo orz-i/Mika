@@ -10,7 +10,7 @@ import com.wangzan101.mika.core.uistate.LocalIcon
 import com.wangzan101.mika.core.uistate.LocalIconFrame
 import com.wangzan101.mika.core.uistate.LocalIconRegion
 import com.wangzan101.mika.core.uistate.LocalIconResult
-import com.wangzan101.mika.core.uistate.normalize
+import com.agent.use.ui.normalize
 
 internal object LocalIcons {
     private const val MAX_TILE_SIDE = 720

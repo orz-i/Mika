@@ -4,8 +4,8 @@ import android.graphics.Bitmap
 import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityWindowInfo
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.normalize
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.normalize
 import com.wangzan101.mika.core.userscreen.CapturedScreen
 import com.wangzan101.mika.core.userscreen.UserScreen
 import com.wangzan101.mika.core.userscreen.UserScreenText

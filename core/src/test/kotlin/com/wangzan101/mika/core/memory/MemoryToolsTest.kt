@@ -9,8 +9,8 @@ import com.wangzan101.mika.core.model.StopReason
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.tool.HandBack
 import com.wangzan101.mika.core.tool.HandBackOutcome

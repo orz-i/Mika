@@ -3,8 +3,8 @@ package com.wangzan101.mika.cap.phone.a11y
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout

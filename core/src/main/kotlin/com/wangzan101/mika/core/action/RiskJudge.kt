@@ -5,8 +5,8 @@ import com.wangzan101.mika.core.gate.Irreversible
 import com.wangzan101.mika.core.gate.IrreversibleDetector
 import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.tool.Verb
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull

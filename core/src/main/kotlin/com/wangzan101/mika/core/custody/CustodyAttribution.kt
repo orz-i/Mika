@@ -1,5 +1,7 @@
 package com.wangzan101.mika.core.custody
 
+import com.agent.use.ui.Resolved
+
 /**
  * 归因置信度，与 AAU `LaunchOrigin` Bundle 契约保持 0..3 对齐。
  */

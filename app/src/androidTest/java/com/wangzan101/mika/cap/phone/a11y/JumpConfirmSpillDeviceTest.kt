@@ -16,7 +16,7 @@ import com.wangzan101.mika.core.custody.JumpConfirmOutcome
 import com.wangzan101.mika.core.custody.InterstitialKind
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.settings.FeatureFlags
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.async
@@ -224,7 +224,7 @@ class JumpConfirmSpillDeviceTest {
         delay(400L)
         sh("input tap ${cancelBtn!!.centerX} ${cancelBtn.centerY}")
         val settled = waitJob.await() as DisplayCustodian.WaitResult.Settled
-        assertEquals(JumpConfirmOutcome.DENIED, settled.report?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.DENIED.name.lowercase(), settled.report?.opened?.jumpConfirm?.outcome)
         assertEquals(TEST_PACKAGE, shell.packageOfTask(shell.topTaskId(vd)))
     }
 

@@ -31,6 +31,9 @@ project(":aau-a11y").projectDir = file("aau/aau-a11y")
 include(":aau-shell")
 project(":aau-shell").projectDir = file("aau/aau-shell")
 
+include(":aau-ui")
+project(":aau-ui").projectDir = file("aau/aau-ui")
+
 include(":aau-setup")
 project(":aau-setup").projectDir = file("aau/aau-setup")
 

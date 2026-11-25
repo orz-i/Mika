@@ -2,7 +2,7 @@ package com.wangzan101.mika.core.uistate.tools
 
 import com.wangzan101.mika.core.uistate.ScreenFamily
 import com.wangzan101.mika.core.uistate.Located
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
+import com.agent.use.ui.ScreenDiagnosis
 import com.wangzan101.mika.core.prompt.Feedback
 import com.wangzan101.mika.core.tool.Args
 import com.wangzan101.mika.core.tool.HINT_PROTECTED

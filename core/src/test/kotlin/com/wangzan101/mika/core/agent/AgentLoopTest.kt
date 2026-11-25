@@ -25,8 +25,8 @@ import com.wangzan101.mika.core.usage.UsageSource
 import com.wangzan101.mika.core.usage.metered
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.cap.sandbox.CommandResult
 import com.wangzan101.mika.core.cap.sandbox.FakeSandbox
@@ -64,7 +64,7 @@ import com.wangzan101.mika.core.custody.InterstitialChoice
 import com.wangzan101.mika.core.custody.JumpConfirmDegradeReason
 import com.wangzan101.mika.core.custody.JumpConfirmOutcome
 import com.wangzan101.mika.core.custody.JumpConfirmReport
-import com.wangzan101.mika.core.uistate.OpenedElsewhere
+import com.agent.use.ui.OpenedElsewhere
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonArray
 
@@ -1125,7 +1125,7 @@ class AgentLoopTest {
                 target = "微信",
                 outcome = JumpConfirmOutcome.WAITING_USER,
                 degradeReason = JumpConfirmDegradeReason.HOSTING_DISABLED,
-            ),
+            ).summary(),
         )
         val settledOpened = OpenedElsewhere(
             packageName = "com.tencent.mm",
@@ -1137,7 +1137,7 @@ class AgentLoopTest {
                 by = InterstitialActor.USER,
                 choice = InterstitialChoice.ALLOW,
                 outcome = JumpConfirmOutcome.USER_ALLOWED,
-            ),
+            ).summary(),
         )
         var gateArmed = false
         val heldReason = GateReason("jump_confirm_user", "请在屏幕上确认打开「微信」", needsYou = true)

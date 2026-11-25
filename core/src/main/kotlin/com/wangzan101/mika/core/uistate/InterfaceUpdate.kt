@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.agent.use.ui.ScreenJson
 
 /** 差异文字超过全量的这个比例就发全量:差异省不了多少,还更难读。 */
 private const val MAX_DIFF_RATIO = 0.5

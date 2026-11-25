@@ -8,17 +8,17 @@ import com.wangzan101.mika.core.guard.OperationGuards
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.RouteStep
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.RouteStep
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.tool.execute
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSig
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.ScreenSig
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.Verification
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -27,6 +27,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.MAX_SHORTCUT_CONSECUTIVE_MISSES
 
 class AtlasShortcutRunnerTest {
     private val pkg = "com.example.shop"

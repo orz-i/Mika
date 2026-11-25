@@ -3,13 +3,17 @@ package com.wangzan101.mika.core.atlas
 import com.wangzan101.mika.core.memory.SensitiveFilter
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
-import com.wangzan101.mika.core.replay.RouteStep
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.RouteStep
+import com.agent.use.ui.Selector
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import com.agent.use.ui.AtlasEviction
+import com.agent.use.ui.MAX_ATLAS_ANCHORS
+import com.agent.use.ui.MAX_ATLAS_RESOURCE_IDS
+import com.agent.use.ui.MAX_SHORTCUT_STEPS
 
 /**
  * Atlas 隐私与敏感信息统一过滤门禁（供 Learner / Namer / Share 共用）：

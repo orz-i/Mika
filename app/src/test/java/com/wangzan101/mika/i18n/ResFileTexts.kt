@@ -6,6 +6,7 @@ import org.w3c.dom.Element
 import java.io.File
 import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
+import com.agent.use.ui.Hant
 
 /**
  * JVM 单测里的界面文字:直接读 `src/main/res/<folder>/` 下的资源文件,按安卓的规则去掉转义,

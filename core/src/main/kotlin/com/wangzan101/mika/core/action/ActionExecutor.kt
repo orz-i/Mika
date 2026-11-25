@@ -17,10 +17,10 @@ import com.wangzan101.mika.core.policy.PacingPolicy
 import com.wangzan101.mika.core.policy.asPacingPolicy
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
-import com.wangzan101.mika.core.replay.Anchors
+import com.agent.use.ui.Anchors
 import com.wangzan101.mika.core.replay.effectiveWrite
 import com.wangzan101.mika.core.uistate.Described
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.interfaces
 import com.wangzan101.mika.core.tool.ActionPass
 import com.wangzan101.mika.core.tool.ToolDispatcher
@@ -49,6 +49,7 @@ import com.wangzan101.mika.core.run.waitOrSteer
 import com.wangzan101.mika.core.tool.fail
 import com.wangzan101.mika.core.tool.failCode
 import com.wangzan101.mika.core.capability.Paced
+import com.agent.use.ui.Resolved
 
 /**
  * 所有改变外部世界的动作唯一的执行入口:[ToolDispatcher.execute] 要一张 [ActionPass],只有这里有。

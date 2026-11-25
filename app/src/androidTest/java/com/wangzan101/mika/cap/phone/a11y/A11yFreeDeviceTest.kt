@@ -5,7 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wangzan101.mika.cap.phone.display.AgentDisplay
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals

@@ -2,13 +2,13 @@ package com.wangzan101.mika.core.atlas
 
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.model.Part
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.RouteStep
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.RouteStep
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.testing.TOOLS
-import com.wangzan101.mika.core.uistate.ScreenSig
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSig
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -18,6 +18,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.AtlasCodec
+import com.agent.use.ui.ENTRY_SIG_ID
+import com.agent.use.ui.ATLAS_ENTRY_TOOL
 
 /** 调研中六类问题的最小回归，不依赖模型、手机或历史实验文件。 */
 class AtlasGovernanceTest {

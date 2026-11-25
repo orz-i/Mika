@@ -1,8 +1,5 @@
 package com.wangzan101.mika.core.uistate
 
-import com.wangzan101.mika.core.custody.InterstitialActor
-import com.wangzan101.mika.core.custody.InterstitialChoice
-import com.wangzan101.mika.core.custody.JumpConfirmOutcome
 
 import com.wangzan101.mika.core.capability.CapabilityKey
 import com.wangzan101.mika.core.prompt.Feedback
@@ -22,6 +19,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import com.agent.use.ui.Resolved
 
 /*
  * 工具上下文里的界面状态:开局由 [Interfaces.attach] 放进去,有界面的工具(手机、网页、通用工具里点名屏幕的)从这里取。
@@ -123,14 +121,14 @@ internal fun openedHint(o: OpenedElsewhere): String {
         val target = jc.target ?: app
         val initiator = jc.initiator ?: app
         return when {
-            jc.outcome == JumpConfirmOutcome.DENIED || jc.choice == InterstitialChoice.DENY || o.closed ->
+            jc.outcome == JumpConfirmSummary.DENIED || jc.choice == JumpConfirmSummary.DENY || o.closed ->
                 Feedback.format("spill.jump_confirm_denied", "initiator" to initiator, "target" to target)
-            jc.outcome == JumpConfirmOutcome.AUTO_ALLOWED ||
-                (jc.by == InterstitialActor.AGENT && jc.choice == InterstitialChoice.ALLOW) ->
+            jc.outcome == JumpConfirmSummary.AUTO_ALLOWED ||
+                (jc.by == JumpConfirmSummary.BY_AGENT && jc.choice == JumpConfirmSummary.ALLOW) ->
                 Feedback.format("spill.jump_confirm_auto", "initiator" to initiator, "target" to target)
-            o.byUser || jc.outcome == JumpConfirmOutcome.USER_ALLOWED ->
+            o.byUser || jc.outcome == JumpConfirmSummary.USER_ALLOWED ->
                 Feedback.format("spill.user_done", "app" to app)
-            jc.outcome == JumpConfirmOutcome.UNAVAILABLE ->
+            jc.outcome == JumpConfirmSummary.UNAVAILABLE ->
                 Feedback.format("spill.jump_confirm_unavailable", "initiator" to initiator, "target" to target)
             else ->
                 Feedback.format("spill.jump_confirm_wait", "initiator" to initiator, "target" to target)

@@ -5,10 +5,10 @@ import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.SETTINGS
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.TEST_PACKAGE
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.pollUntil
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.ScreenState
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.ScreenState
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.Verification
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals

@@ -35,6 +35,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.agent.use.ui.Hant
 
 /** 分类名只在界面上出现,core 里不存中文;分类本身是 AI 判断的用途,不改变权限。 */
 @Composable

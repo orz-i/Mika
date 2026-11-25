@@ -7,8 +7,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.wangzan101.mika.cap.phone.shell.AsciiTextKeys
 import com.wangzan101.mika.cap.phone.shell.ShellService
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.Verification
 import com.wangzan101.mika.shell.IMikaShell
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking

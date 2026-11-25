@@ -1,7 +1,7 @@
 package com.wangzan101.mika.core.cap.phone
 
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiTreeNode
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiTreeNode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

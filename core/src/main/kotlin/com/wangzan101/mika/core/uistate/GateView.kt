@@ -1,8 +1,8 @@
 package com.wangzan101.mika.core.uistate
 
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.RouteAnchors
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.RouteAnchors
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.tool.LOCATED_REF
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.tool.argStr
@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.math.roundToInt
+import com.agent.use.ui.Resolved
 
 /**
  * 给执行入口(不可逆判定、运行记录、路线)看的一次调用的目标:按哪一屏判、@vN 换成什么坐标、端口编号是什么、

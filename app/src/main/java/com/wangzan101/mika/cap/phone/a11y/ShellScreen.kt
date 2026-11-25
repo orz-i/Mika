@@ -5,12 +5,6 @@ import com.agent.use.a11y.DisplayWindowInspector
 import com.agent.use.a11y.ScreenBounds
 import com.agent.use.a11y.ScreenNodeDescriptor
 import com.agent.use.a11y.model.A11yNode
-import com.wangzan101.mika.core.uistate.ElementLocator
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.UiStates
-import com.wangzan101.mika.core.uistate.UiTreeNode
-import com.wangzan101.mika.core.uistate.UiWindowTree
-import com.wangzan101.mika.core.uistate.normalize
 import org.json.JSONObject
 
 /**

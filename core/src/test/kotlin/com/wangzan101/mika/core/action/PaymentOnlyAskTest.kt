@@ -16,9 +16,9 @@ import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.WebInfo
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.WebInfo
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceUntilIdle

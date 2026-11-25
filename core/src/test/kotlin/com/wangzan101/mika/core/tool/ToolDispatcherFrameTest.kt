@@ -2,10 +2,10 @@ package com.wangzan101.mika.core.tool
 
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
+import com.agent.use.ui.ScreenDiagnosis
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.vision.JvmTestImageOps
 import com.wangzan101.mika.core.vision.ModelImage
 import kotlinx.coroutines.test.runTest

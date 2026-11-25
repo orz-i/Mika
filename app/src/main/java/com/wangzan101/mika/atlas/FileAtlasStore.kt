@@ -4,12 +4,13 @@ import android.content.Context
 import android.security.keystore.UserNotAuthenticatedException
 import com.wangzan101.mika.core.assembly.knownTools
 import com.wangzan101.mika.core.assembly.legacyNames
-import com.wangzan101.mika.core.atlas.AppAtlas
-import com.wangzan101.mika.core.atlas.AtlasCodec
+import com.agent.use.ui.AppAtlas
+import com.agent.use.ui.AtlasCodec
 import com.wangzan101.mika.core.atlas.AtlasLearner
+import com.wangzan101.mika.core.atlas.privacyCleaned
 import com.wangzan101.mika.core.atlas.AtlasShare
-import com.wangzan101.mika.core.atlas.AtlasStore
-import com.wangzan101.mika.core.replay.Route
+import com.agent.use.ui.AtlasStore
+import com.agent.use.ui.Route
 import com.wangzan101.mika.core.replay.RouteStore
 import com.wangzan101.mika.core.tool.LegacyNames
 import com.wangzan101.mika.core.tool.ToolIndex

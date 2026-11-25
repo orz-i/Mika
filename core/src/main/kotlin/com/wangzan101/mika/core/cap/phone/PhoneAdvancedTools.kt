@@ -13,7 +13,7 @@ import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.tool.int
 import com.wangzan101.mika.core.tool.str
-import com.wangzan101.mika.core.uistate.UiTreeNode
+import com.agent.use.ui.UiTreeNode
 import com.wangzan101.mika.core.uistate.toPx
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -235,7 +235,8 @@ internal object PhoneDialog : PhoneTool {
         fun visit(node: UiTreeNode) {
             if (!node.secret) {
                 node.text?.takeIf(String::isNotBlank)?.let { labels += it }
-                if (node.clickable && node.ref != null) listOfNotNull(node.text, node.description).firstOrNull { it.isNotBlank() }?.let { buttons += it to node.ref }
+                val ref = node.ref
+                if (node.clickable && ref != null) listOfNotNull(node.text, node.description).firstOrNull { it.isNotBlank() }?.let { buttons += it to ref }
             }
             node.children.forEach(::visit)
         }

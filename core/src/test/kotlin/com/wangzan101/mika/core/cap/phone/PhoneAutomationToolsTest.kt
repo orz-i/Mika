@@ -9,12 +9,12 @@ import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.ScreenEvent
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.ScreenEvent
 import com.wangzan101.mika.core.uistate.SystemCommandResult
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.UiTreeNode
-import com.wangzan101.mika.core.uistate.UiWindowTree
+import com.agent.use.ui.UiTreeNode
+import com.agent.use.ui.UiWindowTree
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray

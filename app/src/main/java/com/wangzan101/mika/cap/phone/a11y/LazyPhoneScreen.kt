@@ -8,11 +8,11 @@ import com.wangzan101.mika.core.uistate.LocalIcon
 import com.wangzan101.mika.core.uistate.LocalIconFrame
 import com.wangzan101.mika.core.uistate.LocalIconRegion
 import com.wangzan101.mika.core.uistate.LocalIconResult
-import com.wangzan101.mika.core.uistate.ScreenCheck
+import com.agent.use.ui.ScreenCheck
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.ScreenEvent
-import com.wangzan101.mika.core.uistate.VisibleTextLine
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.ScreenEvent
+import com.agent.use.ui.VisibleTextLine
 import com.wangzan101.mika.core.uistate.SystemCommandResult
 import com.wangzan101.mika.core.uistate.SystemAction
 import com.wangzan101.mika.core.uistate.SystemActionResult

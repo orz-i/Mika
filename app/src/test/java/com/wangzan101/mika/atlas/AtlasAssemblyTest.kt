@@ -1,13 +1,13 @@
 package com.wangzan101.mika.atlas
 
-import com.wangzan101.mika.core.atlas.AppAtlas
-import com.wangzan101.mika.core.atlas.AtlasStore
+import com.agent.use.ui.AppAtlas
+import com.agent.use.ui.AtlasStore
 import com.wangzan101.mika.core.assembly.toolDispatcher
 import com.wangzan101.mika.core.run.RunId
 import com.wangzan101.mika.core.run.RunSpec
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.settings.AesGcmKeyCipher
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

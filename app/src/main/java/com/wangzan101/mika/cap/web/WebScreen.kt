@@ -26,15 +26,15 @@ import com.wangzan101.mika.core.cap.web.cdp.selectOptionAt
 import com.wangzan101.mika.core.cap.web.cdp.viewportCssWidth
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.visual.FrameGrid
-import com.wangzan101.mika.core.uistate.ElementLocator
-import com.wangzan101.mika.core.uistate.Relocation
-import com.wangzan101.mika.core.uistate.ScreenCheck
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
-import com.wangzan101.mika.core.uistate.ScreenFacts
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.Verification
-import com.wangzan101.mika.core.uistate.relocate
+import com.agent.use.ui.ElementLocator
+import com.agent.use.ui.Relocation
+import com.agent.use.ui.ScreenCheck
+import com.agent.use.ui.ScreenDiagnosis
+import com.agent.use.ui.ScreenFacts
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.Verification
+import com.agent.use.ui.relocate
 import com.wangzan101.mika.core.cap.web.DEVTOOLS_UNAVAILABLE
 import com.wangzan101.mika.core.cap.web.CapturedResponse
 import com.wangzan101.mika.core.cap.web.DevtoolsUnavailable
@@ -58,8 +58,8 @@ import com.wangzan101.mika.core.cap.web.WebTabIsUsers
 import com.wangzan101.mika.core.cap.web.TabInfo
 import com.wangzan101.mika.core.cap.web.WebBarrier
 import com.wangzan101.mika.core.cap.web.WebFacts
-import com.wangzan101.mika.core.uistate.WebInfo
-import com.wangzan101.mika.core.uistate.PageDialog
+import com.agent.use.ui.WebInfo
+import com.agent.use.ui.PageDialog
 import com.wangzan101.mika.core.cap.web.DialogAnswer
 import com.wangzan101.mika.core.cap.web.DIALOG_OPEN
 import com.wangzan101.mika.core.cap.web.NO_DIALOG
@@ -91,6 +91,7 @@ import kotlinx.serialization.json.longOrNull
 import java.util.WeakHashMap
 import kotlin.math.min
 import kotlin.math.roundToInt
+import com.agent.use.ui.typeAndVerify
 
 /**
  * 网页端口:在当前标签上实现和手机同一套读屏与动作。

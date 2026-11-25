@@ -1,7 +1,7 @@
 package com.wangzan101.mika.core.gate
 
 import com.wangzan101.mika.core.risk.GateTarget
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.tool.FakeScreen
 import kotlinx.serialization.json.JsonObject
 import com.wangzan101.mika.core.assembly.toolDispatcher

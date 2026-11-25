@@ -33,6 +33,10 @@ import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.tool.okObj
 import com.wangzan101.mika.core.net.UrlHost
+import com.agent.use.ui.TreeAdequacy
+import com.agent.use.ui.VisibleText
+import com.agent.use.ui.ScreenMap
+import com.agent.use.ui.ScreenJson
 
 internal const val MAX_ELEMENTS = 200
 /** 一次全量屏幕之后最多接几次差异。 */

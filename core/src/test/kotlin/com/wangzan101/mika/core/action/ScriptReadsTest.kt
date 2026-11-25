@@ -4,7 +4,7 @@ import com.wangzan101.mika.core.gate.ConfirmationGate
 import com.wangzan101.mika.core.guard.OperationGuards
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.record.RunSink
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.cap.web.SCRIPT_MAX_READS
 import com.wangzan101.mika.core.tool.ScriptWebPort

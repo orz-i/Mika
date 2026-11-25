@@ -6,6 +6,7 @@ import org.junit.Test
 import org.w3c.dom.Element
 import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
+import com.agent.use.ui.Hant
 
 /**
  * 英文(默认)、简体和繁体三份界面文字要一一对上:同样的条目、同样的占位符(繁体对照简体);英文里不该留着没翻的中文。

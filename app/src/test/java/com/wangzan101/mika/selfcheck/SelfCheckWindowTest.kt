@@ -1,9 +1,9 @@
 package com.wangzan101.mika.selfcheck
 
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.UiTreeNode
-import com.wangzan101.mika.core.uistate.UiWindowTree
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.UiTreeNode
+import com.agent.use.ui.UiWindowTree
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

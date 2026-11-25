@@ -15,8 +15,8 @@ import com.wangzan101.mika.core.cap.web.cdp.CdpStream
 import com.wangzan101.mika.core.cap.web.cdp.CdpTransport
 import com.wangzan101.mika.core.cap.web.cdp.evaluate
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.cap.web.cdp.WebDevtools
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

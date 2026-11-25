@@ -17,6 +17,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.TreeAdequacy
+import com.agent.use.ui.VisibleText
 
 class TreeQualityTest {
     private fun el(i: Int, name: String, bounds: List<Int>, clickable: Boolean = false) =

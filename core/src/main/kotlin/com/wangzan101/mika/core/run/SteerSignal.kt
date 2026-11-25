@@ -37,3 +37,11 @@ suspend fun <T : Any> waitOrSteer(block: suspend () -> T): T? {
         }
     }
 }
+
+/**
+ * 把「用户插话」接进 aau-ui 的等待闸门：等待循环（[com.agent.use.ui.ScreenWaiter]）每段等待都经它包一层，
+ * 插话一到就提前结束、返回 null，库本身不认识插话这件事。
+ */
+object SteerGate : com.agent.use.ui.WaitGate {
+    override suspend fun <T : Any> guard(block: suspend () -> T): T? = waitOrSteer(block)
+}

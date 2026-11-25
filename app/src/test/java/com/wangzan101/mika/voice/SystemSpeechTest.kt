@@ -4,6 +4,7 @@ import android.speech.SpeechRecognizer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import com.agent.use.ui.Hant
 
 class SystemSpeechTest {
     @Test

@@ -1,16 +1,17 @@
 package com.wangzan101.mika.core.atlas
 
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.Route
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.Route
 import com.wangzan101.mika.core.replay.RouteShare
-import com.wangzan101.mika.core.replay.RouteStep
+import com.agent.use.ui.RouteStep
 import com.wangzan101.mika.core.replay.RouteStore
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.testing.TOOLS
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.MAX_ATLAS_SCREENS
 
 class AtlasShareTest {
     private class MemRouteStore : RouteStore {

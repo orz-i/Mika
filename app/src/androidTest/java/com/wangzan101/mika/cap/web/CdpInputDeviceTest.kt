@@ -8,8 +8,8 @@ import androidx.webkit.WebViewAssetLoader
 import com.wangzan101.mika.core.uistate.CdpKeys
 import com.wangzan101.mika.core.cap.web.cdp.CdpSession
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.Verification
 import com.wangzan101.mika.core.cap.web.DEVTOOLS_UNAVAILABLE
 import com.wangzan101.mika.core.cap.web.WebPoint
 import com.wangzan101.mika.cap.web.cdp.WebDevtools

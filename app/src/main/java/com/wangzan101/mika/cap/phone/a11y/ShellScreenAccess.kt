@@ -9,7 +9,7 @@ import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import com.agent.use.common.capture.ScreenCapturePrivilege
-import com.wangzan101.mika.core.uistate.ScreenEvent
+import com.agent.use.ui.ScreenEvent
 import com.wangzan101.mika.shell.IMikaShell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

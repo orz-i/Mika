@@ -8,16 +8,16 @@ import com.wangzan101.mika.core.atlas.AtlasReplayBridge.Companion.PROTECTED_SEEN
 import com.wangzan101.mika.core.atlas.AtlasReplayBridge.Companion.summary
 import com.wangzan101.mika.core.atlas.AtlasReplayBridge.StepExecOutcome
 import com.wangzan101.mika.core.model.Part
-import com.wangzan101.mika.core.replay.RouteStep
+import com.agent.use.ui.RouteStep
 import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.Verb
-import com.wangzan101.mika.core.uistate.ScreenSig
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import com.agent.use.ui.AtlasEviction
 
 /**
  * L2 快捷流程安全执行器：

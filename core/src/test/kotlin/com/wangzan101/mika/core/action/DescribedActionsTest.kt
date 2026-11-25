@@ -12,9 +12,9 @@ import com.wangzan101.mika.core.testing.field
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.tool.execute
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.PageDialog
+import com.agent.use.ui.PageDialog
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject

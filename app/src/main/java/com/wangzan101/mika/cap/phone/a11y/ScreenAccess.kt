@@ -8,7 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.Path
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
-import com.wangzan101.mika.core.uistate.ScreenEvent
+import com.agent.use.ui.ScreenEvent
 import kotlinx.coroutines.flow.Flow
 
 /** 截一张用户主屏的结果:画面,或屏上有防截屏窗口,或截不到(错误码)。 */

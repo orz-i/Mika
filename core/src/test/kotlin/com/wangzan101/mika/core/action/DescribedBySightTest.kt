@@ -13,7 +13,7 @@ import com.wangzan101.mika.core.record.RunSink
 import com.wangzan101.mika.core.testing.field
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.Verification
 import com.wangzan101.mika.core.vision.JvmTestImageOps
 import com.wangzan101.mika.core.vision.LocScreen
 import com.wangzan101.mika.core.vision.VisionService

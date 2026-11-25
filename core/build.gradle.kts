@@ -33,6 +33,8 @@ dependencies {
     api(project(":aau-remote"))
     // 配对、ADB 协议、助手交接与看门狗在 aau-shell（纯 JVM）；Mika 只提供 BuiltinShellPlatform
     api(project(":aau-shell"))
+    // 读屏快照模型、稳定编号、等待与诊断在 aau-ui（纯 JVM）；Mika 只提供 ScreenPort 的实现
+    api(project(":aau-ui"))
     implementation(libs.protobuf.lite)
     traceSchemas(libs.otel.proto)
     implementation(libs.okhttp)

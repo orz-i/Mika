@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.VisibleText
 
 class VisibleTextTest {
     @Test fun keepsOnlyVisibleTextMissingFromTreeAndNeverReturnsPasswordField() {

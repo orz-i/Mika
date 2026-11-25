@@ -2,9 +2,9 @@ package com.wangzan101.mika.core.cap.web
 
 import com.wangzan101.mika.core.tool.execute
 import com.wangzan101.mika.core.model.Part
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
-import com.wangzan101.mika.core.uistate.ScreenFacts
-import com.wangzan101.mika.core.uistate.ScreenState
+import com.agent.use.ui.ScreenDiagnosis
+import com.agent.use.ui.ScreenFacts
+import com.agent.use.ui.ScreenState
 import com.wangzan101.mika.core.tool.FakeScreen
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonPrimitive

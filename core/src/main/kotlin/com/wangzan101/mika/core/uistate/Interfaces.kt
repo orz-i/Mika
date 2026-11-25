@@ -1,8 +1,8 @@
 package com.wangzan101.mika.core.uistate
 
 import com.wangzan101.mika.core.prompt.Feedback
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.tool.AgentTool
 import com.wangzan101.mika.core.tool.LOCATED_REF
 import com.wangzan101.mika.core.tool.SurfaceLayer
@@ -24,6 +24,10 @@ import com.wangzan101.mika.core.vision.Locator
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import com.agent.use.ui.DescribedTarget
+import com.agent.use.ui.ScreenWaiter
+import com.wangzan101.mika.core.run.SteerGate
+import com.agent.use.ui.DescribedMatch
 
 /**
  * 一次动作落在哪里,由界面一侧给出,执行入口的不可逆判定与审批只读它:
@@ -392,7 +396,7 @@ internal class Interfaces(
     override suspend fun visibleText(): List<String> = peek()?.elements?.map { it.name }.orEmpty()
 
     override suspend fun waitUntil(until: Until, clock: () -> Long, interrupted: () -> Boolean): UntilOutcome =
-        UntilWait(session.screen, ::peek, clock, interrupted).run(until)
+        ScreenWaiter(session.screen, ::peek, clock, interrupted, SteerGate).run(until)
 
     override suspend fun imageNow(): Pair<ByteArray, Int>? = session.currentFrame()
 

@@ -3,8 +3,8 @@ package com.wangzan101.mika.cap.phone.a11y
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.TEST_PACKAGE
 import com.wangzan101.mika.core.cap.phone.WheelMath
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals

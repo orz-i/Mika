@@ -11,6 +11,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.wangzan101.mika.core.testing.TOOLS
+import com.agent.use.ui.RouteAnchors
+import com.agent.use.ui.MAX_ROUTE_STEPS
 
 class RouteRecorderTest {
     private val goal = "在备忘录里写今天天气不错"
@@ -103,7 +105,7 @@ class RouteRecorderTest {
         val r = RouteRecorder.record(goal, events, 1, TOOLS)!!
         assertEquals("在{1}里写{2}", r.template)
         assertEquals(2, r.slots)
-        val tap = r.steps.first { it.target?.role == "button" && it.target.resourceId == null }
+        val tap = r.steps.first { it.target?.let { t -> t.role == "button" && t.resourceId == null } == true }
         assertEquals(memo.copy(name = "{1}"), tap.target)
         // 模型写的 target 描述不存
         assertFalse("target" in Json.parseToJsonElement(tap.argsJson).jsonObject)

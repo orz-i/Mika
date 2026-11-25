@@ -1,6 +1,6 @@
 package com.wangzan101.mika.core.cap.web
 
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.cap.web.ElementFusion.AxNode
 import com.wangzan101.mika.core.cap.web.ElementFusion.Box
 import com.wangzan101.mika.core.cap.web.ElementFusion.Frame
@@ -12,7 +12,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
-import com.wangzan101.mika.core.uistate.WebInfo
+import com.agent.use.ui.WebInfo
 
 class ElementFusionTest {
     private val info = WebInfo("https://example.com/", "示例", "t1", 200)

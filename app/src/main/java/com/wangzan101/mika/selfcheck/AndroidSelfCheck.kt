@@ -44,9 +44,9 @@ import com.wangzan101.mika.core.selfcheck.SelfCheckPort
 import com.agent.use.shell.BuiltinShellStatus
 import com.agent.use.shell.PhoneSetupFlow
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.UiTreeNode
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.UiTreeNode
 import com.wangzan101.mika.settings.AccessibilityState
 import com.wangzan101.mika.settings.SystemStatus
 import com.wangzan101.mika.shell.IMikaShell

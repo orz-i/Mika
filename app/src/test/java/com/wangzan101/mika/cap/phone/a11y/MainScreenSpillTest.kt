@@ -20,6 +20,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.Resolved
 
 /**
  * 跨屏归因规则 R0–R6 与 [MainScreenSpill] 轻量辅助函数单元测试。

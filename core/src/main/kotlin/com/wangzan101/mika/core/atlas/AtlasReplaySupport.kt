@@ -8,7 +8,7 @@ import com.wangzan101.mika.core.tool.SubActions
 import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.ToolInfo
 import com.wangzan101.mika.core.tool.Verb
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.interfaces
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

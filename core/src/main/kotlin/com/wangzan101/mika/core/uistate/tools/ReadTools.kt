@@ -6,7 +6,7 @@ import com.wangzan101.mika.core.uistate.ScreenFamily
 import com.wangzan101.mika.core.tool.Args
 import com.wangzan101.mika.core.tool.HINT_PROTECTED
 import com.wangzan101.mika.core.tool.HINT_DISPLAY_CAPTURE
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
+import com.agent.use.ui.ScreenDiagnosis
 import com.wangzan101.mika.core.visual.Recall
 import com.wangzan101.mika.core.tool.Risk
 import com.wangzan101.mika.core.tool.ToolContext

@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.MAX_ROUTE_BYTES
 
 class RouteShareTest {
     private val tap = RouteStep("phone_tap", """{"ref":"@e1","snapshotId":"snap1"}""",

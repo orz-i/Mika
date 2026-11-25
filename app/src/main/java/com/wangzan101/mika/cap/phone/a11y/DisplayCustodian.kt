@@ -46,9 +46,9 @@ import com.wangzan101.mika.core.custody.SpillReason
 import com.wangzan101.mika.core.custody.UserIntentEvidence
 import com.wangzan101.mika.core.custody.UserIntentSource
 import com.wangzan101.mika.core.record.RunEvent
-import com.wangzan101.mika.core.uistate.Hant
+import com.agent.use.ui.Hant
 import com.wangzan101.mika.core.uistate.LaunchChoice
-import com.wangzan101.mika.core.uistate.OpenedElsewhere
+import com.agent.use.ui.OpenedElsewhere
 import com.wangzan101.mika.settings.FeatureFlags
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -70,6 +70,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import com.agent.use.ui.Resolved
 
 /**
  * App 侧跨屏任务常驻托管器（彻底替代旧版 6s 窗口轮询机制）。
@@ -457,7 +458,7 @@ internal class DisplayCustodian(
                         choice = InterstitialChoice.UNKNOWN,
                         outcome = JumpConfirmOutcome.UNAVAILABLE,
                         degradeReason = active.degradeReason,
-                    ),
+                    ).summary(),
                 ),
             )
             recordJumpConfirmEvent(
@@ -799,7 +800,7 @@ internal class DisplayCustodian(
                                 by = InterstitialActor.USER,
                                 choice = InterstitialChoice.ALLOW,
                                 outcome = JumpConfirmOutcome.USER_ALLOWED,
-                            ),
+                            ).summary(),
                         ),
                     ),
                 )
@@ -839,7 +840,7 @@ internal class DisplayCustodian(
                                     by = InterstitialActor.USER,
                                     choice = InterstitialChoice.ALLOW,
                                     outcome = JumpConfirmOutcome.USER_ALLOWED,
-                                ),
+                                ).summary(),
                             ),
                         ),
                     )
@@ -1082,7 +1083,7 @@ internal class DisplayCustodian(
                                         by = actor,
                                         choice = InterstitialChoice.ALLOW,
                                         outcome = if (actor == InterstitialActor.AGENT) JumpConfirmOutcome.AUTO_ALLOWED else JumpConfirmOutcome.USER_ALLOWED,
-                                    ),
+                                    ).summary(),
                                 ),
                             ),
                         )
@@ -1311,7 +1312,7 @@ internal class DisplayCustodian(
                                 by = InterstitialActor.USER,
                                 choice = InterstitialChoice.DENY,
                                 outcome = JumpConfirmOutcome.DENIED,
-                            ),
+                            ).summary(),
                         ),
                     ),
                 )
@@ -1379,7 +1380,7 @@ internal class DisplayCustodian(
                                             by = InterstitialActor.USER,
                                             choice = InterstitialChoice.ALLOW,
                                             outcome = JumpConfirmOutcome.USER_ALLOWED,
-                                        ),
+                                        ).summary(),
                                     ),
                                 ),
                             )
@@ -1413,7 +1414,7 @@ internal class DisplayCustodian(
                                             by = InterstitialActor.USER,
                                             choice = InterstitialChoice.DENY,
                                             outcome = JumpConfirmOutcome.DENIED,
-                                        ),
+                                        ).summary(),
                                     ),
                                 ),
                             )
@@ -1618,7 +1619,7 @@ internal class DisplayCustodian(
                                             by = InterstitialActor.AGENT,
                                             choice = InterstitialChoice.ALLOW,
                                             outcome = JumpConfirmOutcome.AUTO_ALLOWED,
-                                        ),
+                                        ).summary(),
                                     ),
                                 ),
                             )
@@ -1770,7 +1771,7 @@ internal class DisplayCustodian(
                                 choice = InterstitialChoice.UNKNOWN,
                                 outcome = JumpConfirmOutcome.UNAVAILABLE,
                                 degradeReason = degradeReason,
-                            ),
+                            ).summary(),
                         ),
                     ),
                 )
@@ -1824,7 +1825,7 @@ internal class DisplayCustodian(
                             choice = InterstitialChoice.UNKNOWN,
                             outcome = JumpConfirmOutcome.WAITING_USER,
                             degradeReason = degradeReason,
-                        ),
+                        ).summary(),
                     ),
                 ),
             )
@@ -1983,7 +1984,7 @@ internal class DisplayCustodian(
                             app = runtime.appLabel(pkg),
                             pulledBack = true,
                             inProfile = inProfileOf(pkg, userId),
-                            jumpConfirm = fromJumpConfirm,
+                            jumpConfirm = fromJumpConfirm?.summary(),
                         ),
                     ),
                 )
@@ -2007,7 +2008,7 @@ internal class DisplayCustodian(
                         app = runtime.appLabel(pkg),
                         pulledBack = false,
                         inProfile = inProfileOf(pkg, userId),
-                        jumpConfirm = fromJumpConfirm,
+                        jumpConfirm = fromJumpConfirm?.summary(),
                     ),
                 ),
             )

@@ -10,6 +10,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import java.util.UUID
+import com.agent.use.ui.RouteCodec
+import com.agent.use.ui.RouteAnchors
+import com.agent.use.ui.MAX_ROUTE_STEPS
+import com.agent.use.ui.MAX_ROUTE_BYTES
 
 /**
  * 把一次办成的运行记成路线。只看 [RunEvent.ActionTarget] 与接管、追问、确认、障碍、结局一类事件;

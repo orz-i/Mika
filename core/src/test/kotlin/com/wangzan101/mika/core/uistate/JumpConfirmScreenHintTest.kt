@@ -32,7 +32,7 @@ class JumpConfirmScreenHintTest {
                 by = InterstitialActor.AGENT,
                 choice = InterstitialChoice.ALLOW,
                 outcome = JumpConfirmOutcome.AUTO_ALLOWED,
-            ),
+            ).summary(),
         )
         assertFalse(auto.onUserScreen)
         val jcJson = auto.toJson()["jumpConfirm"]!!.jsonObject
@@ -53,7 +53,7 @@ class JumpConfirmScreenHintTest {
                 choice = InterstitialChoice.UNKNOWN,
                 outcome = JumpConfirmOutcome.WAITING_USER,
                 degradeReason = JumpConfirmDegradeReason.HOSTING_DISABLED,
-            ),
+            ).summary(),
         )
         assertTrue(waiting.onUserScreen)
         val waitJson = waiting.toJson()
@@ -75,7 +75,7 @@ class JumpConfirmScreenHintTest {
                     initiator = "Bilibili",
                     target = "Taobao",
                     outcome = JumpConfirmOutcome.WAITING_USER,
-                ),
+                ).summary(),
             ),
         )
         assertTrue(waitHint.contains("Bilibili"))
@@ -93,7 +93,7 @@ class JumpConfirmScreenHintTest {
                     by = InterstitialActor.AGENT,
                     choice = InterstitialChoice.ALLOW,
                     outcome = JumpConfirmOutcome.AUTO_ALLOWED,
-                ),
+                ).summary(),
             ),
         )
         assertTrue(autoHint.contains("automatically confirmed"))
@@ -109,7 +109,7 @@ class JumpConfirmScreenHintTest {
                 by = InterstitialActor.USER,
                 choice = InterstitialChoice.DENY,
                 outcome = JumpConfirmOutcome.DENIED,
-            ),
+            ).summary(),
         )
         assertFalse(denied.onUserScreen)
         val deniedHint = openedHint(denied)
@@ -125,7 +125,7 @@ class JumpConfirmScreenHintTest {
                     target = "Taobao",
                     outcome = JumpConfirmOutcome.UNAVAILABLE,
                     degradeReason = JumpConfirmDegradeReason.DEVICE_CIRCUIT_BROKEN,
-                ),
+                ).summary(),
             ),
         )
         assertTrue(unavailableHint.contains("unavailable"))

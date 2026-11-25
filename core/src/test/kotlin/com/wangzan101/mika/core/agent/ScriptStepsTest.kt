@@ -14,7 +14,7 @@ import com.wangzan101.mika.core.model.Role
 import com.wangzan101.mika.core.model.StopReason
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.tool.ScriptWebPort
 import com.wangzan101.mika.core.tool.ToolDispatcher

@@ -10,7 +10,7 @@ import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.LocalIcon
 import com.wangzan101.mika.core.uistate.LocalIconRegion
 import com.wangzan101.mika.core.uistate.LocalIconResult
-import com.wangzan101.mika.core.uistate.ScreenState
+import com.agent.use.ui.ScreenState
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals

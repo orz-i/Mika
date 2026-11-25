@@ -10,6 +10,7 @@ import android.icu.util.ULocale
 import android.os.Build
 import android.os.LocaleList
 import java.util.Locale
+import com.agent.use.ui.Hant
 
 /**
  * App 界面的语言:跟随系统,或者选定下面的一种。资源里英文是默认(`values/`),简体中文在 `values-zh/`、繁体中文在 `values-b+zh+Hant/`,

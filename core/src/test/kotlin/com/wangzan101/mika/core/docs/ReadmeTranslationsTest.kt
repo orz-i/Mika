@@ -6,6 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.security.MessageDigest
+import com.agent.use.ui.Hant
 
 /**
  * docs/readme/ 下的几份译文跟得上仓库首页的英文 README.md:

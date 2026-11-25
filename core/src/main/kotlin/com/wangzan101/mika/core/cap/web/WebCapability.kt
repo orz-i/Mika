@@ -9,7 +9,7 @@ import com.wangzan101.mika.core.observation.Look
 import com.wangzan101.mika.core.net.UrlHost
 import com.wangzan101.mika.core.prompt.Prompts
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.tool.AgentTool
 import com.wangzan101.mika.core.tool.ArgError

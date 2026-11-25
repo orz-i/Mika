@@ -1,7 +1,7 @@
 package com.wangzan101.mika.cap.phone.a11y
 
 import com.wangzan101.mika.core.gate.IrreversibleDetector
-import com.wangzan101.mika.core.uistate.Hant
+import com.agent.use.ui.Hant
 import kotlin.math.hypot
 
 /**

@@ -1,6 +1,6 @@
 package com.wangzan101.mika.core.custody
 
-import com.wangzan101.mika.core.uistate.Hant
+import com.agent.use.ui.Hant
 
 /** 跳转确认弹窗中单个候选按钮的语义角色。 */
 enum class ConfirmButtonRole {

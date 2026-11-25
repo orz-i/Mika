@@ -7,7 +7,7 @@ import com.wangzan101.mika.core.custody.Interstitial
 import com.wangzan101.mika.core.custody.JumpConfirmProfile
 import com.wangzan101.mika.core.custody.JumpConfirmProfileMatcher
 import com.wangzan101.mika.core.custody.JumpProfileSource
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.UiElement
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

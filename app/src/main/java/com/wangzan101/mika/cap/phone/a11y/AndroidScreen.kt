@@ -35,17 +35,17 @@ import com.wangzan101.mika.core.uistate.LocalIcon
 import com.wangzan101.mika.core.uistate.LocalIconFrame
 import com.wangzan101.mika.core.uistate.LocalIconRegion
 import com.wangzan101.mika.core.uistate.LocalIconResult
-import com.wangzan101.mika.core.uistate.OpenedElsewhere
+import com.agent.use.ui.OpenedElsewhere
 import com.wangzan101.mika.core.uistate.UnseenField
-import com.wangzan101.mika.core.uistate.normalize
-import com.wangzan101.mika.core.uistate.Relocation
-import com.wangzan101.mika.core.uistate.ScreenCheck
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
-import com.wangzan101.mika.core.uistate.ScreenFacts
+import com.agent.use.ui.normalize
+import com.agent.use.ui.Relocation
+import com.agent.use.ui.ScreenCheck
+import com.agent.use.ui.ScreenDiagnosis
+import com.agent.use.ui.ScreenFacts
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenEvent
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.VisibleTextLine
+import com.agent.use.ui.ScreenEvent
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.VisibleTextLine
 import com.wangzan101.mika.core.uistate.SystemCommandResult
 import com.wangzan101.mika.core.uistate.SystemAction
 import com.wangzan101.mika.core.uistate.SystemActionResult
@@ -53,11 +53,11 @@ import com.wangzan101.mika.core.uistate.WheelOutcome
 import com.wangzan101.mika.cap.phone.shell.AsciiTextKeys
 import com.wangzan101.mika.cap.phone.shell.SystemIntents
 import com.wangzan101.mika.core.visual.FrameGrid
-import com.wangzan101.mika.core.uistate.Verification
-import com.wangzan101.mika.core.uistate.TextField
-import com.wangzan101.mika.core.uistate.typeAndVerify
-import com.wangzan101.mika.core.uistate.relocate
-import com.wangzan101.mika.core.uistate.RELOCATE_MAX_SHIFT
+import com.agent.use.ui.Verification
+import com.agent.use.ui.TextField
+import com.agent.use.ui.typeAndVerify
+import com.agent.use.ui.relocate
+import com.agent.use.ui.RELOCATE_MAX_SHIFT
 import com.wangzan101.mika.cap.phone.display.AgentDisplay
 import com.wangzan101.mika.cap.phone.display.FrameMath
 import com.wangzan101.mika.cap.phone.display.LazyAgentDisplay
@@ -102,6 +102,7 @@ import java.util.concurrent.locks.Lock
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.math.min
 import kotlin.math.roundToInt
+import com.agent.use.ui.JumpConfirmSummary
 
 private val localIconWorker = Dispatchers.Default.limitedParallelism(1)
 private val packageNamePattern = Regex("[A-Za-z0-9._]+")
@@ -2159,7 +2160,7 @@ class AndroidScreen(
                 target = targetPackage,
                 outcome = JumpConfirmOutcome.WAITING_USER,
                 degradeReason = degradeReason,
-            )
+            ).summary()
         } else {
             null
         },
@@ -2173,9 +2174,9 @@ class AndroidScreen(
             else -> ""
         }
         return when {
-            o.jumpConfirm?.outcome == JumpConfirmOutcome.DENIED -> "The user denied the app launch confirmation for $name on their screen. Do not retry automatically; ask or adjust the plan."
-            o.jumpConfirm?.outcome == JumpConfirmOutcome.UNAVAILABLE -> "App launch confirmation for $name cannot be handled automatically in this mode or on this device."
-            o.jumpConfirm?.outcome == JumpConfirmOutcome.AUTO_ALLOWED && o.pulledBack -> "The app launch confirmation for $name was automatically allowed once, and it is now on Mika's screen. Observe before acting."
+            o.jumpConfirm?.outcome == JumpConfirmSummary.DENIED -> "The user denied the app launch confirmation for $name on their screen. Do not retry automatically; ask or adjust the plan."
+            o.jumpConfirm?.outcome == JumpConfirmSummary.UNAVAILABLE -> "App launch confirmation for $name cannot be handled automatically in this mode or on this device."
+            o.jumpConfirm?.outcome == JumpConfirmSummary.AUTO_ALLOWED && o.pulledBack -> "The app launch confirmation for $name was automatically allowed once, and it is now on Mika's screen. Observe before acting."
             o.closed -> "The user closed the system's question on their screen without picking, so nothing was opened. Decide what to do next; do not simply repeat the action."
             o.byUser && !o.pulledBack -> "$name needed the user; they handled it on their own screen and tapped continue, and it has closed. Observe before acting."
             o.byUser -> "$name needed the user; they handled it on their own screen and tapped continue. It is now in front on Mika's screen. Observe before acting."

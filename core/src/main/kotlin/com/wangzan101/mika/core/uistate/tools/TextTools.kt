@@ -4,7 +4,7 @@ import com.wangzan101.mika.core.uistate.ScreenFamily
 import com.wangzan101.mika.core.risk.GateTarget
 import com.wangzan101.mika.core.prompt.Feedback
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.Verification
 import com.wangzan101.mika.core.tool.ArgError
 import com.wangzan101.mika.core.tool.Args
 import com.wangzan101.mika.core.uistate.DESCRIBED_ELEMENT

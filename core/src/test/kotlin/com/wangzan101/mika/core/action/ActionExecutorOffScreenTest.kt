@@ -7,7 +7,7 @@ import com.wangzan101.mika.core.record.RunSink
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.trigger.Scheduled
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

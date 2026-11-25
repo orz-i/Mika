@@ -71,8 +71,8 @@ import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.ToolTraits
 import com.wangzan101.mika.core.replay.RouteMatcher
 import com.wangzan101.mika.core.atlas.AtlasHintPolicy
-import com.wangzan101.mika.core.atlas.AtlasStore
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.AtlasStore
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.interfaces
 import com.wangzan101.mika.core.verify.Verifier
 import kotlin.coroutines.EmptyCoroutineContext

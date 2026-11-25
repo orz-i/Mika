@@ -20,7 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import com.wangzan101.mika.core.assembly.toolDispatcher
 import com.wangzan101.mika.core.uistate.interfaces
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
+import com.agent.use.ui.ScreenDiagnosis
 
 class ToolDispatcherVisionTest {
     private var seq = 0

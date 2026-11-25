@@ -1,11 +1,11 @@
 package com.wangzan101.mika.core.tool
 
 import com.wangzan101.mika.core.model.Part
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

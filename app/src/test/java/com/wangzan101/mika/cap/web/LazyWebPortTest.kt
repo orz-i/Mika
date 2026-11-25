@@ -1,7 +1,7 @@
 package com.wangzan101.mika.cap.web
 
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.cap.web.DownloadInfo
 import com.wangzan101.mika.core.cap.web.EvalJs
 import com.wangzan101.mika.core.cap.web.NavResult

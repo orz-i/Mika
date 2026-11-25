@@ -2,16 +2,16 @@ package com.wangzan101.mika.core.atlas
 
 import com.wangzan101.mika.core.memory.SensitiveFilter
 import com.wangzan101.mika.core.record.Redactor
-import com.wangzan101.mika.core.replay.Route
+import com.agent.use.ui.Route
 import com.wangzan101.mika.core.replay.RouteFingerprint
 import com.wangzan101.mika.core.replay.RouteShare
 import com.wangzan101.mika.core.replay.RouteShareLint
 import com.wangzan101.mika.core.replay.RouteStore
-import com.wangzan101.mika.core.replay.involvesPackage
+import com.agent.use.ui.involvesPackage
 import com.wangzan101.mika.core.replay.withCurrentToolNames
 import com.wangzan101.mika.core.tool.LegacyNames
 import com.wangzan101.mika.core.tool.ToolIndex
-import com.wangzan101.mika.core.uistate.ScreenSig
+import com.agent.use.ui.ScreenSig
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -20,6 +20,16 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.security.MessageDigest
 import java.util.UUID
+import com.agent.use.ui.AtlasEviction
+import com.agent.use.ui.MAX_ATLAS_SCREENS
+import com.agent.use.ui.MAX_ATLAS_EDGES
+import com.agent.use.ui.MAX_SCREEN_CONTROLS
+import com.agent.use.ui.MAX_ATLAS_ANCHORS
+import com.agent.use.ui.MAX_ATLAS_RESOURCE_IDS
+import com.agent.use.ui.MAX_ATLAS_VERSIONS
+import com.agent.use.ui.MAX_ATLAS_SHORTCUTS
+import com.agent.use.ui.MAX_SHORTCUT_STEPS
+import com.agent.use.ui.ENTRY_SIG_ID
 
 /**
  * 可分享与导出的单 App 经验包（包含脱敏后的 [AppAtlas] 与可选的关联路线 [RouteShare]）。
@@ -151,7 +161,8 @@ data class AtlasShare(
                     problems += "dangling edge ${e.fromSigId} -> ${e.toSigId}"
                 }
                 if (e.ok < 0 || e.weakOk < 0 || e.miss < 0) problems += "negative edge stats ${e.fromSigId} -> ${e.toSigId}"
-                if (e.target != null && !AtlasSanitizer.isSafeText(e.target.name)) {
+                val edgeTarget = e.target
+                if (edgeTarget != null && !AtlasSanitizer.isSafeText(edgeTarget.name)) {
                     problems += "sensitive content in edge target ${e.fromSigId} -> ${e.toSigId}"
                 }
             }
@@ -182,7 +193,8 @@ data class AtlasShare(
                     if (st.argsJson.contains(Redactor.MASK) || !AtlasSanitizer.isSafeText(st.argsJson)) {
                         problems += "shortcut ${sc.id} step ${idx + 1}: sensitive content or redacted mask in args"
                     }
-                    if (st.target != null && (st.target.name == Redactor.MASK || !AtlasSanitizer.isSafeText(st.target.name))) {
+                    val stepTarget = st.target
+                    if (stepTarget != null && (stepTarget.name == Redactor.MASK || !AtlasSanitizer.isSafeText(stepTarget.name))) {
                         problems += "shortcut ${sc.id} step ${idx + 1}: sensitive content in target"
                     }
                     if (st.before.texts.any { !AtlasSanitizer.isSafeText(it) } || st.after.texts.any { !AtlasSanitizer.isSafeText(it) }) {

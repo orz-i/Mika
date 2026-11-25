@@ -1,8 +1,8 @@
 package com.wangzan101.mika.core.atlas
 
-import com.wangzan101.mika.core.replay.Selector
-import com.wangzan101.mika.core.uistate.ScreenSig
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.Selector
+import com.agent.use.ui.ScreenSig
+import com.agent.use.ui.ScreenSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

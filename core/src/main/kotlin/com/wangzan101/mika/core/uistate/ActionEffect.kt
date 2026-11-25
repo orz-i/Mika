@@ -10,6 +10,7 @@ import kotlinx.serialization.json.put
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
+import com.agent.use.ui.UiStates
 
 /** 动作对 App 或网页界面状态的实际效果:按动作前后的界面状态(元素表、控件状态、输入焦点、在哪)判出,画面差异只作旁证;[wire] 是结果里 effect.kind 的写法。 */
 enum class EffectKind(val wire: String) {

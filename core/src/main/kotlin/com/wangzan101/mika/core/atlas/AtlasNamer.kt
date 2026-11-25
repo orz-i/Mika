@@ -6,7 +6,7 @@ import com.wangzan101.mika.core.model.Message
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.model.Role
 import com.wangzan101.mika.core.prompt.Prompts
-import com.wangzan101.mika.core.uistate.ScreenSig
+import com.agent.use.ui.ScreenSig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -20,6 +20,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import com.agent.use.ui.AtlasEviction
 
 /**
  * 页面与高频控件批量命名器。

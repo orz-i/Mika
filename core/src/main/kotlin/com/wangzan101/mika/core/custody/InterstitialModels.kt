@@ -1,5 +1,7 @@
 package com.wangzan101.mika.core.custody
 
+import com.agent.use.ui.Resolved
+
 /** 中间页类型：系统选择器、应用间跳转授权弹窗、需用户介入的页面。 */
 enum class InterstitialKind {
     CHOOSER,
@@ -226,7 +228,10 @@ enum class JumpConfirmDegradeReason(val guardrail: Int) {
     SENSITIVE_OR_SECURITY_EXCEPTION(9),
 }
 
-/** 附着在 [com.wangzan101.mika.core.uistate.OpenedElsewhere] 上的跳转确认摘要。 */
+/**
+ * 跳转确认的完整记录（含 Mika 自己的 9 条护栏编号）。挂在 [com.wangzan101.mika.core.uistate.OpenedElsewhere] 上时
+ * 先压成 [com.agent.use.ui.JumpConfirmSummary]：库只认协议码，不认这里的枚举与护栏编号。
+ */
 data class JumpConfirmReport(
     val initiator: String?,
     val target: String?,
@@ -250,4 +255,14 @@ data class JumpConfirmReport(
             else -> JumpConfirmOutcome.WAITING_USER
         }
     }
+
+    /** 压成库认的协议码摘要；枚举名转小写，与运行记录里的写法一致。 */
+    fun summary(): com.agent.use.ui.JumpConfirmSummary = com.agent.use.ui.JumpConfirmSummary(
+        initiator = initiator,
+        target = target,
+        by = by?.name?.lowercase(),
+        choice = choice.name.lowercase(),
+        outcome = outcome.name.lowercase(),
+        degradeReason = degradeReason?.name?.lowercase(),
+    )
 }

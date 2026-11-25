@@ -19,11 +19,11 @@ import com.wangzan101.mika.core.custody.Interstitial
 import com.wangzan101.mika.core.custody.JumpConfirmProfile
 import com.wangzan101.mika.core.custody.JumpConfirmProfileMatcher
 import com.wangzan101.mika.core.custody.WindowSafetySignals
-import com.wangzan101.mika.core.uistate.Hant
+import com.agent.use.ui.Hant
 import com.wangzan101.mika.core.uistate.LaunchChoice
 import com.wangzan101.mika.core.uistate.LaunchChooser
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.UiStates
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.UiStates
 
 /**
  * 主屏或托管虚拟屏上出现的中间页统一分类器。

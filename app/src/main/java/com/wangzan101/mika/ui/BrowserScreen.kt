@@ -68,7 +68,7 @@ import com.wangzan101.mika.browser.SiteLooks
 import com.wangzan101.mika.browser.StartPageModel
 import com.wangzan101.mika.browser.UserBrowser
 import com.wangzan101.mika.core.cap.web.WebUrlPolicy
-import com.wangzan101.mika.core.uistate.PageDialog
+import com.agent.use.ui.PageDialog
 import com.wangzan101.mika.ui.components.PageBackground
 import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaTheme

@@ -1,9 +1,9 @@
 package com.wangzan101.mika.replay
 
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.MAX_ROUTE_STEPS
-import com.wangzan101.mika.core.replay.Route
-import com.wangzan101.mika.core.replay.RouteStep
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.MAX_ROUTE_STEPS
+import com.agent.use.ui.Route
+import com.agent.use.ui.RouteStep
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

@@ -11,8 +11,8 @@ import com.wangzan101.mika.ui.MainActivity
 import com.wangzan101.mika.a11y.WebEditorTestActivity
 import java.io.File
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.Verification
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals

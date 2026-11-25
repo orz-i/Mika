@@ -3,19 +3,21 @@ package com.wangzan101.mika.core.atlas
 import com.wangzan101.mika.core.action.Origin
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.Route
-import com.wangzan101.mika.core.replay.RouteAnchors
-import com.wangzan101.mika.core.replay.RouteStep
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.Route
+import com.agent.use.ui.RouteAnchors
+import com.agent.use.ui.RouteStep
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.tool.ToolIndex
 import com.wangzan101.mika.core.tool.Verb
-import com.wangzan101.mika.core.uistate.ScreenSig
+import com.agent.use.ui.ScreenSig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import java.security.MessageDigest
+import com.agent.use.ui.AtlasEviction
+import com.agent.use.ui.MAX_SHORTCUT_STEPS
 
 /**
  * L2 可复用子流程挖掘器：
@@ -438,8 +440,8 @@ object AtlasShortcutMiner {
                 s1.target == null && s2.target == null -> null
                 s1.target == null || s2.target == null -> return null
                 else -> {
-                    val t1 = s1.target
-                    val t2 = s2.target
+                    val t1 = s1.target ?: return null
+                    val t2 = s2.target ?: return null
                     if (t1.role != t2.role || t1.resourceId != t2.resourceId) return null
                     val mergedName = when {
                         t1.name == t2.name -> t1.name

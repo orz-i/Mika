@@ -1,5 +1,7 @@
 package com.wangzan101.mika.core.custody
 
+import com.agent.use.ui.Resolved
+
 /**
  * 线程安全的中间页账本，同时提供纯函数状态转换入口。
  *

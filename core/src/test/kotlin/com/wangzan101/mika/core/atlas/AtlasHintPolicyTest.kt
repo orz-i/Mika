@@ -11,13 +11,13 @@ import com.wangzan101.mika.core.model.OpenAiCompatModel
 import com.wangzan101.mika.core.model.PromptCaching
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSig
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSig
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray

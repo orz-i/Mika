@@ -9,12 +9,12 @@ import com.wangzan101.mika.core.record.RunSink
 import com.wangzan101.mika.core.testing.BATCHABLE
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.tool.Until
-import com.wangzan101.mika.core.uistate.PageDialog
+import com.agent.use.ui.PageDialog
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.UiWindowTree
-import com.wangzan101.mika.core.uistate.WebInfo
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.UiWindowTree
+import com.agent.use.ui.WebInfo
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject

@@ -7,7 +7,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import com.agent.use.a11y.AgentAccessibilityService
 import com.agent.use.a11y.DisplayEventStream
-import com.wangzan101.mika.core.uistate.ScreenEvent
+import com.agent.use.ui.ScreenEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

@@ -1,7 +1,7 @@
 package com.wangzan101.mika.core.custody
 
 import com.wangzan101.mika.core.access.AppAccessState
-import com.wangzan101.mika.core.uistate.Hant
+import com.agent.use.ui.Hant
 
 /** 弹窗中发现的勾选框状态（如「始终允许」「不再询问」）。 */
 data class ConfirmCheckbox(

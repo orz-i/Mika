@@ -6,6 +6,9 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import java.security.MessageDigest
+import com.agent.use.ui.RouteAnchors
+import com.agent.use.ui.MAX_ROUTE_STEPS
+import com.agent.use.ui.MAX_ROUTE_BYTES
 
 /**
  * 分享出去的一条路线:本地路线原样([route]),外加给人看的名字与说明。

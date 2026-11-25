@@ -9,14 +9,14 @@ import com.agent.use.a11y.ScreenNodeDescriptor
 import com.agent.use.a11y.ScreenSignature
 import com.agent.use.a11y.ScreenSignatureExtractor
 import com.wangzan101.mika.core.cap.phone.WheelMath
-import com.wangzan101.mika.core.uistate.ElementLocator
-import com.wangzan101.mika.core.uistate.ScreenSig
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.UiStates
-import com.wangzan101.mika.core.uistate.UiTreeNode
-import com.wangzan101.mika.core.uistate.UiWindowTree
-import com.wangzan101.mika.core.uistate.ambiguousFieldReadback
-import com.wangzan101.mika.core.uistate.normalize
+import com.agent.use.ui.ElementLocator
+import com.agent.use.ui.ScreenSig
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.UiStates
+import com.agent.use.ui.UiTreeNode
+import com.agent.use.ui.UiWindowTree
+import com.agent.use.ui.ambiguousFieldReadback
+import com.agent.use.ui.normalize
 
 /**
  * 读一次屏的结果。[hash] 覆盖所有可见节点(含标成「对无障碍不重要」的)的文字、类型、位置、勾选、

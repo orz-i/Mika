@@ -12,7 +12,7 @@ import com.wangzan101.mika.core.risk.IrrevAction
 import com.wangzan101.mika.core.run.RunProvenance
 import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.ToolTraits
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.interfaces
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

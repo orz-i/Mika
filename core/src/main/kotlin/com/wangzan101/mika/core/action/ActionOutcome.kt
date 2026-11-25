@@ -4,7 +4,7 @@ import com.wangzan101.mika.core.prompt.Feedback
 import com.wangzan101.mika.core.guard.GuardVerdict
 import com.wangzan101.mika.core.risk.IrrevAction
 import com.wangzan101.mika.core.gate.Irreversible
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.tool.ToolExecution
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject

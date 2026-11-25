@@ -3,12 +3,12 @@ package com.wangzan101.mika.core.atlas
 import com.wangzan101.mika.core.action.Origin
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.Route
-import com.wangzan101.mika.core.replay.RouteStep
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.Route
+import com.agent.use.ui.RouteStep
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.testing.TOOLS
-import com.wangzan101.mika.core.uistate.ScreenSig
+import com.agent.use.ui.ScreenSig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

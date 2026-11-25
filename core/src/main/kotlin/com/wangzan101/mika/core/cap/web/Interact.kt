@@ -6,7 +6,7 @@ import com.wangzan101.mika.core.risk.GateTarget
 import com.wangzan101.mika.core.prompt.Feedback
 import com.wangzan101.mika.core.prompt.Prompts
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.Resolved
+import com.agent.use.ui.Resolved
 import com.wangzan101.mika.core.tool.ArgError
 import com.wangzan101.mika.core.tool.Args
 import com.wangzan101.mika.core.tool.PAGE_REF_RE

@@ -1,11 +1,11 @@
 package com.wangzan101.mika.core.cap.phone
 
-import com.wangzan101.mika.core.atlas.AppAtlas
+import com.agent.use.ui.AppAtlas
 import com.wangzan101.mika.core.atlas.AtlasNavigator
 import com.wangzan101.mika.core.atlas.AtlasReplayBridge
-import com.wangzan101.mika.core.atlas.AtlasShortcut
+import com.agent.use.ui.AtlasShortcut
 import com.wangzan101.mika.core.atlas.AtlasShortcutRunner
-import com.wangzan101.mika.core.atlas.AtlasStore
+import com.agent.use.ui.AtlasStore
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.prompt.Prompts
 import com.wangzan101.mika.core.tool.AgentTool
@@ -20,7 +20,7 @@ import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.tool.int
 import com.wangzan101.mika.core.tool.str
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.interfaces
 import com.wangzan101.mika.core.uistate.session
 import kotlinx.serialization.json.JsonArray

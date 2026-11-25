@@ -7,8 +7,8 @@ import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.uistate.interfaces
 import com.wangzan101.mika.core.tool.ToolDispatcher
 import kotlinx.coroutines.CancellationException

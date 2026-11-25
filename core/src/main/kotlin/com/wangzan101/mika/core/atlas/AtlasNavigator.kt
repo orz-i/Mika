@@ -6,14 +6,17 @@ import com.wangzan101.mika.core.atlas.AtlasReplayBridge.Companion.summary
 import com.wangzan101.mika.core.atlas.AtlasReplayBridge.StepExecOutcome
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.tool.ToolDispatcher
-import com.wangzan101.mika.core.uistate.ScreenSig
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSig
+import com.agent.use.ui.ScreenSnapshot
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import java.util.PriorityQueue
+import com.agent.use.ui.AtlasEviction
+import com.agent.use.ui.ENTRY_SIG_ID
+import com.agent.use.ui.ATLAS_ENTRY_TOOL
 
 /**
  * L3 跨页面自动寻路器：
@@ -400,7 +403,7 @@ class AtlasNavigator private constructor(
             if (edge.fromSigId == edge.toSigId) return false
             if (edge.isEntry()) return edge.tool == ATLAS_ENTRY_TOOL && edge.launchObserved
             return when (edge.tool) {
-                "phone_tap" -> edge.target != null && !SLOT_REF.containsMatchIn(edge.target.name)
+                "phone_tap" -> edge.target?.let { !SLOT_REF.containsMatchIn(it.name) } == true
                 "phone_back" -> true
                 else -> false
             }

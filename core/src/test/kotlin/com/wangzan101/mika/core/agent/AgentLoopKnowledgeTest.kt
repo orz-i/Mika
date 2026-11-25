@@ -8,7 +8,7 @@ import com.wangzan101.mika.core.knowledge.UNAVAILABLE_TOOLS_NOTE
 import com.wangzan101.mika.core.model.Message
 import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.tool.FakeScreen
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals

@@ -9,6 +9,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.agent.use.ui.UiStates
 
 /** 动作效果按前后两屏(元素表 + 画面)判:结构差异的分类、输入读回、换地方。屏幕取自真实运行里常见的几种界面。 */
 class ActionEffectTest {

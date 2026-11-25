@@ -3,7 +3,7 @@ package com.wangzan101.mika.cap.phone.a11y
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wangzan101.mika.cap.phone.display.AgentDisplay
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

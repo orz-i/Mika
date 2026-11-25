@@ -12,7 +12,7 @@ import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.model.StopReason
 import com.wangzan101.mika.core.model.ToolSpec
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.vision.VisionService
 import kotlinx.coroutines.runBlocking

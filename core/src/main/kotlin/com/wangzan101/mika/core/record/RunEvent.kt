@@ -1,8 +1,8 @@
 package com.wangzan101.mika.core.record
 
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.Selector
-import com.wangzan101.mika.core.uistate.ScreenSig
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.Selector
+import com.agent.use.ui.ScreenSig
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json

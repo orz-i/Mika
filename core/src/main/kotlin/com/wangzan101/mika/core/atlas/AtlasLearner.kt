@@ -5,13 +5,19 @@ import com.wangzan101.mika.core.agent.LearnGate
 import com.wangzan101.mika.core.agent.RunOutcome
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.record.RunEvent
-import com.wangzan101.mika.core.replay.Route
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Route
+import com.agent.use.ui.Selector
 import com.wangzan101.mika.core.tool.ToolIndex
-import com.wangzan101.mika.core.uistate.ScreenSig
+import com.agent.use.ui.ScreenSig
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import com.agent.use.ui.AtlasEviction
+import com.agent.use.ui.MAX_ATLAS_ANCHORS
+import com.agent.use.ui.MAX_ATLAS_RESOURCE_IDS
+import com.agent.use.ui.MAX_ATLAS_VERSIONS
+import com.agent.use.ui.ENTRY_SIG_ID
+import com.agent.use.ui.ATLAS_ENTRY_TOOL
 
 /**
  * 离线页面图谱学习器：在任务结束后解析持久化运行事件（[RunEvent.ActionTarget]、[RunEvent.TaskEnded]、[RunEvent.OutcomeJudged] 等），

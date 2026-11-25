@@ -5,12 +5,12 @@ import com.agent.use.a11y.DisplayWindowInspector
 import com.agent.use.a11y.ScreenBounds
 import com.agent.use.a11y.ScreenNodeDescriptor
 import com.agent.use.a11y.model.A11yNode
-import com.wangzan101.mika.core.uistate.ElementLocator
-import com.wangzan101.mika.core.uistate.UiElement
-import com.wangzan101.mika.core.uistate.UiStates
-import com.wangzan101.mika.core.uistate.UiTreeNode
-import com.wangzan101.mika.core.uistate.UiWindowTree
-import com.wangzan101.mika.core.uistate.normalize
+import com.agent.use.ui.ElementLocator
+import com.agent.use.ui.UiElement
+import com.agent.use.ui.UiStates
+import com.agent.use.ui.UiTreeNode
+import com.agent.use.ui.UiWindowTree
+import com.agent.use.ui.normalize
 
 /**
  * 把 shell 通道读到的一屏(只有 [A11yNode] 快照)整理成和 [ScreenReader.read] 同形的 [ScreenRead]。

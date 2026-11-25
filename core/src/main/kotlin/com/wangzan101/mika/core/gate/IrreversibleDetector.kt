@@ -3,11 +3,11 @@ package com.wangzan101.mika.core.gate
 import com.wangzan101.mika.core.uistate.CdpKeys
 import com.wangzan101.mika.core.uistate.KeyCombo
 import com.wangzan101.mika.core.uistate.KeyModifier
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
+import com.agent.use.ui.ScreenDiagnosis
 import com.wangzan101.mika.core.uistate.ElementContext
-import com.wangzan101.mika.core.uistate.Hant
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.Hant
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.risk.GateTarget
 import com.wangzan101.mika.core.risk.IrrevAction
 import com.wangzan101.mika.core.uistate.PressKeys

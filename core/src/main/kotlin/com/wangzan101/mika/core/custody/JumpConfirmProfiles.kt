@@ -1,6 +1,6 @@
 package com.wangzan101.mika.core.custody
 
-import com.wangzan101.mika.core.uistate.Hant
+import com.agent.use.ui.Hant
 
 /** 跳转目标别名映射规则的来源：自动学习（用户首次手动放行后记住）或用户手动配置。 */
 enum class JumpProfileSource {

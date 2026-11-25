@@ -8,9 +8,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.webkit.WebViewAssetLoader
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.ScreenState
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.ScreenState
+import com.agent.use.ui.Verification
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking

@@ -8,7 +8,7 @@ import com.wangzan101.mika.core.model.Part
 import com.wangzan101.mika.core.model.Role
 import com.wangzan101.mika.core.model.StopReason
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.UiElement
 import com.wangzan101.mika.core.cap.web.DEVTOOLS_UNAVAILABLE
 import com.wangzan101.mika.core.cap.web.FakeWebPort
 import kotlinx.coroutines.test.runTest

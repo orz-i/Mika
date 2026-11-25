@@ -1,8 +1,8 @@
 package com.wangzan101.mika.atlas
 
-import com.wangzan101.mika.core.replay.Anchors
-import com.wangzan101.mika.core.replay.Route
-import com.wangzan101.mika.core.replay.RouteStep
+import com.agent.use.ui.Anchors
+import com.agent.use.ui.Route
+import com.agent.use.ui.RouteStep
 import com.wangzan101.mika.replay.FileRouteStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

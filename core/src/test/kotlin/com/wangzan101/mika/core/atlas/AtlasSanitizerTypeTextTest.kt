@@ -1,6 +1,6 @@
 package com.wangzan101.mika.core.atlas
 
-import com.wangzan101.mika.core.replay.Selector
+import com.agent.use.ui.Selector
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

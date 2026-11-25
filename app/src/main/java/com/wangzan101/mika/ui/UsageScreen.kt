@@ -108,6 +108,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import com.wangzan101.mika.i18n.uiLocale
 import kotlin.math.roundToInt
+import com.agent.use.ui.Hant
 
 /** 用量页顶上的五段:前四段是固定的范围,[Custom] 打开日期选择。 */
 enum class UsagePreset(private val labelRes: Int) {

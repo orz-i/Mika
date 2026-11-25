@@ -284,7 +284,7 @@ class DisplayCustodianTest {
         val spill = custodian.drainAndTakeLatestSpill()
         assertEquals(0, autoClicks)
         assertNotNull("Switch OFF must park interstitial for user", custodian.interstitialState.value)
-        assertEquals(JumpConfirmOutcome.WAITING_USER, spill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.WAITING_USER.name.lowercase(), spill?.opened?.jumpConfirm?.outcome)
         assertEquals(0, rt.moveCalls.size)
 
         // 挂起等待：用户延迟 15s（超过旧机制 6s / R2 10s）后才在主屏点允许
@@ -312,7 +312,7 @@ class DisplayCustodianTest {
         val settled = result as DisplayCustodian.WaitResult.Settled
         assertEquals(TARGET_PKG, settled.report?.opened?.packageName)
         assertTrue(settled.report?.opened?.pulledBack == true)
-        assertEquals(JumpConfirmOutcome.USER_ALLOWED, settled.report?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.USER_ALLOWED.name.lowercase(), settled.report?.opened?.jumpConfirm?.outcome)
         assertTrue(rt.moveCalls.contains(88 to VD_ID))
         custodian.close()
     }
@@ -400,7 +400,7 @@ class DisplayCustodianTest {
         rt.windowsByDisplay[Display.DEFAULT_DISPLAY] = emptyList()
         rt.emitVanished(taskId = 55, lastDisplayId = Display.DEFAULT_DISPLAY, atMs = 30_250L + testScheduler.currentTime)
         val result = waitDeferred.await() as DisplayCustodian.WaitResult.Settled
-        assertEquals(JumpConfirmOutcome.DENIED, result.report?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.DENIED.name.lowercase(), result.report?.opened?.jumpConfirm?.outcome)
         assertTrue(result.report?.opened?.closed == true)
         assertTrue("No task should be pulled back on user denial", rt.moveCalls.isEmpty())
         custodian.close()
@@ -446,7 +446,7 @@ class DisplayCustodianTest {
         val firstSpill = custodian.drainAndTakeLatestSpill()
         assertEquals(1, clickCount)
         assertNull("Auto-allowed dialog must not park interstitialState", custodian.interstitialState.value)
-        assertEquals(JumpConfirmOutcome.AUTO_ALLOWED, firstSpill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.AUTO_ALLOWED.name.lowercase(), firstSpill?.opened?.jumpConfirm?.outcome)
         assertEquals(1, events.size)
         assertEquals("auto_allowed", events.single().result)
         assertFalse(events.single().degraded)
@@ -464,7 +464,7 @@ class DisplayCustodianTest {
         val followup = custodian.drainAndTakeLatestSpill()
         assertTrue(rt.moveCalls.contains(99 to VD_ID))
         assertTrue(followup?.opened?.pulledBack == true)
-        assertEquals(JumpConfirmOutcome.AUTO_ALLOWED, followup?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.AUTO_ALLOWED.name.lowercase(), followup?.opened?.jumpConfirm?.outcome)
         custodian.close()
     }
 
@@ -502,7 +502,7 @@ class DisplayCustodianTest {
         assertTrue("Must trip device circuit breaker after 1s timeout", broken)
         assertNotNull("Must fall back to user confirmation", custodian.interstitialState.value)
         assertEquals(JumpConfirmDegradeReason.DEVICE_CIRCUIT_BROKEN, custodian.interstitialState.value?.degradeReason)
-        assertEquals(JumpConfirmOutcome.WAITING_USER, spill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.WAITING_USER.name.lowercase(), spill?.opened?.jumpConfirm?.outcome)
         assertTrue(events.any { it.result == "degraded" && it.reason == "not_dismissed_1s" })
         custodian.close()
     }
@@ -546,7 +546,7 @@ class DisplayCustodianTest {
         runCurrent()
         val spill = custodian.drainAndTakeLatestSpill()
         assertEquals(1, overlayClicks)
-        assertEquals(JumpConfirmOutcome.AUTO_ALLOWED, spill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.AUTO_ALLOWED.name.lowercase(), spill?.opened?.jumpConfirm?.outcome)
         custodian.close()
     }
 
@@ -642,7 +642,7 @@ class DisplayCustodianTest {
         val spill = custodian.drainAndTakeLatestSpill()
 
         assertNull("Unattended mode must not park waiting UI state", custodian.interstitialState.value)
-        assertEquals(JumpConfirmOutcome.UNAVAILABLE, spill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.UNAVAILABLE.name.lowercase(), spill?.opened?.jumpConfirm?.outcome)
         assertTrue(rt.moveCalls.isEmpty())
         custodian.close()
     }
@@ -692,7 +692,7 @@ class DisplayCustodianTest {
         )
         val openSpill = custodian.drainAndTakeLatestSpill()
         assertEquals(0, autoClicks)
-        assertEquals(JumpConfirmOutcome.WAITING_USER, openSpill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.WAITING_USER.name.lowercase(), openSpill?.opened?.jumpConfirm?.outcome)
         val pending = custodian.interstitialState.value
         assertNotNull("Must park Waiting state instead of dropping uid=1000 dialog as R6 OTHER", pending)
         assertEquals(WEREAD_PKG, pending?.initiatorPackage)
@@ -732,7 +732,7 @@ class DisplayCustodianTest {
         val followup = custodian.drainAndTakeLatestSpill() ?: result.report
         assertEquals(listOf(48930 to VD_ID), rt.moveCalls.toList())
         assertTrue(followup?.opened?.pulledBack == true)
-        assertEquals(JumpConfirmOutcome.USER_ALLOWED, followup?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.USER_ALLOWED.name.lowercase(), followup?.opened?.jumpConfirm?.outcome)
         custodian.close()
     }
 
@@ -782,8 +782,8 @@ class DisplayCustodianTest {
         )
         val spill = custodian.drainAndTakeLatestSpill()
         assertEquals(0, autoClicks)
-        assertEquals(JumpConfirmDegradeReason.TARGET_UNKNOWN, spill?.opened?.jumpConfirm?.degradeReason)
-        assertEquals(JumpConfirmOutcome.WAITING_USER, spill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmDegradeReason.TARGET_UNKNOWN.name.lowercase(), spill?.opened?.jumpConfirm?.degradeReason)
+        assertEquals(JumpConfirmOutcome.WAITING_USER.name.lowercase(), spill?.opened?.jumpConfirm?.outcome)
         assertEquals(1, events.count { it.result == "degraded" && it.reason == "target_unknown" })
         custodian.close()
     }
@@ -869,7 +869,7 @@ class DisplayCustodianTest {
         )
         val autoSpill = custodianOn.drainAndTakeLatestSpill()
         assertEquals(1, autoClicks)
-        assertEquals(JumpConfirmOutcome.AUTO_ALLOWED, autoSpill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.AUTO_ALLOWED.name.lowercase(), autoSpill?.opened?.jumpConfirm?.outcome)
 
         rtOn.emitArrival(
             arrival(
@@ -982,7 +982,7 @@ class DisplayCustodianTest {
             ),
         )
         val openSpill = custodian.drainAndTakeLatestSpill()
-        assertEquals(JumpConfirmOutcome.WAITING_USER, openSpill?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.WAITING_USER.name.lowercase(), openSpill?.opened?.jumpConfirm?.outcome)
 
         val waitDeferred = async { custodian.awaitInterstitial() }
         runCurrent()
@@ -1022,7 +1022,7 @@ class DisplayCustodianTest {
         val result = waitDeferred.await() as DisplayCustodian.WaitResult.Settled
         assertEquals(listOf(49055 to VD_ID, 49056 to VD_ID), rt.moveCalls.toList())
         assertTrue(result.report?.opened?.pulledBack == true)
-        assertEquals(JumpConfirmOutcome.USER_ALLOWED, result.report?.opened?.jumpConfirm?.outcome)
+        assertEquals(JumpConfirmOutcome.USER_ALLOWED.name.lowercase(), result.report?.opened?.jumpConfirm?.outcome)
 
         advanceTimeBy(4_000L)
         runCurrent()
@@ -1095,7 +1095,7 @@ class DisplayCustodianTest {
                 1,
                 clicks,
             )
-            assertEquals(JumpConfirmOutcome.AUTO_ALLOWED, firstSpill?.opened?.jumpConfirm?.outcome)
+            assertEquals(JumpConfirmOutcome.AUTO_ALLOWED.name.lowercase(), firstSpill?.opened?.jumpConfirm?.outcome)
             // 方案 1 已经明确解析过，不向方案 2 注入冗余学习规则
             assertTrue(profileStore.current().profiles.isEmpty())
 
@@ -1125,7 +1125,7 @@ class DisplayCustodianTest {
                 ),
             )
             assertEquals(1, clicks)
-            assertEquals(JumpConfirmOutcome.WAITING_USER, custodian.drainAndTakeLatestSpill()?.opened?.jumpConfirm?.outcome)
+            assertEquals(JumpConfirmOutcome.WAITING_USER.name.lowercase(), custodian.drainAndTakeLatestSpill()?.opened?.jumpConfirm?.outcome)
 
             val waitDeferred = async { custodian.awaitInterstitial() }
             runCurrent()
@@ -1176,7 +1176,7 @@ class DisplayCustodianTest {
                 2,
                 clicks,
             )
-            assertEquals(JumpConfirmOutcome.AUTO_ALLOWED, scheme2Spill?.opened?.jumpConfirm?.outcome)
+            assertEquals(JumpConfirmOutcome.AUTO_ALLOWED.name.lowercase(), scheme2Spill?.opened?.jumpConfirm?.outcome)
 
             // 4. 若用户已在「应用访问」禁用目标应用 com.tencent.mm，即便方案 2 命中也绝不越权放行
             blockedApps = setOf(INITIATOR_PKG)
@@ -1201,7 +1201,7 @@ class DisplayCustodianTest {
             )
             val blockedSpill = custodian.drainAndTakeLatestSpill()
             assertEquals(2, clicks)
-            assertEquals(JumpConfirmDegradeReason.TARGET_BLOCKED, blockedSpill?.opened?.jumpConfirm?.degradeReason)
+            assertEquals(JumpConfirmDegradeReason.TARGET_BLOCKED.name.lowercase(), blockedSpill?.opened?.jumpConfirm?.degradeReason)
             assertEquals(JumpConfirmDegradeReason.TARGET_BLOCKED, custodian.interstitialState.value?.degradeReason)
             custodian.close()
         } finally {

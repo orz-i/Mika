@@ -1,6 +1,6 @@
 package com.wangzan101.mika.core.cap.phone
 
-import com.wangzan101.mika.core.atlas.AtlasStore
+import com.agent.use.ui.AtlasStore
 import com.wangzan101.mika.core.capability.Capability
 import com.wangzan101.mika.core.capability.CapabilityKey
 import com.wangzan101.mika.core.capability.CapabilityStatus
@@ -20,7 +20,7 @@ import com.wangzan101.mika.core.tool.PACKAGE_NAME_RE
 import com.wangzan101.mika.core.tool.ToolContext
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.uistate.EffectKind
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
+import com.agent.use.ui.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.sessions
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

@@ -4,8 +4,8 @@ import com.wangzan101.mika.core.action.ClassifiedRisk
 import com.wangzan101.mika.core.risk.GateTarget
 import com.wangzan101.mika.core.risk.IrrevAction
 import com.wangzan101.mika.core.tool.Verb
-import com.wangzan101.mika.core.uistate.ScreenSnapshot
-import com.wangzan101.mika.core.uistate.UiElement
+import com.agent.use.ui.ScreenSnapshot
+import com.agent.use.ui.UiElement
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject

@@ -10,11 +10,11 @@ import com.wangzan101.mika.core.model.StopReason
 import com.wangzan101.mika.core.cap.sandbox.FakeSandbox
 import com.wangzan101.mika.core.cap.sandbox.SandboxStatus
 import com.wangzan101.mika.core.uistate.ActionResult
-import com.wangzan101.mika.core.uistate.ScreenCheck
-import com.wangzan101.mika.core.uistate.ScreenDiagnosis
+import com.agent.use.ui.ScreenCheck
+import com.agent.use.ui.ScreenDiagnosis
 import com.wangzan101.mika.core.uistate.ScreenPort
-import com.wangzan101.mika.core.uistate.ScreenState
-import com.wangzan101.mika.core.uistate.Verification
+import com.agent.use.ui.ScreenState
+import com.agent.use.ui.Verification
 import com.wangzan101.mika.core.testing.PromptSurface
 import com.wangzan101.mika.core.tool.FakeScreen
 import com.wangzan101.mika.core.tool.ToolDispatcher
