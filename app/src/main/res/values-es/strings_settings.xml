@@ -414,4 +414,25 @@
     <string name="app_exp_shortcut_entry">Inicio: %1$s</string>
     <string name="app_exp_shortcut_delete_title">¿Eliminar este atajo?</string>
     <string name="app_exp_shortcut_delete_body">Se eliminará “%1$s”. Las pantallas y rutas no se ven afectadas.</string>
+    <string name="network_capture_packs_group">Paquetes de extensión (%1$d)</string>
+    <string name="network_capture_packs_empty">Aún no hay paquetes de extensión</string>
+    <string name="network_capture_packs_empty_sub">Coloca una carpeta con plugin.json en el directorio capture_plugins</string>
+    <string name="network_capture_packs_tag_error">Error</string>
+    <string name="network_capture_packs_declaration">Declaración</string>
+    <string name="network_capture_packs_meta">v%1$d · API %2$d</string>
+    <string name="network_capture_packs_author">Autor: %1$s</string>
+    <string name="network_capture_packs_scope">Se aplica a: %1$s</string>
+    <string name="network_capture_packs_scope_all">Todas las apps</string>
+    <string name="network_capture_packs_touches">Toca: %1$s</string>
+    <string name="network_capture_packs_notes_title">Lo que declara</string>
+    <string name="network_capture_packs_error">No cargado: %1$s</string>
+    <string name="network_capture_packs_off_file">Desactivado: el paquete define enabled=false</string>
+    <string name="network_capture_packs_off_user">Desactivado: apagado aquí</string>
+    <string name="network_capture_packs_enabled">Activado</string>
+    <string name="network_capture_packs_channel_ssl">Desplazamientos SSL ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">Desplazamientos Cronet ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">Enganches en proceso ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">Decodificadores de respuesta ×%1$d</string>
+    <string name="network_capture_packs_channel_host">Corrección de host</string>
+    <string name="network_capture_packs_channel_code">Código dex</string>
 </resources>

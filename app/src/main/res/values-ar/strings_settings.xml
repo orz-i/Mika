@@ -444,4 +444,25 @@
     <string name="app_exp_shortcut_entry">من: %1$s</string>
     <string name="app_exp_shortcut_delete_title">هل تريد حذف هذا الاختصار؟</string>
     <string name="app_exp_shortcut_delete_body">سيتم حذف «%1$s». لن تتأثر الصفحات والمسارات.</string>
+    <string name="network_capture_packs_group">حزم الإضافات (%1$d)</string>
+    <string name="network_capture_packs_empty">لا توجد حزم إضافات بعد</string>
+    <string name="network_capture_packs_empty_sub">ضع مجلدًا يحتوي plugin.json في دليل capture_plugins</string>
+    <string name="network_capture_packs_tag_error">خطأ</string>
+    <string name="network_capture_packs_declaration">إقرار</string>
+    <string name="network_capture_packs_meta">الإصدار %1$d · API %2$d</string>
+    <string name="network_capture_packs_author">المؤلف: %1$s</string>
+    <string name="network_capture_packs_scope">ينطبق على: %1$s</string>
+    <string name="network_capture_packs_scope_all">كل التطبيقات</string>
+    <string name="network_capture_packs_touches">يلمس: %1$s</string>
+    <string name="network_capture_packs_notes_title">ما تُقرّ به الحزمة</string>
+    <string name="network_capture_packs_error">لم تُحمّل: %1$s</string>
+    <string name="network_capture_packs_off_file">متوقفة — الحزمة تضبط enabled=false</string>
+    <string name="network_capture_packs_off_user">متوقفة — أُوقفت من هنا</string>
+    <string name="network_capture_packs_enabled">مفعّلة</string>
+    <string name="network_capture_packs_channel_ssl">إزاحات SSL ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">إزاحات Cronet ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">اعتراض داخل العملية ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">مفكّكات الاستجابة ×%1$d</string>
+    <string name="network_capture_packs_channel_host">تصحيح المضيف</string>
+    <string name="network_capture_packs_channel_code">شيفرة dex</string>
 </resources>

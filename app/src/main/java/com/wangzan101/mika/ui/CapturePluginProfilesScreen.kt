@@ -38,9 +38,11 @@ import com.agent.use.common.network.plugin.EbpfCronetOffsetRule
 import com.agent.use.common.network.plugin.EbpfProbeProfile
 import com.agent.use.common.network.plugin.EbpfSslOffsetRule
 import com.agent.use.common.network.plugin.JniHookRule
+import com.agent.use.common.network.plugin.external.ExternalCapturePluginLoader
 import com.wangzan101.mika.R
 import com.wangzan101.mika.cap.phone.a11y.launchableApps
 import com.wangzan101.mika.cap.phone.network.CapturePluginEntry
+import com.wangzan101.mika.cap.phone.network.CapturePluginPack
 import com.wangzan101.mika.cap.phone.network.CapturePluginProfileStore
 import com.wangzan101.mika.ui.components.FooterNote
 import com.wangzan101.mika.ui.components.GroupCard
@@ -361,10 +363,12 @@ fun CapturePluginProfilesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val store = remember(context) { CapturePluginProfileStore.forContext(context) }
     var entries by remember { mutableStateOf(emptyList<CapturePluginEntry>()) }
+    var packs by remember { mutableStateOf(emptyList<CapturePluginPack>()) }
     var installedApps by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
 
     fun refreshEntries() {
         entries = store.snapshotEntries()
+        packs = store.snapshotPacks()
     }
 
     LaunchedEffect(store) {
@@ -377,6 +381,7 @@ fun CapturePluginProfilesScreen(onBack: () -> Unit) {
 
     CapturePluginProfilesContent(
         entries = entries,
+        packs = packs,
         installedApps = installedApps,
         onBack = onBack,
         onSaveProfile = { pkg, profile ->
@@ -391,23 +396,32 @@ fun CapturePluginProfilesScreen(onBack: () -> Unit) {
             store.resetAll()
             refreshEntries()
         },
+        onTogglePack = { id, enabled ->
+            store.setPackEnabled(id, enabled)
+            refreshEntries()
+        },
         onDiscoverPackage = { pkg ->
             withContext(Dispatchers.IO) {
                 LocalRootEbpfCaptureEngine.discoverAppProfile(context, pkg, useHeuristicsOnly = true)
             }
         },
     )
+
 }
 
 @Composable
 fun CapturePluginProfilesContent(
     entries: List<CapturePluginEntry>,
+    packs: List<CapturePluginPack> = emptyList(),
     installedApps: List<Pair<String, String>> = emptyList(),
     onBack: () -> Unit,
     onSaveProfile: (packageName: String, profile: EbpfProbeProfile) -> Unit = { _, _ -> },
     onResetPackage: (packageName: String) -> Unit = {},
     onResetAll: () -> Unit = {},
     onDiscoverPackage: (suspend (String) -> EbpfDiscoveryResult)? = null,
+    /** 关/开一个插件包。关掉只是不加载，磁盘上的包不动。 */
+    onTogglePack: (id: String, enabled: Boolean) -> Unit = { _, _ -> },
+    /** 选一个 .zip / plugin.json 导入。真正装不装，由调用方再问一次。 */
 ) {
     val appLabels = remember(installedApps) { installedApps.toMap() }
     var draft by remember { mutableStateOf<CapturePluginDraft?>(null) }
@@ -415,6 +429,7 @@ fun CapturePluginProfilesContent(
     var appPickMode by remember { mutableStateOf<PluginAppPickMode?>(null) }
     var appSearch by remember { mutableStateOf("") }
     var confirmingResetAll by remember { mutableStateOf(false) }
+    var packDetail by remember { mutableStateOf<CapturePluginPack?>(null) }
     var scanInputOpen by remember { mutableStateOf(false) }
     var scanPackageInput by remember { mutableStateOf("com.xingin.xhs") }
     var scanningPackage by remember { mutableStateOf<String?>(null) }
@@ -442,6 +457,48 @@ fun CapturePluginProfilesContent(
     }
 
     PageScaffold(stringResource(R.string.network_capture_plugins_title), onBack) {
+        // 插件包排在规则前面：用户先决定"这个包要不要装/要不要开"，再谈它里面的偏移。
+        GroupLabel(stringResource(R.string.network_capture_packs_group, packs.size))
+        GroupCard {
+            if (packs.isEmpty()) {
+                ListRow(
+                    icon = MikaIcons.Apps,
+                    title = stringResource(R.string.network_capture_packs_empty),
+                    subtitle = stringResource(R.string.network_capture_packs_empty_sub),
+                    first = true,
+                )
+            }
+            packs.forEachIndexed { idx, pack ->
+                val info = pack.info
+                val (badge, tone) = when {
+                    info.error != null -> stringResource(R.string.network_capture_packs_tag_error) to PillTone.Warn
+                    !info.enabled -> stringResource(R.string.state_off) to PillTone.Warn
+                    pack.isExternal -> stringResource(R.string.network_capture_plugins_tag_external) to PillTone.Ok
+                    else -> stringResource(R.string.network_capture_plugins_tag_builtin) to PillTone.Neutral
+                }
+                ListRow(
+                    icon = MikaIcons.Apps,
+                    title = pack.displayTitle,
+                    subtitle = packScopeText(info),
+                    detail = packChannelText(info).takeIf { it.isNotEmpty() },
+                    first = idx == 0,
+                    onClick = { packDetail = pack },
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        StatusPill(badge, tone)
+                        MikaSwitch(
+                            checked = info.enabled,
+                            onCheckedChange = { onTogglePack(pack.id, it) },
+                            enabled = info.error == null,
+                        )
+                    }
+                }
+            }
+        }
+
         GroupLabel(stringResource(R.string.network_capture_plugins_actions))
         GroupCard {
             if (onDiscoverPackage != null) {
@@ -1022,6 +1079,114 @@ fun CapturePluginProfilesContent(
         )
     }
 
+    // 开关状态以最新一份 packs 为准：弹窗里点开关后，手里那个对象就是旧的了。
+    val detail = packDetail?.let { open -> packs.firstOrNull { it.id == open.id } ?: open }
+    if (detail != null) {
+        val info = detail.info
+        MikaDialog(
+            onDismissRequest = { packDetail = null },
+            title = { Text(detail.displayTitle) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        stringResource(R.string.network_capture_packs_declaration),
+                        style = MikaType.Body,
+                        color = MikaTheme.colors.ink,
+                    )
+                    Text(
+                        stringResource(R.string.network_capture_packs_meta, info.version, info.apiVersion),
+                        Modifier.padding(top = 2.dp),
+                        style = MikaType.Caption,
+                        color = MikaTheme.colors.ink3,
+                    )
+                    info.description?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, Modifier.padding(top = 10.dp), style = MikaType.Caption, color = MikaTheme.colors.ink2)
+                    }
+                    info.author?.takeIf { it.isNotBlank() }?.let {
+                        Text(
+                            stringResource(R.string.network_capture_packs_author, it),
+                            Modifier.padding(top = 6.dp),
+                            style = MikaType.Hint,
+                            color = MikaTheme.colors.ink3,
+                        )
+                    }
+                    Text(
+                        stringResource(R.string.network_capture_packs_scope, packScopeText(info)),
+                        Modifier.padding(top = 10.dp),
+                        style = MikaType.Caption,
+                        color = MikaTheme.colors.ink2,
+                    )
+                    packChannelText(info).takeIf { it.isNotEmpty() }?.let {
+                        Text(
+                            stringResource(R.string.network_capture_packs_touches, it),
+                            Modifier.padding(top = 6.dp),
+                            style = MikaType.Caption,
+                            color = MikaTheme.colors.ink2,
+                        )
+                    }
+                    if (info.declares.isNotEmpty()) {
+                        Text(
+                            stringResource(R.string.network_capture_packs_notes_title),
+                            Modifier.padding(top = 12.dp),
+                            style = MikaType.Caption,
+                            color = MikaTheme.colors.ink2,
+                        )
+                        info.declares.forEach { note ->
+                            Text(
+                                "• $note",
+                                Modifier.padding(top = 4.dp),
+                                style = MikaType.Hint,
+                                color = MikaTheme.colors.ink3,
+                            )
+                        }
+                    }
+                    when {
+                        info.error != null -> Text(
+                            stringResource(R.string.network_capture_packs_error, info.error ?: "?"),
+                            Modifier.padding(top = 12.dp),
+                            style = MikaType.Caption,
+                            color = MikaTheme.colors.bad,
+                        )
+                        info.disabledInFile -> Text(
+                            stringResource(R.string.network_capture_packs_off_file),
+                            Modifier.padding(top = 12.dp),
+                            style = MikaType.Caption,
+                            color = MikaTheme.colors.warn,
+                        )
+                        info.disabledByUser -> Text(
+                            stringResource(R.string.network_capture_packs_off_user),
+                            Modifier.padding(top = 12.dp),
+                            style = MikaType.Caption,
+                            color = MikaTheme.colors.warn,
+                        )
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.network_capture_packs_enabled),
+                            Modifier.weight(1f),
+                            style = MikaType.Body,
+                            color = MikaTheme.colors.ink,
+                        )
+                        MikaSwitch(
+                            checked = info.enabled,
+                            onCheckedChange = { onTogglePack(info.id, it) },
+                            enabled = info.error == null,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { packDetail = null }) {
+                    Text(stringResource(R.string.done))
+                }
+            },
+        )
+    }
+
     if (confirmingResetAll) {
         MikaDialog(
             onDismissRequest = { confirmingResetAll = false },
@@ -1048,3 +1213,31 @@ fun CapturePluginProfilesContent(
         )
     }
 }
+
+/**
+ * 一个插件包作用在哪些 App 上。兜底包（`packages: ["*"]`）直说"全部应用"，
+ * 否则用户看到一行 `*` 不知道那是通配。
+ */
+@Composable
+private fun packScopeText(info: ExternalCapturePluginLoader.PackInfo): String =
+    if (info.fallback || info.packages.isEmpty()) {
+        stringResource(R.string.network_capture_packs_scope_all)
+    } else {
+        info.packages.joinToString(", ")
+    }
+
+/**
+ * 声明里"它会碰什么"那一栏：从 `plugin.json` 实际解析出来的通道，不是包自己说的。
+ *
+ * 和 [ExternalCapturePluginLoader.PackInfo.declares] 并排显示是有意的——自述可以写得很干净，
+ * 通道计数不会。
+ */
+@Composable
+private fun packChannelText(info: ExternalCapturePluginLoader.PackInfo): String = buildList {
+    if (info.sslRules > 0) add(stringResource(R.string.network_capture_packs_channel_ssl, info.sslRules))
+    if (info.cronetRules > 0) add(stringResource(R.string.network_capture_packs_channel_cronet, info.cronetRules))
+    if (info.jniRules > 0) add(stringResource(R.string.network_capture_packs_channel_jni, info.jniRules))
+    if (info.codecs > 0) add(stringResource(R.string.network_capture_packs_channel_codec, info.codecs))
+    if (info.hostFix) add(stringResource(R.string.network_capture_packs_channel_host))
+    if (info.hasCode) add(stringResource(R.string.network_capture_packs_channel_code))
+}.joinToString(" · ")

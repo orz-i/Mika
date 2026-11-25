@@ -415,4 +415,25 @@
     <string name="app_exp_shortcut_entry">From: %1$s</string>
     <string name="app_exp_shortcut_delete_title">Delete this shortcut?</string>
     <string name="app_exp_shortcut_delete_body">“%1$s” will be removed. Pages and routes remain unaffected.</string>
+    <string name="network_capture_packs_group">Plugin packages (%1$d)</string>
+    <string name="network_capture_packs_empty">No plugin packages yet</string>
+    <string name="network_capture_packs_empty_sub">Put a folder with plugin.json in the capture_plugins directory</string>
+    <string name="network_capture_packs_tag_error">Error</string>
+    <string name="network_capture_packs_declaration">Declaration</string>
+    <string name="network_capture_packs_meta">v%1$d · API %2$d</string>
+    <string name="network_capture_packs_author">Author: %1$s</string>
+    <string name="network_capture_packs_scope">Applies to: %1$s</string>
+    <string name="network_capture_packs_scope_all">All apps</string>
+    <string name="network_capture_packs_touches">Touches: %1$s</string>
+    <string name="network_capture_packs_notes_title">What it declares</string>
+    <string name="network_capture_packs_error">Not loaded: %1$s</string>
+    <string name="network_capture_packs_off_file">Off — the package sets enabled=false</string>
+    <string name="network_capture_packs_off_user">Off — turned off here</string>
+    <string name="network_capture_packs_enabled">Enabled</string>
+    <string name="network_capture_packs_channel_ssl">SSL offsets ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">Cronet offsets ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">In-process hooks ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">Response decoders ×%1$d</string>
+    <string name="network_capture_packs_channel_host">Host fixup</string>
+    <string name="network_capture_packs_channel_code">dex code</string>
 </resources>

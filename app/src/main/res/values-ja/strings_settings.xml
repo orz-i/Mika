@@ -394,4 +394,25 @@
     <string name="app_exp_shortcut_entry">入口：%1$s</string>
     <string name="app_exp_shortcut_delete_title">このショートカットを削除しますか？</string>
     <string name="app_exp_shortcut_delete_body">「%1$s」を削除します。学習済みの画面と手順には影響しません。</string>
+    <string name="network_capture_packs_group">プラグインパッケージ（%1$d）</string>
+    <string name="network_capture_packs_empty">プラグインパッケージはまだありません</string>
+    <string name="network_capture_packs_empty_sub">capture_plugins ディレクトリに plugin.json 入りのフォルダを置いてください</string>
+    <string name="network_capture_packs_tag_error">エラー</string>
+    <string name="network_capture_packs_declaration">宣言</string>
+    <string name="network_capture_packs_meta">バージョン %1$d · API %2$d</string>
+    <string name="network_capture_packs_author">作者: %1$s</string>
+    <string name="network_capture_packs_scope">対象: %1$s</string>
+    <string name="network_capture_packs_scope_all">すべてのアプリ</string>
+    <string name="network_capture_packs_touches">触れるもの: %1$s</string>
+    <string name="network_capture_packs_notes_title">パッケージの宣言</string>
+    <string name="network_capture_packs_error">読み込まれていません: %1$s</string>
+    <string name="network_capture_packs_off_file">オフ — パッケージ側で enabled=false</string>
+    <string name="network_capture_packs_off_user">オフ — ここで無効化</string>
+    <string name="network_capture_packs_enabled">有効</string>
+    <string name="network_capture_packs_channel_ssl">SSL オフセット ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">Cronet オフセット ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">プロセス内フック ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">レスポンスデコーダ ×%1$d</string>
+    <string name="network_capture_packs_channel_host">ホスト補正</string>
+    <string name="network_capture_packs_channel_code">dex コード</string>
 </resources>

@@ -394,4 +394,25 @@
     <string name="app_exp_shortcut_entry">Dari: %1$s</string>
     <string name="app_exp_shortcut_delete_title">Hapus pintasan ini?</string>
     <string name="app_exp_shortcut_delete_body">“%1$s” akan dihapus. Halaman dan rute tetap aman.</string>
+    <string name="network_capture_packs_group">Paket plugin (%1$d)</string>
+    <string name="network_capture_packs_empty">Belum ada paket plugin</string>
+    <string name="network_capture_packs_empty_sub">Letakkan folder berisi plugin.json di direktori capture_plugins</string>
+    <string name="network_capture_packs_tag_error">Galat</string>
+    <string name="network_capture_packs_declaration">Deklarasi</string>
+    <string name="network_capture_packs_meta">v%1$d · API %2$d</string>
+    <string name="network_capture_packs_author">Penulis: %1$s</string>
+    <string name="network_capture_packs_scope">Berlaku untuk: %1$s</string>
+    <string name="network_capture_packs_scope_all">Semua aplikasi</string>
+    <string name="network_capture_packs_touches">Menyentuh: %1$s</string>
+    <string name="network_capture_packs_notes_title">Yang dideklarasikan paket</string>
+    <string name="network_capture_packs_error">Tidak dimuat: %1$s</string>
+    <string name="network_capture_packs_off_file">Nonaktif — paket menyetel enabled=false</string>
+    <string name="network_capture_packs_off_user">Nonaktif — dimatikan di sini</string>
+    <string name="network_capture_packs_enabled">Aktif</string>
+    <string name="network_capture_packs_channel_ssl">Offset SSL ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">Offset Cronet ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">Hook dalam proses ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">Dekoder respons ×%1$d</string>
+    <string name="network_capture_packs_channel_host">Perbaikan host</string>
+    <string name="network_capture_packs_channel_code">Kode dex</string>
 </resources>

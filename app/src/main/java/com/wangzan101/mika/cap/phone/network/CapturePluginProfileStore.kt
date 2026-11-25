@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.agent.use.client.network.ebpf.LocalRootEbpfCaptureEngine
 import com.agent.use.common.network.plugin.BUILTIN_PLUGIN_ID_PREFIX
+import com.agent.use.common.network.plugin.EXTERNAL_PLUGIN_ID_PREFIX
 import com.agent.use.common.network.plugin.EbpfProbeProfile
 import com.agent.use.common.network.plugin.NetworkCapturePluginRegistry
 import com.agent.use.common.network.plugin.external.BuiltinCapturePluginPackages
@@ -22,6 +23,26 @@ data class CapturePluginEntry(
     val isExternal: Boolean = false,
 )
 
+/** 设置页里的一行：一个插件包 + 它是随 APK 内置还是用户自己放的。 */
+data class CapturePluginPack(
+    val info: ExternalCapturePluginLoader.PackInfo,
+    val isBuiltin: Boolean,
+) {
+    val id: String get() = info.id
+    val isExternal: Boolean get() = !isBuiltin
+    /** 文件没关、用户也没关、且校验通过。 */
+    val enabled: Boolean get() = info.enabled
+
+    /**
+     * 列表里显示的标题。包没写 `declaration.name` 时用 id，但去掉 `builtin.` / `external.` 前缀——
+     * 那是注册表用来区分来源的，不该当名字给人看。
+     */
+    val displayTitle: String
+        get() = info.title ?: info.id
+            .removePrefix(BUILTIN_PLUGIN_ID_PREFIX)
+            .removePrefix(EXTERNAL_PLUGIN_ID_PREFIX)
+}
+
 /**
  * 持久化端侧 eBPF 插件偏移规则到 `aau_capture_plugins.json` 并同步到 [NetworkCapturePluginRegistry]。
  *
@@ -29,6 +50,9 @@ data class CapturePluginEntry(
  * 1. 内置插件包（assets 安装到 `capture_plugins_builtin/`）
  * 2. 用户放的插件包（`capture_plugins/`）
  * 3. `aau_capture_plugins.json` 覆盖配置（设置页保存）
+ *
+ * 另外它还管插件包的**启用开关**（[setPackEnabled]）：开关写在 `capture_plugin_state.txt`，
+ * 不动插件包本身——包是随 APK 分发或别人给的货，改它就不是"关掉"而是"改坏"。
  */
 class CapturePluginProfileStore(
     private val filesDir: File?,
@@ -37,6 +61,18 @@ class CapturePluginProfileStore(
 
     companion object {
         private const val TAG = "CapturePluginStore"
+
+        /** 被用户关掉的插件包 id，每行一个。放在这里而不是改 `plugin.json`：包是只读的货。 */
+        const val STATE_FILE_NAME = "capture_plugin_state.txt"
+
+        /**
+         * 跨实例的锁。
+         *
+         * `loadIntoRegistry()` 是"清空注册表 → 逐个注册"，实例锁挡不住并发：调用方
+         * （`PhoneNetworkManager`、设置页）每次都是 `forContext()` 新建一个 store。
+         * 两次交错就会一边清掉另一边刚注册的包。
+         */
+        private val LOAD_LOCK = Any()
 
         fun forContext(context: Context?): CapturePluginProfileStore = CapturePluginProfileStore(
             runCatching { context?.filesDir }.getOrNull(),
@@ -59,20 +95,104 @@ class CapturePluginProfileStore(
     val builtinPluginsDir: File?
         get() = filesDir?.let { File(it, ExternalCapturePluginLoader.BUILTIN_PLUGINS_DIR_NAME) }
 
+    /** 被关掉的插件包 id，每行一个；`#` 开头的行当注释。 */
+    val stateFile: File?
+        get() = filesDir?.let { File(it, STATE_FILE_NAME) }
+
     fun ensurePluginsDir(): File? = pluginsDir?.apply { if (!isDirectory) mkdirs() }
 
-    @Synchronized
-    fun loadIntoRegistry(): Int {
+    fun loadIntoRegistry(): Int = synchronized(LOAD_LOCK) {
+        val disabled = readDisabledPacks()
+        // 先把上一次注册的包摘掉：关掉一个包之后它要是还挂在注册表里，等于没关。
+        for (id in NetworkCapturePluginRegistry.listPluginIds()) {
+            if (id.startsWith(BUILTIN_PLUGIN_ID_PREFIX) || id.startsWith(EXTERNAL_PLUGIN_ID_PREFIX)) {
+                NetworkCapturePluginRegistry.unregister(id)
+            }
+        }
         // 先装内置包、再装外部包，最后套覆盖配置：覆盖是"改参数"，本来就该后落。
-        loadBuiltinPlugins()
-        loadExternalPlugins()
-        val file = overrideFile ?: return 0
-        if (!file.isFile) return 0
-        return try {
+        loadBuiltinPlugins(disabled)
+        loadExternalPlugins(disabled)
+        val file = overrideFile ?: return@synchronized 0
+        if (!file.isFile) return@synchronized 0
+        try {
             NetworkCapturePluginRegistry.replaceJsonOverrides(file.readText())
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to load capture plugin overrides: ${t.message}")
             0
+        }
+    }
+
+    // ------------------------------------------------------------------ 插件包开关
+
+    @Synchronized
+    fun readDisabledPacks(): Set<String> {
+        val file = stateFile ?: return emptySet()
+        if (!file.isFile) return emptySet()
+        return try {
+            file.readLines()
+                .map { it.substringBefore('#').trim() }
+                .filter { it.isNotEmpty() }
+                .toSet()
+        } catch (t: Throwable) {
+            Log.w(TAG, "Failed to read capture plugin state: ${t.message}")
+            emptySet()
+        }
+    }
+
+    /**
+     * 打开/关掉一个插件包。写在状态文件里，不碰插件包自身的 `plugin.json`。
+     *
+     * 写完立刻重装注册表，否则要等下一次抓包 attach 才生效——用户在设置页点开关，
+     * 期望的是马上生效。
+     */
+    @Synchronized
+    fun setPackEnabled(id: String, enabled: Boolean) {
+        val clean = id.trim()
+        if (clean.isEmpty()) return
+        synchronized(LOAD_LOCK) {
+            val current = readDisabledPacks().toMutableSet()
+            val changed = if (enabled) current.remove(clean) else current.add(clean)
+            if (!changed) return
+            writeDisabledPacks(current)
+            loadIntoRegistry()
+        }
+    }
+
+    /**
+     * 列出磁盘上的所有插件包（内置 + 外部），带声明与开关状态。
+     *
+     * 只读：不注册、不加载 dex，可以在界面线程直接调。
+     */
+    @Synchronized
+    fun snapshotPacks(): List<CapturePluginPack> {
+        val disabled = readDisabledPacks()
+        val builtin = ExternalCapturePluginLoader.inspect(
+            rootDir = builtinPluginsDir,
+            idPrefix = BUILTIN_PLUGIN_ID_PREFIX,
+            disabledIds = disabled,
+        )
+        val external = ExternalCapturePluginLoader.inspect(
+            rootDir = pluginsDir,
+            idPrefix = EXTERNAL_PLUGIN_ID_PREFIX,
+            disabledIds = disabled,
+        )
+        return builtin.map { CapturePluginPack(it, isBuiltin = true) } +
+            external.map { CapturePluginPack(it, isBuiltin = false) }
+    }
+
+    private fun writeDisabledPacks(ids: Set<String>) {
+        val file = stateFile ?: return
+        file.parentFile?.mkdirs()
+        val body = buildString {
+            appendLine("# 被关掉的抓包插件包，每行一个 id（带 builtin./external. 前缀）。")
+            appendLine("# 由设置 › 端侧网络抓包 写入；删掉某行等于重新打开这个包。")
+            ids.sorted().forEach { appendLine(it) }
+        }
+        val tmp = File(file.parentFile, "${file.name}.tmp")
+        tmp.writeText(body)
+        if (!tmp.renameTo(file)) {
+            file.writeText(body)
+            tmp.delete()
         }
     }
 
@@ -82,7 +202,7 @@ class CapturePluginProfileStore(
      * 内置包与外部包是同一份 `plugin.json` 结构，只是 id 前缀是 `builtin.`。
      */
     @Synchronized
-    fun loadBuiltinPlugins(): ExternalCapturePluginLoader.Report {
+    fun loadBuiltinPlugins(disabledIds: Set<String> = readDisabledPacks()): ExternalCapturePluginLoader.Report {
         val root = builtinPluginsDir ?: return ExternalCapturePluginLoader.Report()
         if (builtinPackages.isEmpty()) return ExternalCapturePluginLoader.Report()
         BuiltinCapturePluginPackages.install(builtinPackages, root).let { report ->
@@ -93,7 +213,12 @@ class CapturePluginProfileStore(
         }
         val parent = javaClass.classLoader ?: return ExternalCapturePluginLoader.Report()
         val report = try {
-            ExternalCapturePluginLoader.load(root, parent, idPrefix = BUILTIN_PLUGIN_ID_PREFIX)
+            ExternalCapturePluginLoader.load(
+                rootDir = root,
+                parentClassLoader = parent,
+                idPrefix = BUILTIN_PLUGIN_ID_PREFIX,
+                disabledIds = disabledIds,
+            )
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to scan builtin capture plugins: ${t.message}")
             return ExternalCapturePluginLoader.Report()
@@ -110,11 +235,11 @@ class CapturePluginProfileStore(
      * 单个包坏掉只记日志，不影响其它包，也不影响抓包本身。
      */
     @Synchronized
-    fun loadExternalPlugins(): ExternalCapturePluginLoader.Report {
+    fun loadExternalPlugins(disabledIds: Set<String> = readDisabledPacks()): ExternalCapturePluginLoader.Report {
         val dir = pluginsDir
         val parent = javaClass.classLoader ?: return ExternalCapturePluginLoader.Report()
         val report = try {
-            ExternalCapturePluginLoader.load(dir, parent)
+            ExternalCapturePluginLoader.load(dir, parent, disabledIds = disabledIds)
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to scan external capture plugins: ${t.message}")
             return ExternalCapturePluginLoader.Report()

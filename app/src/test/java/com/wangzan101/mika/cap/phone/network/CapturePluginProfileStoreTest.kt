@@ -86,6 +86,98 @@ class CapturePluginProfileStoreTest {
     }
 
     @Test
+    fun snapshotPacksCarriesTheDeclarationFromEachPackage() {
+        val store = newStore()
+        val packs = store.snapshotPacks()
+        assertTrue(packs.size >= 4)
+        assertTrue(packs.all { it.isBuiltin })
+
+        val boss = packs.first { it.id == "builtin.bosszhipin" }
+        assertTrue(boss.enabled)
+        assertEquals("BOSS 直聘", boss.info.title)
+        assertEquals("Mika", boss.info.author)
+        assertTrue(boss.info.declares.isNotEmpty())
+        // 声明里的用途是包自己写的，通道计数是解析出来的——两边都得有
+        assertEquals(1, boss.info.sslRules)
+        assertEquals(1, boss.info.jniRules)
+        assertTrue(boss.info.codecs > 0)
+        assertTrue(boss.info.channels.contains("jni:1"))
+
+        val fallback = packs.first { it.id == "builtin.generic-cronet" }
+        assertTrue(fallback.info.fallback)
+        assertTrue(fallback.info.packages.contains("*"))
+    }
+
+    @Test
+    fun packSwitchTurnsRulesOffWithoutTouchingThePackageFile() {
+        val store = newStore()
+        val jsonFile = File(File(store.builtinPluginsDir, "xiaohongshu"), "plugin.json")
+        val original = jsonFile.readText()
+        assertTrue(original.contains("xiaohongshu"))
+        assertEquals(
+            "libcronet.114.0.5735.38.so",
+            NetworkCapturePluginRegistry.resolveEbpfProfile("com.xingin.xhs").cronetOffsetRules.first().libSubstring,
+        )
+        assertTrue(NetworkCapturePluginRegistry.isBuiltinPluginPackage("com.xingin.xhs"))
+
+        store.setPackEnabled("builtin.xiaohongshu", false)
+
+        assertTrue(store.stateFile!!.isFile)
+        // 关掉 ≠ 改包：文件一个字节都不动
+        assertEquals(original, jsonFile.readText())
+        val after = NetworkCapturePluginRegistry.resolveEbpfProfile("com.xingin.xhs")
+        assertTrue(after.cronetOffsetRules.none { it.libSubstring == "libcronet.114.0.5735.38.so" })
+        assertFalse(NetworkCapturePluginRegistry.isBuiltinPluginPackage("com.xingin.xhs"))
+        assertFalse(store.snapshotPacks().first { it.id == "builtin.xiaohongshu" }.enabled)
+
+        // 开关是持久的：换一个 store（等价于重启）依然是关的
+        val reloaded = CapturePluginProfileStore.forDirectory(tempFolder.root, builtinAssetRoot()).also {
+            it.loadIntoRegistry()
+        }
+        assertTrue("builtin.xiaohongshu" in reloaded.readDisabledPacks())
+        assertFalse(reloaded.snapshotPacks().first { it.id == "builtin.xiaohongshu" }.enabled)
+        assertTrue(
+            NetworkCapturePluginRegistry.resolveEbpfProfile("com.xingin.xhs")
+                .cronetOffsetRules.none { it.libSubstring == "libcronet.114.0.5735.38.so" },
+        )
+
+        // 再打开：规则回来，状态文件里的那一行也清掉
+        reloaded.setPackEnabled("builtin.xiaohongshu", true)
+        assertEquals(
+            "libcronet.114.0.5735.38.so",
+            NetworkCapturePluginRegistry.resolveEbpfProfile("com.xingin.xhs").cronetOffsetRules.first().libSubstring,
+        )
+        assertTrue(reloaded.readDisabledPacks().isEmpty())
+    }
+
+    @Test
+    fun externalPackagesAreListedWithTheirOwnPrefix() {
+        val store = newStore()
+        val dir = File(store.ensurePluginsDir(), "acme").apply { mkdirs() }
+        File(dir, "plugin.json").writeText(
+            """
+            {
+              "id": "acme.market",
+              "apiVersion": 1,
+              "packages": ["com.acme.market"],
+              "declaration": { "name": "Acme Market", "notes": ["reads responses"] }
+            }
+            """.trimIndent(),
+        )
+        store.loadIntoRegistry()
+
+        val pack = store.snapshotPacks().first { it.id == "external.acme.market" }
+        assertTrue(pack.isExternal)
+        assertTrue(pack.enabled)
+        assertEquals("Acme Market", pack.info.title)
+
+        store.setPackEnabled("external.acme.market", false)
+        assertFalse(store.snapshotPacks().first { it.id == "external.acme.market" }.enabled)
+        // 内置包不受外部包开关影响
+        assertTrue(store.snapshotPacks().first { it.id == "builtin.bosszhipin" }.enabled)
+    }
+
+    @Test
     fun draftValidationSupportsHexDisabledOffsetsAndRejectsMalformedInput() {
         val valid = CapturePluginDraft(
             isNew = false,

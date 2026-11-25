@@ -414,4 +414,25 @@
     <string name="app_exp_shortcut_entry">Início: %1$s</string>
     <string name="app_exp_shortcut_delete_title">Excluir este atalho?</string>
     <string name="app_exp_shortcut_delete_body">“%1$s” será removido. As telas e os roteiros não são afetados.</string>
+    <string name="network_capture_packs_group">Pacotes de extensão (%1$d)</string>
+    <string name="network_capture_packs_empty">Ainda não há pacotes de extensão</string>
+    <string name="network_capture_packs_empty_sub">Coloque uma pasta com plugin.json no diretório capture_plugins</string>
+    <string name="network_capture_packs_tag_error">Erro</string>
+    <string name="network_capture_packs_declaration">Declaração</string>
+    <string name="network_capture_packs_meta">v%1$d · API %2$d</string>
+    <string name="network_capture_packs_author">Autor: %1$s</string>
+    <string name="network_capture_packs_scope">Aplica-se a: %1$s</string>
+    <string name="network_capture_packs_scope_all">Todos os apps</string>
+    <string name="network_capture_packs_touches">Toca em: %1$s</string>
+    <string name="network_capture_packs_notes_title">O que ele declara</string>
+    <string name="network_capture_packs_error">Não carregado: %1$s</string>
+    <string name="network_capture_packs_off_file">Desligado — o pacote define enabled=false</string>
+    <string name="network_capture_packs_off_user">Desligado — desativado aqui</string>
+    <string name="network_capture_packs_enabled">Ativado</string>
+    <string name="network_capture_packs_channel_ssl">Deslocamentos SSL ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">Deslocamentos Cronet ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">Ganchos no processo ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">Decodificadores de resposta ×%1$d</string>
+    <string name="network_capture_packs_channel_host">Correção de host</string>
+    <string name="network_capture_packs_channel_code">Código dex</string>
 </resources>

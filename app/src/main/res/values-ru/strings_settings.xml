@@ -424,4 +424,25 @@
     <string name="app_exp_shortcut_entry">Старт: %1$s</string>
     <string name="app_exp_shortcut_delete_title">Удалить этот сценарий?</string>
     <string name="app_exp_shortcut_delete_body">«%1$s» будет удалён. Экраны и маршруты сохранятся.</string>
+    <string name="network_capture_packs_group">Пакеты расширений (%1$d)</string>
+    <string name="network_capture_packs_empty">Пакетов расширений пока нет</string>
+    <string name="network_capture_packs_empty_sub">Положите папку с plugin.json в каталог capture_plugins</string>
+    <string name="network_capture_packs_tag_error">Ошибка</string>
+    <string name="network_capture_packs_declaration">Декларация</string>
+    <string name="network_capture_packs_meta">версия %1$d · API %2$d</string>
+    <string name="network_capture_packs_author">Автор: %1$s</string>
+    <string name="network_capture_packs_scope">Применяется к: %1$s</string>
+    <string name="network_capture_packs_scope_all">Все приложения</string>
+    <string name="network_capture_packs_touches">Затрагивает: %1$s</string>
+    <string name="network_capture_packs_notes_title">Что заявляет пакет</string>
+    <string name="network_capture_packs_error">Не загружен: %1$s</string>
+    <string name="network_capture_packs_off_file">Выключен — в пакете enabled=false</string>
+    <string name="network_capture_packs_off_user">Выключен — отключён здесь</string>
+    <string name="network_capture_packs_enabled">Включён</string>
+    <string name="network_capture_packs_channel_ssl">Смещения SSL ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">Смещения Cronet ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">Внутрипроцессные перехваты ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">Декодеры ответов ×%1$d</string>
+    <string name="network_capture_packs_channel_host">Исправление хоста</string>
+    <string name="network_capture_packs_channel_code">Код dex</string>
 </resources>

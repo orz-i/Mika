@@ -327,3 +327,82 @@ Mika 自身链路回归（装新包后跑「打开抖音，往下刷三条视频
 （抖音没有 `jniHookRules`，不需要进程内通道）→ `Loaded 3 JSON capture plugin override(s)`
 → `READY:…/libttboringssl.so` → `TlsStreamParser: no wait … already plaintext`。
 
+
+---
+
+## 八、插件包自己声明，用户自己开关
+
+前七节都在讲"一个包能干什么"。这一节讲两件更基本的事：**它自己说它是干什么的**，
+以及**用户能不能在不改它的情况下把它关掉**。
+
+### 8.1 `declaration`：包自述，给人看
+
+`plugin.json` 多一个可选段：
+
+```json
+"declaration": {
+  "name": "BOSS 直聘",
+  "summary": "把 BOSS 的加密/压缩响应还原成明文，并按 x-bz-host 补全请求域名。",
+  "author": "Mika",
+  "notes": [
+    "读 libzp-sdk-transport.so 的 SSL 写/读偏移",
+    "观察 libyzwg.so 的 nativeDecodeContent 返回值（只读，不改目标进程）"
+  ]
+}
+```
+
+它**不参与任何判定**——写错了不影响抓包，`inspect` 也不会因为缺了它就拒绝。
+设置页原样显示：`name` 是标题、`summary` 是副标题、`author` 一行、`notes` 逐条列出。
+
+四个内置包都补了，版本从 1 升到 2（不升版本，设备上已安装的副本不会被覆盖，
+声明就永远看不见）。
+
+### 8.2 声明分两栏：自述 + 实测
+
+`PackInfo` 同时带两样东西：
+
+| 字段 | 来源 | 用途 |
+|---|---|---|
+| `declares` | `declaration.notes` | 包自己说它做什么 |
+| `sslRules` / `cronetRules` / `jniRules` / `codecs` / `hostFix` / `hasCode` | 解析 `ebpfProfile` 与 `declarative` 得出 | 它实际会碰什么 |
+
+界面上拼成一行「会碰：SSL 偏移 ×1 · 进程内入口 ×1 · 响应解码 ×6 · 域名补全 · dex 代码」。
+**只信自述**，一个包可以写"只读响应体"却挂 JNI；**只看计数**，用户又不知道为什么它要挂。
+两栏并排，撒谎的成本就落到明面上。
+
+`PackInfo.channels` 是给程序用的稳定编码（`ssl:1`、`jni:2`、`codec:6`…），
+文案在 app 侧按语言拼，aau 不认识语言。
+
+### 8.3 开关不写进插件包
+
+关一个包的开关存在 `filesDir/capture_plugin_state.txt`，一行一个 id：
+
+```
+# 被关掉的抓包插件包，每行一个 id（带 builtin./external. 前缀）。
+builtin.xiaohongshu
+external.acme.market
+```
+
+**为什么不改 `plugin.json` 的 `"enabled": false`**：包是随 APK 分发的货或者别人给的货，
+改它等于改坏它——下次升级覆盖、下一个人拿到的是被改过的副本，而且用户看不出"我关过"。
+id 带前缀是为了内置包和外部包同名时不互相影响。
+
+配套的三处改动：
+
+- `ExternalCapturePluginLoader.load(..., disabledIds)` 跳过被关的包：不注册、不告警。
+  它们进 `Report.packs` 与 `Report.skipped`，**不再进 `rejected`**——"用户关掉的"不是错误。
+  文件里 `"enabled": false` 同理，以前报 `disabled` 错误，现在也只是 skipped。
+- `loadIntoRegistry()` 先摘掉上一次注册的所有 `builtin.` / `external.` 包再重装。
+  不摘的话，关掉一个包之后它还挂在注册表里，等于没关。
+- `inspect()` 是只读版：不实例化 dex、不碰 dalvik、不写注册表，设置页可以直接调。
+  坏包用目录名占位（`external.<目录名>`）留在列表里，否则它会从界面上凭空消失。
+
+### 8.4 设置页
+
+设置 › 高级与其他 › 端侧网络抓包 › eBPF 探测规则，顶部多一组「插件包」：
+
+- 每行：标题（没有 `declaration.name` 就用 id）、作用范围（兜底包写"全部应用"）、
+  通道摘要、来源胶囊（内置 / 外部 / 已关 / 有错）、右侧开关。
+- 点行打开声明弹窗：版本与接口号、`summary`、作者、作用范围、通道、`notes` 逐条，
+  以及为什么没生效（`plugin.json` 自己关的 / 在这里关的 / 校验失败的原因）。
+- 开关立刻生效：`setPackEnabled` 写完状态文件就重装注册表，不用等下一次抓包 attach。

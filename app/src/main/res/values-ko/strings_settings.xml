@@ -394,4 +394,25 @@
     <string name="app_exp_shortcut_entry">시작: %1$s</string>
     <string name="app_exp_shortcut_delete_title">이 단축 흐름을 삭제할까요?</string>
     <string name="app_exp_shortcut_delete_body">“%1$s” 항목을 삭제합니다. 화면과 경로는 유지됩니다.</string>
+    <string name="network_capture_packs_group">플러그인 패키지 (%1$d)</string>
+    <string name="network_capture_packs_empty">아직 플러그인 패키지가 없습니다</string>
+    <string name="network_capture_packs_empty_sub">capture_plugins 디렉터리에 plugin.json이 있는 폴더를 넣으세요</string>
+    <string name="network_capture_packs_tag_error">오류</string>
+    <string name="network_capture_packs_declaration">선언</string>
+    <string name="network_capture_packs_meta">버전 %1$d · API %2$d</string>
+    <string name="network_capture_packs_author">작성자: %1$s</string>
+    <string name="network_capture_packs_scope">적용 대상: %1$s</string>
+    <string name="network_capture_packs_scope_all">모든 앱</string>
+    <string name="network_capture_packs_touches">건드리는 것: %1$s</string>
+    <string name="network_capture_packs_notes_title">패키지가 선언한 내용</string>
+    <string name="network_capture_packs_error">로드되지 않음: %1$s</string>
+    <string name="network_capture_packs_off_file">꺼짐 — 패키지가 enabled=false 로 지정</string>
+    <string name="network_capture_packs_off_user">꺼짐 — 여기서 끔</string>
+    <string name="network_capture_packs_enabled">사용</string>
+    <string name="network_capture_packs_channel_ssl">SSL 오프셋 ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">Cronet 오프셋 ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">프로세스 내 후킹 ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">응답 디코더 ×%1$d</string>
+    <string name="network_capture_packs_channel_host">호스트 보정</string>
+    <string name="network_capture_packs_channel_code">dex 코드</string>
 </resources>

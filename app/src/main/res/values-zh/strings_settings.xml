@@ -394,4 +394,25 @@
     <string name="app_exp_shortcut_entry">入口：%1$s</string>
     <string name="app_exp_shortcut_delete_title">删除这条子流程快捷？</string>
     <string name="app_exp_shortcut_delete_body">将删除「%1$s」，不影响已学到的页面与操作路线。</string>
+    <string name="network_capture_packs_group">插件包（%1$d）</string>
+    <string name="network_capture_packs_empty">还没有插件包</string>
+    <string name="network_capture_packs_empty_sub">把带 plugin.json 的目录放进 capture_plugins 目录即可</string>
+    <string name="network_capture_packs_tag_error">有错</string>
+    <string name="network_capture_packs_declaration">声明</string>
+    <string name="network_capture_packs_meta">版本 %1$d · 接口 %2$d</string>
+    <string name="network_capture_packs_author">作者：%1$s</string>
+    <string name="network_capture_packs_scope">作用于：%1$s</string>
+    <string name="network_capture_packs_scope_all">全部应用</string>
+    <string name="network_capture_packs_touches">会碰：%1$s</string>
+    <string name="network_capture_packs_notes_title">它声明自己做的事</string>
+    <string name="network_capture_packs_error">没有加载：%1$s</string>
+    <string name="network_capture_packs_off_file">已关：包自己在 plugin.json 里写了 enabled=false</string>
+    <string name="network_capture_packs_off_user">已关：在这里关掉的</string>
+    <string name="network_capture_packs_enabled">启用</string>
+    <string name="network_capture_packs_channel_ssl">SSL 偏移 ×%1$d</string>
+    <string name="network_capture_packs_channel_cronet">Cronet 偏移 ×%1$d</string>
+    <string name="network_capture_packs_channel_jni">进程内入口 ×%1$d</string>
+    <string name="network_capture_packs_channel_codec">响应解码 ×%1$d</string>
+    <string name="network_capture_packs_channel_host">域名补全</string>
+    <string name="network_capture_packs_channel_code">dex 代码</string>
 </resources>
