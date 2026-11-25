@@ -403,6 +403,7 @@
     <string name="network_capture_packs_author">작성자: %1$s</string>
     <string name="network_capture_packs_scope">적용 대상: %1$s</string>
     <string name="network_capture_packs_scope_all">모든 앱</string>
+    <string name="network_capture_packs_scope_count">앱 %1$d개</string>
     <string name="network_capture_packs_touches">건드리는 것: %1$s</string>
     <string name="network_capture_packs_notes_title">패키지가 선언한 내용</string>
     <string name="network_capture_packs_error">로드되지 않음: %1$s</string>

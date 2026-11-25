@@ -453,6 +453,7 @@
     <string name="network_capture_packs_author">المؤلف: %1$s</string>
     <string name="network_capture_packs_scope">ينطبق على: %1$s</string>
     <string name="network_capture_packs_scope_all">كل التطبيقات</string>
+    <string name="network_capture_packs_scope_count">%1$d تطبيقات</string>
     <string name="network_capture_packs_touches">يلمس: %1$s</string>
     <string name="network_capture_packs_notes_title">ما تُقرّ به الحزمة</string>
     <string name="network_capture_packs_error">لم تُحمّل: %1$s</string>

@@ -743,7 +743,7 @@ fun CapturePluginProfilesContent(
                 ListRow(
                     icon = MikaIcons.Apps,
                     title = pack.displayTitle,
-                    subtitle = packScopeText(info),
+                    subtitle = packScopeSummary(info),
                     detail = packChannelText(info).takeIf { it.isNotEmpty() },
                     first = idx == 0,
                     onClick = { packDetail = pack },
@@ -1552,6 +1552,8 @@ fun CapturePluginProfilesContent(
 /**
  * 一个插件包作用在哪些 App 上。兜底包（`packages: ["*"]`）直说"全部应用"，
  * 否则用户看到一行 `*` 不知道那是通配。
+ *
+ * 弹窗里用这一份：完整列出，逗号分隔，换行也没关系。
  */
 @Composable
 private fun packScopeText(info: ExternalCapturePluginLoader.PackInfo): String =
@@ -1560,6 +1562,19 @@ private fun packScopeText(info: ExternalCapturePluginLoader.PackInfo): String =
     } else {
         info.packages.joinToString(", ")
     }
+
+/**
+ * 列表行里的作用范围，只留一行。
+ *
+ * 一行里塞进 `com.ss.android.ugc.aweme, com.ss.android.ugc.aweme.lite, …` 会撑成四五高，
+ * 逗号还会单独占一行——列表要看的是"这个包是干什么的"，具体名单在弹窗里。
+ */
+@Composable
+private fun packScopeSummary(info: ExternalCapturePluginLoader.PackInfo): String = when {
+    info.fallback || info.packages.isEmpty() -> stringResource(R.string.network_capture_packs_scope_all)
+    info.packages.size == 1 -> info.packages.first()
+    else -> stringResource(R.string.network_capture_packs_scope_count, info.packages.size)
+}
 
 /**
  * 声明里"它会碰什么"那一栏：从 `plugin.json` 实际解析出来的通道，不是包自己说的。

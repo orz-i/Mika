@@ -403,6 +403,7 @@
     <string name="network_capture_packs_author">Penulis: %1$s</string>
     <string name="network_capture_packs_scope">Berlaku untuk: %1$s</string>
     <string name="network_capture_packs_scope_all">Semua aplikasi</string>
+    <string name="network_capture_packs_scope_count">%1$d aplikasi</string>
     <string name="network_capture_packs_touches">Menyentuh: %1$s</string>
     <string name="network_capture_packs_notes_title">Yang dideklarasikan paket</string>
     <string name="network_capture_packs_error">Tidak dimuat: %1$s</string>

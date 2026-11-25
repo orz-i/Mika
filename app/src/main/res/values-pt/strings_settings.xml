@@ -423,6 +423,7 @@
     <string name="network_capture_packs_author">Autor: %1$s</string>
     <string name="network_capture_packs_scope">Aplica-se a: %1$s</string>
     <string name="network_capture_packs_scope_all">Todos os apps</string>
+    <string name="network_capture_packs_scope_count">%1$d apps</string>
     <string name="network_capture_packs_touches">Toca em: %1$s</string>
     <string name="network_capture_packs_notes_title">O que ele declara</string>
     <string name="network_capture_packs_error">Não carregado: %1$s</string>

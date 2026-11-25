@@ -424,6 +424,7 @@
     <string name="network_capture_packs_author">نویسنده: %1$s</string>
     <string name="network_capture_packs_scope">اعمال می‌شود بر: %1$s</string>
     <string name="network_capture_packs_scope_all">همهٔ برنامه‌ها</string>
+    <string name="network_capture_packs_scope_count">%1$d برنامه</string>
     <string name="network_capture_packs_touches">دست می‌زند به: %1$s</string>
     <string name="network_capture_packs_notes_title">آنچه بسته اظهار می‌کند</string>
     <string name="network_capture_packs_error">بارگذاری نشد: %1$s</string>

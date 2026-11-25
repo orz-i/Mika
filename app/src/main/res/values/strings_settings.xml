@@ -424,6 +424,7 @@
     <string name="network_capture_packs_author">Author: %1$s</string>
     <string name="network_capture_packs_scope">Applies to: %1$s</string>
     <string name="network_capture_packs_scope_all">All apps</string>
+    <string name="network_capture_packs_scope_count">%1$d apps</string>
     <string name="network_capture_packs_touches">Touches: %1$s</string>
     <string name="network_capture_packs_notes_title">What it declares</string>
     <string name="network_capture_packs_error">Not loaded: %1$s</string>

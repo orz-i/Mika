@@ -433,6 +433,7 @@
     <string name="network_capture_packs_author">Автор: %1$s</string>
     <string name="network_capture_packs_scope">Применяется к: %1$s</string>
     <string name="network_capture_packs_scope_all">Все приложения</string>
+    <string name="network_capture_packs_scope_count">Приложений: %1$d</string>
     <string name="network_capture_packs_touches">Затрагивает: %1$s</string>
     <string name="network_capture_packs_notes_title">Что заявляет пакет</string>
     <string name="network_capture_packs_error">Не загружен: %1$s</string>

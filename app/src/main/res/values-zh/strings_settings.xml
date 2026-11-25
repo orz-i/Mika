@@ -403,6 +403,7 @@
     <string name="network_capture_packs_author">作者：%1$s</string>
     <string name="network_capture_packs_scope">作用于：%1$s</string>
     <string name="network_capture_packs_scope_all">全部应用</string>
+    <string name="network_capture_packs_scope_count">%1$d 个应用</string>
     <string name="network_capture_packs_touches">会碰：%1$s</string>
     <string name="network_capture_packs_notes_title">它声明自己做的事</string>
     <string name="network_capture_packs_error">没有加载：%1$s</string>

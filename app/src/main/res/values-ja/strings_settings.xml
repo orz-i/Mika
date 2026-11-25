@@ -403,6 +403,7 @@
     <string name="network_capture_packs_author">作者: %1$s</string>
     <string name="network_capture_packs_scope">対象: %1$s</string>
     <string name="network_capture_packs_scope_all">すべてのアプリ</string>
+    <string name="network_capture_packs_scope_count">%1$d 個のアプリ</string>
     <string name="network_capture_packs_touches">触れるもの: %1$s</string>
     <string name="network_capture_packs_notes_title">パッケージの宣言</string>
     <string name="network_capture_packs_error">読み込まれていません: %1$s</string>
