@@ -1,29 +1,46 @@
 package com.wangzan101.mika.core.remote
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeFalse
-import org.junit.Assume.assumeTrue
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.util.concurrent.atomic.AtomicInteger
 
 class HttpServerTest {
     private val loopback = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
 
+    /** 一次连接上写出去的响应，以及这段字节里处理了几个请求。 */
+    private class Exchange(val reply: String, val served: Int)
+
     /**
-     * 本机 loopback 有没有被过滤类代理(AdGuard 一类)接管:这类代理会往连接里塞自己的拦截页(502 + blocking-pages),
-     * 或者干脆把连接掐掉。原始 socket 用例(pipelined keep-alive、Expect: 100-continue、超大 Content-Length)因此在本机
-     * 拿不到服务端的回复,与本仓库的实现无关;CI 与安卓上没有这层,用例照常真跑。同 `MiniHttpServerTest` 的做法。
+     * 把一段请求字节喂给同一个连接，返回写出的响应与处理的请求数。
+     *
+     * 不走真 socket：本机回环可能被过滤类代理接管（把流水线合并成一条、塞一张 502 拦截页、或直接掐断），
+     * 那种机器上做字节级断言，测到的是代理而不是这段逻辑。这一层只认字节，喂进去就能确定地验证
+     * keep-alive、流水线与关闭时机；真连接的接线由 `HttpServerStopTest` 覆盖。
      */
-    private fun String.notIntercepted(): String {
-        assumeFalse("loopback HTTP is intercepted here", contains("AdGuard") || contains("502 Bad Gateway"))
-        return this
+    private fun exchange(
+        request: String,
+        handler: (HttpRequest) -> HttpResponse = { req -> HttpResponse(200, req.path.toByteArray(Charsets.UTF_8)) },
+        stillRunning: () -> Boolean = { true },
+    ): Exchange {
+        val output = ByteArrayOutputStream()
+        val served = MiniHttpServer.serveRequests(
+            input = request.byteInputStream(Charsets.ISO_8859_1),
+            output = output,
+            remote = loopback,
+            handler = handler,
+            stillRunning = stillRunning,
+        )
+        return Exchange(String(output.toByteArray(), Charsets.ISO_8859_1), served)
     }
+
+    /** 放在关闭请求之后：它要是也被处理了，说明连接没关。 */
+    private val afterClose = "GET /after HTTP/1.1\r\nHost: localhost\r\n\r\n"
 
     private fun request(chunks: String) =
         "POST /mcp HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n$chunks"
@@ -62,10 +79,13 @@ class HttpServerTest {
 
     @Test fun closesWhenConnectionOptionsIncludeClose() {
         for (options in listOf("keep-alive, close", "close, keep-alive", "keep-alive, \tClOsE\t")) {
-            val reply = exchange("GET /closed HTTP/1.1\r\nHost: localhost\r\nConnection: $options\r\n\r\n")
-            assertTrue(reply, reply.startsWith("HTTP/1.1 200 "))
-            assertTrue(reply, reply.contains("Connection: close\r\n"))
-            assertTrue(reply, reply.endsWith("/closed"))
+            val sent = exchange("GET /closed HTTP/1.1\r\nHost: localhost\r\nConnection: $options\r\n\r\n$afterClose")
+            with(sent.reply) {
+                assertEquals(this, 1, sent.served)
+                assertTrue(this, startsWith("HTTP/1.1 200 "))
+                assertTrue(this, contains("Connection: close\r\n"))
+                assertTrue(this, endsWith("/closed"))
+            }
         }
     }
 
@@ -74,71 +94,61 @@ class HttpServerTest {
             "Connection: keep-alive\r\nConnection: close",
             "Connection: close\r\nConnection: keep-alive",
         )) {
-            val reply = exchange("GET /closed HTTP/1.1\r\nHost: localhost\r\n$headers\r\n\r\n")
-            assertTrue(reply, reply.startsWith("HTTP/1.1 200 "))
-            assertTrue(reply, reply.contains("Connection: close\r\n"))
-            assertTrue(reply, reply.endsWith("/closed"))
+            val sent = exchange("GET /closed HTTP/1.1\r\nHost: localhost\r\n$headers\r\n\r\n$afterClose")
+            with(sent.reply) {
+                assertEquals(this, 1, sent.served)
+                assertTrue(this, startsWith("HTTP/1.1 200 "))
+                assertTrue(this, contains("Connection: close\r\n"))
+                assertTrue(this, endsWith("/closed"))
+            }
         }
     }
 
     @Test fun keepsServingWhenConnectionOptionsDoNotIncludeClose() {
-        val reply = exchange(
+        // 关闭指令只认完整的连接选项："x-close"、"close-extra" 不是。
+        val sent = exchange(
             "GET /first HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive, x-close, close-extra\r\n\r\n" +
-                "GET /second HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-        ).notIntercepted()
-        assertTrue(reply, reply.startsWith("HTTP/1.1 200 "))
-        assertTrue(reply, reply.contains("/firstHTTP/1.1 200 "))
-        assertTrue(reply, reply.endsWith("/second"))
+                "GET /second HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n$afterClose",
+        )
+        with(sent.reply) {
+            assertEquals(this, 2, sent.served)
+            assertTrue(this, startsWith("HTTP/1.1 200 "))
+            assertTrue(this, contains("/firstHTTP/1.1 200 "))
+            assertTrue(this, endsWith("/second"))
+        }
     }
 
-    private fun exchange(request: String): String {
-        val server = MiniHttpServer(InetSocketAddress(loopback, 0), handler = { req ->
-            HttpResponse(200, req.path.toByteArray(Charsets.UTF_8))
-        })
-        return Socket().use { socket ->
-            server.start()
-            try {
-                socket.connect(InetSocketAddress(loopback, server.port), 2_000)
-                socket.soTimeout = 2_000
-                socket.getOutputStream().write(request.toByteArray(Charsets.ISO_8859_1))
-                // 读取到服务端关闭连接;忽略 close 时会超时,不能只检查响应头。
-                socket.getInputStream().bufferedReader().readText()
-            } finally {
-                server.stop()
-            }
-        }
+    @Test fun stopsWhenStillRunningTurnsFalse() {
+        // 服务停止时不再读下一个请求：连接线程不该在 running 变假后还接着服务。
+        var served = 0
+        val sent = exchange(
+            "GET /first HTTP/1.1\r\nHost: localhost\r\n\r\nGET /second HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            handler = { req -> served++; HttpResponse(200, req.path.toByteArray(Charsets.UTF_8)) },
+            stillRunning = { served == 0 },
+        )
+        assertEquals(sent.reply, 1, sent.served)
+        assertTrue(sent.reply, sent.reply.endsWith("/first"))
     }
 
     @Test fun rejectsUnauthenticatedOverflowBeforeTheHandlerAndKeepsServing() {
         val handled = AtomicInteger()
-        val server = MiniHttpServer(InetSocketAddress(loopback, 0), handler = { req ->
+        val counting: (HttpRequest) -> HttpResponse = { req ->
             assertNull(req.header("authorization"))
             handled.incrementAndGet()
             HttpResponse.empty(200)
-        })
-        server.start()
-        try {
-            Socket(loopback, server.port).use { socket ->
-                socket.soTimeout = 2_000
-                socket.getOutputStream().write(request("1\r\nx\r\n7fffffff\r\n").toByteArray())
-                // 代理掐掉连接时这里会超时:读不到东西就只可能是被接管了,不是服务端没回
-                val reply = runCatching { socket.getInputStream().bufferedReader().readText() }.getOrElse {
-                    assumeTrue("loopback HTTP is intercepted here: ${it.message}", false)
-                    ""
-                }.notIntercepted()
-                assertTrue(reply, reply.startsWith("HTTP/1.1 413 "))
-                assertTrue(reply, reply.contains("Connection: close\r\n"))
-            }
-            assertEquals(0, handled.get())
-            Socket(loopback, server.port).use { socket ->
-                socket.soTimeout = 2_000
-                socket.getOutputStream().write("GET /mcp HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".toByteArray())
-                val reply = socket.getInputStream().bufferedReader().readText().notIntercepted()
-                assertTrue(reply, reply.startsWith("HTTP/1.1 200 "))
-            }
-            assertEquals(1, handled.get())
-        } finally {
-            server.stop()
         }
+
+        // 超限的 chunked 正文：回 413 并断开，后面的请求一个字节都不处理。
+        val overflow = exchange(request("1\r\nx\r\n7fffffff\r\n") + "GET /mcp HTTP/1.1\r\nHost: localhost\r\n\r\n", counting)
+        assertEquals(overflow.reply, 0, overflow.served)
+        assertTrue(overflow.reply, overflow.reply.startsWith("HTTP/1.1 413 "))
+        assertTrue(overflow.reply, overflow.reply.contains("Connection: close\r\n"))
+        assertFalse(overflow.reply, overflow.reply.contains("HTTP/1.1 200 "))
+        assertEquals(0, handled.get())
+
+        // 下一条连接照常服务（真连接的这一半由 `HttpServerStopTest` 覆盖）。
+        val next = exchange("GET /mcp HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n", counting)
+        assertTrue(next.reply, next.reply.startsWith("HTTP/1.1 200 "))
+        assertEquals(1, handled.get())
     }
 }
