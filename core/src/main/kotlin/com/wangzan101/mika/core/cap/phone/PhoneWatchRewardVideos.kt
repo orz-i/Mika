@@ -50,8 +50,13 @@ private const val CTA_SETTLE_MS = 2_500L
 /** 点一下 ✕ 之后等这么久，看回没回到网页。 */
 private const val CLOSE_SETTLE_MS = 2_000L
 
-/** 结算页 CTA（「去微信看看」「立即下载」之类）的千分比位置，从上往下试。 */
-private val CTA_POINTS = listOf(500 to 800, 500 to 770, 500 to 835)
+/**
+ * 读不到 CTA 文字时的兜底位置（千分比），从上往下试。
+ *
+ * 2026-11 的微信小游戏素材是一张竖版卡片：CTA 在卡片底部 y≈706‰，
+ * 之前按 y=800 戳在卡片下方的空白里，三次都没中。
+ */
+private val CTA_POINTS = listOf(500 to 706, 500 to 690, 500 to 770, 500 to 800, 500 to 835)
 
 /**
  * 广告里那个「点了就走」的按钮，按优先级。
@@ -59,12 +64,35 @@ private val CTA_POINTS = listOf(500 to 800, 500 to 770, 500 to 835)
  * 位置不能写死：这批素材的 CTA 有的在页面中部（「查看商品」在 y≈32%），
  * 有的在底部（「去微信看看」在 y≈82%），写死坐标只会在空白处戳。
  * 所以先读屏上的字，按文字找它的中心；`去浏览` 是挽留页上的同一个按钮。
+ *
+ * 长词在前：`去微信立即玩小游戏`、`去微信畅玩小游戏` 是 2026-11 的素材，
+ * 旧列表里一个都不含，结果整轮只按固定坐标戳空白。
  */
-private val CTA_TEXTS = listOf("去浏览", "去微信看看", "查看商品", "立即购买", "立即下载", "了解详情", "查看详情", "去逛逛")
+private val CTA_TEXTS = listOf(
+    "去微信立即玩", "去微信畅玩", "去微信看看", "去微信", "立即试玩", "立即玩",
+    "开始游戏", "去浏览", "查看商品", "立即购买", "立即下载",
+    "了解详情", "查看详情", "去逛逛",
+)
 
-/** 广告右上角那个 ✕ 的千分比位置。 */
-private const val CLOSE_X = 923
-private const val CLOSE_Y = 115
+/**
+ * 广告右上角那个 ✕ 的千分比候选，按顺序试。
+ *
+ * 优量汇这批素材的 ✕ 在 (920, 82)，之前的 (923, 115) 落在图标下沿外，
+ * 点两下都关不掉，最后走成 `ad_timeout`。
+ */
+private val CLOSE_POINTS = listOf(920 to 82, 923 to 115, 940 to 70, 900 to 105, 955 to 125)
+
+/** 横版素材的 ✕：同样四个角都试一遍，横屏下留白比例和竖屏不一样。 */
+private val LANDSCAPE_CLOSE_POINTS = listOf(920 to 82, 978 to 30, 978 to 70, 950 to 45, 900 to 40, 60 to 82)
+
+/**
+ * 广告 ✕ 在无障碍树里的名字，按优先级。
+ *
+ * ✕ 是画出来的图标，OCR 的 `visibleText` 里没有它——但优量汇给这个控件写了 `content-desc`，
+ * `phone_query` 按描述就能查到，而且带 `ref`：横屏竖屏都不用猜坐标。
+ * 2026-11 的横版素材实测只有这一个可点元素：`点击退出关闭视频`。
+ */
+private const val CLOSE_NAMES = "退出关闭,关闭视频,关闭广告,跳过广告"
 
 /**
  * 跳转确认框/授权弹窗上「不走」这一侧的按钮文字；这里点下去就撤销跳转，人不会被带进别人家 App。
@@ -81,15 +109,23 @@ private const val ACCEPT_TEXTS = "打开,确定,允许,继续"
 /** 「现在退出就没有奖励哦」这种挽留页上的「就是要走」按钮。 */
 private const val LEAVE_TEXTS = "放弃奖励,残忍离开"
 
+/** 福利中心里这一块的标题；广告盖上来时它也会消失，用来确认「真的走了」。 */
+private const val TASK_TITLE = "激励任务"
+
 /**
  * 真正的任务入口。福利中心的阶梯上写着奖励名字（`惊喜礼包`），但那是标签，
  * 点它页面不动；能叫出广告的是旁边那个红字「去完成」。标签点不出广告时退到这几个词。
  */
 private const val ENTRY_TEXTS = "去完成,立即做任务,做任务"
 
-/** 一次运行里给子动作编的号，作用域仅限本次调用。 */
+/** 一次运行里给子动作编的号，作用域仅限本次调用；顺带记下最近一屏的尺寸。 */
 private class Steps {
     var n = 0
+    var width = 0
+    var height = 0
+
+    /** 横过来的屏（激励视频有横版素材）：0-999 的点要按横屏那一套算。 */
+    val landscape: Boolean get() = width > height && height > 0
 }
 
 /**
@@ -126,7 +162,24 @@ internal object PhoneWatchRewardVideos : PhoneTool {
         ),
     )
 
-    override suspend fun execute(a: Args, ctx: ToolContext): ToolExecution = ctx.session.textOnly { run(a, ctx) }
+    override suspend fun execute(a: Args, ctx: ToolContext): ToolExecution = ctx.session.textOnly {
+        // 工具跑一趟要好几分钟，中途任何一步抛出去都会让调用方只拿到「没成功」，
+        // watched / claimed / stopped 全丢。这里兜住，至少把已经走完的轮次报回去。
+        try {
+            run(a, ctx)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ToolExecution(buildJsonObject {
+                put("ok", false)
+                put("stopped", "failed")
+                put("watched", 0)
+                put("claimed", 0)
+                put("taps", 0)
+                put("error", e.message ?: e::class.simpleName.orEmpty())
+            })
+        }
+    }
 
     private suspend fun run(a: Args, ctx: ToolContext): ToolExecution {
         val sub = ctx.sub ?: return failure("actions_unavailable")
@@ -164,29 +217,36 @@ internal object PhoneWatchRewardVideos : PhoneTool {
                 trace += round(n, "claim", claim.name)
                 continue
             }
-            // 2. 点任务入口，把广告叫出来
+            // 2. 点任务入口，把广告叫出来。
+            //    福利中心的阶梯文字（「惊喜礼包」）只是标签，点它页面不动；能叫出广告的是
+            //    右侧那个「去完成」。2026-11 起「激励任务」整块只有一个「去完成」，
+            //    所以先认它，认不到才退回阶梯文字。
             if (taskTexts.isEmpty()) { stopped = "nothing_to_watch"; break }
-            val cell = find(sub, ctx, steps, taskTexts)
-            if (cell == null) { stopped = "task_not_found"; break }
-            if (!tap(sub, ctx, steps, cell)) { stopped = "tap_failed"; break }
+            val entry = findEntry(sub, ctx, steps, taskTexts)
+            val target = entry ?: find(sub, ctx, steps, taskTexts)
+            if (target == null) { stopped = "task_not_found"; break }
+            if (!tap(sub, ctx, steps, target)) { stopped = "tap_failed"; break }
             taps++
-            trace += round(n, "task", cell.name)
+            trace += round(n, if (entry != null) "entry" else "task", target.name)
 
             // 3. 走完这一次广告
             var ad = watch(sub, ctx, steps, taskTexts, host, n, trace)
             taps += ad.taps
             if (ad.outcome == "no_ad") {
-                // 阶梯上那行字只是标签，真正能叫出广告的是旁边的「去完成」。
-                // 真机上点「惊喜礼包」那几个字，页面一动不动，一次广告都没出来。
-                val entry = find(sub, ctx, steps, split(ENTRY_TEXTS))
-                if (entry != null && tap(sub, ctx, steps, entry)) {
+                // 走了另一条路还是没叫出广告，退到剩下那一侧再试一次：
+                // 点了「去完成」不出广告就点阶梯标签，点了标签不出广告就点「去完成」。
+                val alt = if (entry != null) find(sub, ctx, steps, taskTexts)
+                else findEntry(sub, ctx, steps, taskTexts)
+                if (alt != null && tap(sub, ctx, steps, alt)) {
                     taps++
-                    trace += round(n, "entry", entry.name)
+                    trace += round(n, if (entry != null) "task" else "entry", alt.name)
                     ad = watch(sub, ctx, steps, taskTexts, host, n, trace)
                     taps += ad.taps
                 }
             }
             if (ad.outcome == "no_ad") { stopped = "ad_not_shown"; break }
+            // 退出去了但没走到 CTA：屏幕腾出来了，这一阶不算数，接着走下一轮
+            if (ad.outcome == "left") { stopped = "ad_left"; continue }
             if (ad.outcome != "closed") { stopped = ad.outcome; break }
             watched++
             // 4. 抓包开着时核对这一阶到底发没发
@@ -234,7 +294,11 @@ internal object PhoneWatchRewardVideos : PhoneTool {
         var shown = false
         var polls = 0
         while (polls++ < AD_SHOW_POLLS) {
-            if (find(sub, ctx, steps, taskTexts) == null) { shown = true; break }
+            // 阶梯名可能被滚出可视区，单看它会把「滚了一下」误判成「广告盖上来」；
+            // 模块标题一起消失才是真的换屏了。
+            if (find(sub, ctx, steps, taskTexts) == null &&
+                find(sub, ctx, steps, listOf(TASK_TITLE)) == null
+            ) { shown = true; break }
             delay(POLL_MS)
         }
         if (!shown) return AdRun("no_ad", taps)
@@ -247,7 +311,7 @@ internal object PhoneWatchRewardVideos : PhoneTool {
         var dialog: Hit? = null
         if (host != null) {
             // 先按屏上的字找 CTA；读不到字才退回固定位置戳
-            val cta = pick(screenWords(sub, ctx, steps), CTA_TEXTS)
+            val cta = pickCta(screenWords(sub, ctx, steps))
             val points = if (cta != null) listOf(cta.x to cta.y) else CTA_POINTS
             for ((x, y) in points) {
                 if (!tapAt(sub, ctx, steps, x, y)) return AdRun("tap_failed", taps)
@@ -298,22 +362,41 @@ internal object PhoneWatchRewardVideos : PhoneTool {
             if (foreground(sub, ctx, steps) != host) return AdRun("stuck_outside", taps)
         }
 
-        // 4. 关掉广告，回到网页。关闭按钮同样按字找（「点击退出关闭视频」），
-        //    写死的右上角在这批素材上偏了一截，之前是蒙中的。
-        repeat(2) {
+        // 4. 关掉广告，回到网页。
+        //    ✕ 是图标，OCR 读不到，但它在无障碍树里有名字（优量汇：`点击退出关闭视频`）且带 ref，
+        //    所以先按名字点——这一路横竖屏都准；名字查不到才退回 OCR，最后才是坐标候选。
+        var closeTry = 0
+        repeat(3) {
             if (find(sub, ctx, steps, taskTexts) != null) return AdRun("closed", taps)
-            val close = pick(screenWords(sub, ctx, steps), listOf("退出关闭", "关闭"))
-            val cx = close?.x ?: CLOSE_X
-            val cy = close?.y ?: CLOSE_Y
-            if (!tapAt(sub, ctx, steps, cx, cy)) return AdRun("tap_failed", taps)
+            val named = find(sub, ctx, steps, split(CLOSE_NAMES))
+            if (named != null && tap(sub, ctx, steps, named)) {
+                taps++
+                trace += round(n, "close", named.name.take(20))
+                delay(CLOSE_SETTLE_MS)
+                return@repeat
+            }
+            val close = pick(screenWords(sub, ctx, steps), listOf("退出关闭", "关闭", "跳过"))
+            val points = if (steps.landscape) LANDSCAPE_CLOSE_POINTS else CLOSE_POINTS
+            val x: Int
+            val y: Int
+            if (close != null) {
+                x = close.x
+                y = close.y
+            } else {
+                val point = points[closeTry.coerceAtMost(points.lastIndex)]
+                closeTry++
+                x = point.first
+                y = point.second
+            }
+            if (!tapAt(sub, ctx, steps, x, y)) return AdRun("tap_failed", taps)
             taps++
-            trace += round(n, "close", close?.text?.take(20) ?: "$cx,$cy")
+            trace += round(n, "close", close?.text?.take(20) ?: "$x,$y")
             delay(CLOSE_SETTLE_MS)
         }
         if (find(sub, ctx, steps, taskTexts) != null) return AdRun("closed", taps)
         // 4.1 还盖着、屏上又是「现在退出就没有奖励哦」：刚才那下 CTA 没算数。
         //     挽留页上那个「点击去浏览」就是同一个按钮，再点一次、待够时长，比直接放弃多一次机会。
-        val again = pick(screenWords(sub, ctx, steps), CTA_TEXTS)
+        val again = pickCta(screenWords(sub, ctx, steps))
         if (again != null && tapAt(sub, ctx, steps, again.x, again.y)) {
             taps++
             trace += round(n, "retry", again.text.take(20))
@@ -333,17 +416,32 @@ internal object PhoneWatchRewardVideos : PhoneTool {
             } else {
                 repeat(BROWSE_POLLS) { delay(POLL_MS) }
             }
-            repeat(2) {
+            var againTry = 0
+            repeat(3) {
                 if (find(sub, ctx, steps, taskTexts) != null) return AdRun("closed", taps)
-                if (!tapAt(sub, ctx, steps, CLOSE_X, CLOSE_Y)) return AdRun("tap_failed", taps)
+                val named = find(sub, ctx, steps, split(CLOSE_NAMES))
+                if (named != null && tap(sub, ctx, steps, named)) {
+                    taps++
+                    trace += round(n, "close", named.name.take(20))
+                    delay(CLOSE_SETTLE_MS)
+                    return@repeat
+                }
+                val close = pick(screenWords(sub, ctx, steps), listOf("退出关闭", "关闭", "跳过"))
+                val retryPoints = if (steps.landscape) LANDSCAPE_CLOSE_POINTS else CLOSE_POINTS
+                val point = retryPoints[againTry.coerceAtMost(retryPoints.lastIndex)]
+                againTry++
+                val cx = close?.x ?: point.first
+                val cy = close?.y ?: point.second
+                if (!tapAt(sub, ctx, steps, cx, cy)) return AdRun("tap_failed", taps)
                 taps++
-                trace += round(n, "close", "$CLOSE_X,$CLOSE_Y")
+                trace += round(n, "close", close?.text?.take(20) ?: "$cx,$cy")
                 delay(CLOSE_SETTLE_MS)
             }
             if (find(sub, ctx, steps, taskTexts) != null) return AdRun("closed", taps)
         }
         // 4.2 还是关不掉：认了这次没拿到，把屏腾出来，不然下面几轮全点在广告上。
-        //     挽留页的按钮在无障碍树里常常没有，靠 OCR 找「放弃」。
+        //     挽留页的按钮在无障碍树里常常没有，靠 OCR 找「放弃」；横版素材连「放弃」都读不到，
+        //     就按一次返回——广告页返回等于退出（有的会先弹挽留页，再点一次「放弃」）。
         val leaveWord = pick(screenWords(sub, ctx, steps), listOf("放弃"))
         if (leaveWord != null && tapAt(sub, ctx, steps, leaveWord.x, leaveWord.y)) {
             taps++
@@ -355,9 +453,27 @@ internal object PhoneWatchRewardVideos : PhoneTool {
                 taps++
                 trace += round(n, "leave", leave.name)
                 delay(CLOSE_SETTLE_MS)
+            } else {
+                // 广告页按返回：退出广告，或弹「现在退出就没有奖励哦」。
+                // 退出之后前台可能已经不是起点了（比如任务结束回到 Mika），
+                // 那就别再按了——后面每一下都会落在别人家的界面上。
+                if (!back(sub, ctx, steps)) return AdRun("tap_failed", taps)
+                taps++
+                trace += round(n, "back", "1")
+                delay(CLOSE_SETTLE_MS)
+                if (foreground(sub, ctx, steps) != host) return AdRun("left", taps)
+                if (find(sub, ctx, steps, taskTexts) != null) return AdRun("left", taps)
+                val quit = pick(screenWords(sub, ctx, steps), listOf("放弃"))
+                if (quit != null && tapAt(sub, ctx, steps, quit.x, quit.y)) {
+                    taps++
+                    trace += round(n, "leave", quit.text.take(20))
+                    delay(CLOSE_SETTLE_MS)
+                }
             }
         }
-        return AdRun(if (find(sub, ctx, steps, taskTexts) != null) "closed" else "ad_timeout", taps)
+        if (find(sub, ctx, steps, taskTexts) == null) return AdRun("ad_timeout", taps)
+        // 关是关掉了，但这次没走到 CTA/没等够，只能算「退出来了」，不能算 watched
+        return AdRun(if (trace.any { it["round"]?.toString() == n.toString() && it["do"]?.toString() == "cta" }) "closed" else "left", taps)
     }
 
     /** 一次广告的结果：[outcome] 见 [watch] 的返回说明，[taps] 是这一趟按了几次。 */
@@ -389,8 +505,11 @@ internal object PhoneWatchRewardVideos : PhoneTool {
      * 只要一个「取消」不算——正经 App 里到处都是取消；两边都在才敢当确认框，才敢按取消。
      */
     private suspend fun jumpDialog(sub: SubActions, ctx: ToolContext, steps: Steps): Hit? {
-        val dismiss = find(sub, ctx, steps, split(DISMISS_TEXTS)) ?: return null
-        return if (find(sub, ctx, steps, split(ACCEPT_TEXTS)) != null) dismiss else null
+        // 顺序不能反：`phone_query` 每查一次就刷新一次屏快照，ref 只在产生它的那次读屏里有效
+        // （带旧 snapshotId 去点会直接回 `ref_expired`）。所以先确认「打开」在，最后再查「取消」，
+        // 这样拿到的 ref 才是当前快照里的。
+        if (find(sub, ctx, steps, split(ACCEPT_TEXTS)) == null) return null
+        return find(sub, ctx, steps, split(DISMISS_TEXTS))
     }
 
     /**
@@ -404,6 +523,10 @@ internal object PhoneWatchRewardVideos : PhoneTool {
             sub.run(Part.ToolCall("${ctx.callId}.o${steps.n++}", "phone_observe", "{}"))
         }.getOrNull() ?: return emptyList()
         if (result.content["ok"] != JsonPrimitive(true)) return emptyList()
+        (result.content["viewport"] as? JsonObject)?.let { view ->
+            (view["width"] as? JsonPrimitive)?.intOrNull?.let { steps.width = it }
+            (view["height"] as? JsonPrimitive)?.intOrNull?.let { steps.height = it }
+        }
         val list = result.content["visibleText"] as? JsonArray ?: return emptyList()
         return list.mapNotNull { item ->
             val o = item as? JsonObject ?: return@mapNotNull null
@@ -417,6 +540,20 @@ internal object PhoneWatchRewardVideos : PhoneTool {
     /** 按候选词的顺序挑第一个出现在屏上的；一个都没读到给 null。 */
     private fun pick(words: List<ScreenWord>, keys: List<String>): ScreenWord? {
         for (k in keys) words.firstOrNull { it.text.contains(k) }?.let { return it }
+        return null
+    }
+
+    /**
+     * 广告里那个「点了就走」的按钮。
+     *
+     * 同一批素材里正文也会出现「微信」（「去微信立即玩小游戏」的落地页尤其多），
+     * 单取第一个命中会点到标题上。CTA 永远在卡片底部，所以同一个词取 y 最大的那行。
+     */
+    private fun pickCta(words: List<ScreenWord>): ScreenWord? {
+        for (k in CTA_TEXTS) {
+            val hit = words.filter { it.text.contains(k) }.maxByOrNull { it.y }
+            if (hit != null) return hit
+        }
         return null
     }
 
@@ -503,17 +640,71 @@ internal object PhoneWatchRewardVideos : PhoneTool {
      * 只按编号点会一直点不动，所以位置这一路必须留着。
      */
     private suspend fun tap(sub: SubActions, ctx: ToolContext, steps: Steps, hit: Hit): Boolean {
-        // 有可点的编号就按编号点；只有位置的走手势（原因见 tapAt）
-        val ref = hit.ref ?: return tapAt(
-            sub, ctx, steps,
-            (hit.bounds[0] + hit.bounds[2]) / 2,
-            (hit.bounds[1] + hit.bounds[3]) / 2,
-        )
-        val args = buildJsonObject { put("ref", ref); put("snapshotId", hit.snapshotId) }
-        val result = runCatching {
-            sub.run(Part.ToolCall("${ctx.callId}.tap${steps.n++}", "phone_tap", args.toString()))
-        }.getOrNull() ?: return false
-        return result.content["ok"] == JsonPrimitive(true)
+        // 有可点的编号就按编号点；没有编号的走手势（原因见 tapAt）
+        val ref = hit.ref
+        if (ref != null) {
+            val args = buildJsonObject { put("ref", ref); put("snapshotId", hit.snapshotId) }
+            val result = runCatching {
+                sub.run(Part.ToolCall("${ctx.callId}.tap${steps.n++}", "phone_tap", args.toString()))
+            }.getOrNull() ?: return false
+            return result.content["ok"] == JsonPrimitive(true)
+        }
+        // `phone_query` 的 bounds 是像素，手势路径要的是 0–999。以前直接拿像素当千分比，
+        // 在 WebView 这种「有文字、没编号」的节点上必然越界（y 上千），点一下就报参数错。
+        // 这里改成按文字去 OCR 那棵树里找同一行的 center——它本来就是千分比。
+        val words = screenWords(sub, ctx, steps)
+        val spot = words.filter { it.text.contains(hit.name) || hit.name.contains(it.text) }
+            .maxByOrNull { it.text.length }
+            ?: return false
+        return tapAt(sub, ctx, steps, spot.x, spot.y)
+    }
+
+    /** 按候选文字查一次，返回这一屏上全部命中（用来在多个同名按钮里挑一个）。 */
+    private suspend fun findAll(
+        sub: SubActions,
+        ctx: ToolContext,
+        steps: Steps,
+        texts: List<String>,
+        limit: Int = 10,
+    ): List<Hit> {
+        for (text in texts) {
+            val args = buildJsonObject { put("text", text); put("limit", limit) }
+            val result = runCatching {
+                sub.run(Part.ToolCall("${ctx.callId}.q${steps.n++}", "phone_query", args.toString()))
+            }.getOrNull() ?: continue
+            if (result.content["ok"] != JsonPrimitive(true)) continue
+            val all = hits(result.content, text)
+            if (all.isNotEmpty()) return all
+        }
+        return emptyList()
+    }
+
+    /**
+     * 「激励任务」这张卡片右侧的「去完成」。
+     *
+     * 2026-11 起福利中心把任务入口收成了卡片右侧一个「去完成」，阶梯上的奖励名只是标签，
+     * 点了页面不动；而页面上还并排着「完成 3 个广告任务」「完成 1 个广告任务」
+     * 「做任务得白泽宇航员装扮」几个同样叫「去完成」的按钮，按文字取第一个会点错卡片。
+     * 所以用「激励任务」标题做锚点，取离它最近的那一个。
+     */
+    private suspend fun findEntry(
+        sub: SubActions,
+        ctx: ToolContext,
+        steps: Steps,
+        taskTexts: List<String>,
+    ): Hit? {
+        // 顺序同样是为了 ref 不过期：锚点先查，要点的「去完成」最后查。
+        val anchor = find(sub, ctx, steps, listOf(TASK_TITLE))
+            ?: taskTexts.firstOrNull()?.let { find(sub, ctx, steps, listOf(it)) }
+        val entries = findAll(sub, ctx, steps, split(ENTRY_TEXTS))
+        if (entries.isEmpty()) return null
+        if (anchor == null) return entries.first()
+        if (anchor.bounds.size < 4) return entries.first()
+        val ay = (anchor.bounds[1] + anchor.bounds[3]) / 2
+        return entries.filter { it.bounds.size >= 4 }
+            .minByOrNull { hit -> kotlin.math.abs((hit.bounds[1] + hit.bounds[3]) / 2 - ay) }
+            ?.takeIf { hit -> kotlin.math.abs((hit.bounds[1] + hit.bounds[3]) / 2 - ay) < 1200 }
+            ?: entries.first()
     }
 
     private fun round(n: Int, what: String, label: String) = buildJsonObject {

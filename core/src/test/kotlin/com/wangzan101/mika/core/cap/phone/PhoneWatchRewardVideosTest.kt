@@ -72,9 +72,17 @@ class PhoneWatchRewardVideosTest {
                     // 点任务格用的是位置（网页里的文字没有可点编号）
                     if (call.argsJson.contains("[60,40]")) phase = 1
                     // 点 CTA 之后人到了别的 App
-                    if (call.argsJson.contains("[500,800]")) app = "com.tencent.mm"
+                    if (call.argsJson.contains("[500,706]")) app = "com.tencent.mm"
                     ToolExecution(buildJsonObject { put("ok", true) })
                 }
+                // 任务格在 WebView 里没有可点编号，只有 OCR 的一行字
+                "phone_observe" -> ToolExecution(buildJsonObject {
+                    put("ok", true)
+                    put("visibleText", JsonArray(listOf(buildJsonObject {
+                        put("text", "惊喜礼包")
+                        put("center", JsonArray(listOf(JsonPrimitive(60), JsonPrimitive(40))))
+                    })))
+                })
                 "phone_diagnose" -> ToolExecution(buildJsonObject { put("ok", true); put("currentApp", app) })
                 "phone_back" -> {
                     app = HOST
@@ -96,7 +104,7 @@ class PhoneWatchRewardVideosTest {
         // 任务格、CTA：一下按位置，一下按 CTA 位置；回来之后网页上的入口已经在了，不用再点 ✕
         assertEquals(2, r.content["taps"]!!.jsonPrimitive.int)
         assertTrue(taps[0].contains("\"paths\""))
-        assertTrue(taps[1].contains("[500,800]"))
+        assertTrue(taps[1].contains("[500,706]"))
         assertEquals(HOST, app)
     }
 
@@ -110,7 +118,7 @@ class PhoneWatchRewardVideosTest {
         val fake = SubActions { call ->
             when (call.name) {
                 "phone_query" -> when (text(call.argsJson)) {
-                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", null)))
+                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", "@e1")))
                     // 「即将打开微信」那种确认框：取消和打开同时在
                     "取消" -> reply(listOf(match("取消", "@cancel")))
                     "打开" -> reply(listOf(match("打开", "@open")))
@@ -118,8 +126,8 @@ class PhoneWatchRewardVideosTest {
                 }
                 "phone_tap", "phone_gesture" -> {
                     taps += call.argsJson
-                    if (call.argsJson.contains("[60,40]")) phase = 1
-                    if (call.argsJson.contains("[500,800]")) app = "com.hihonor.intentresolver"
+                    if (call.argsJson.contains("@e1")) phase = 1
+                    if (call.argsJson.contains("[500,706]")) app = "com.hihonor.intentresolver"
                     if (call.argsJson.contains("@cancel")) { app = HOST; phase = 2 }
                     ToolExecution(buildJsonObject { put("ok", true) })
                 }
@@ -159,7 +167,7 @@ class PhoneWatchRewardVideosTest {
         val fake = SubActions { call ->
             when (call.name) {
                 "phone_query" -> when (text(call.argsJson)) {
-                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", null)))
+                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", "@e1")))
                     "取消" -> if (dialogUp) reply(listOf(match("取消", "@cancel"))) else reply(emptyList())
                     "打开" -> if (dialogUp) reply(listOf(match("打开", "@open"))) else reply(emptyList())
                     else -> reply(emptyList())
@@ -167,9 +175,9 @@ class PhoneWatchRewardVideosTest {
                 "phone_tap", "phone_gesture" -> {
                     taps += call.argsJson
                     when {
-                        call.argsJson.contains("[500,800]") -> dialogUp = true
+                        call.argsJson.contains("[500,706]") -> dialogUp = true
                         call.argsJson.contains("@cancel") -> { dialogUp = false; phase = 2 }
-                        call.argsJson.contains("[60,40]") -> phase = 1
+                        call.argsJson.contains("@e1") -> phase = 1
                     }
                     ToolExecution(buildJsonObject { put("ok", true) })
                 }
@@ -207,7 +215,7 @@ class PhoneWatchRewardVideosTest {
         val fake = SubActions { call ->
             when (call.name) {
                 "phone_query" -> when (text(call.argsJson)) {
-                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", null)))
+                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", "@e1")))
                     "拒绝" -> if (dialogUp) reply(listOf(match("拒绝", "@deny"))) else reply(emptyList())
                     "允许" -> if (dialogUp) reply(listOf(match("允许", "@allow"))) else reply(emptyList())
                     else -> reply(emptyList())
@@ -215,9 +223,9 @@ class PhoneWatchRewardVideosTest {
                 "phone_tap", "phone_gesture" -> {
                     taps += call.argsJson
                     when {
-                        call.argsJson.contains("[500,800]") -> dialogUp = true
+                        call.argsJson.contains("[500,706]") -> dialogUp = true
                         call.argsJson.contains("@deny") -> { dialogUp = false; phase = 2 }
-                        call.argsJson.contains("[60,40]") -> phase = 1
+                        call.argsJson.contains("@e1") -> phase = 1
                     }
                     ToolExecution(buildJsonObject { put("ok", true) })
                 }
@@ -252,14 +260,14 @@ class PhoneWatchRewardVideosTest {
             when (call.name) {
                 "phone_query" -> when (text(call.argsJson)) {
                     "领取" -> reply(listOf(match("已领取", "@gray")))
-                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", null)))
+                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", "@e1")))
                     else -> reply(emptyList())
                 }
                 "phone_tap", "phone_gesture" -> {
                     taps += call.argsJson
                     when {
-                        call.argsJson.contains("[500,800]") -> phase = 2
-                        call.argsJson.contains("[60,40]") -> phase = 1
+                        call.argsJson.contains("[500,706]") -> phase = 2
+                        call.argsJson.contains("@e1") -> phase = 1
                     }
                     ToolExecution(buildJsonObject { put("ok", true) })
                 }
@@ -302,7 +310,7 @@ class PhoneWatchRewardVideosTest {
                         // 标签点了什么也没发生，phase 不动
                         call.argsJson.contains("@label") -> Unit
                         call.argsJson.contains("@go") -> phase = 1
-                        call.argsJson.contains("[500,800]") -> phase = 2
+                        call.argsJson.contains("[500,706]") -> phase = 2
                     }
                     ToolExecution(buildJsonObject { put("ok", true) })
                 }
@@ -433,5 +441,210 @@ class PhoneWatchRewardVideosTest {
         assertEquals(0, r.content["watched"]!!.jsonPrimitive.int)
         // 领完一轮后没有任务入口可点
         assertEquals("nothing_to_watch", r.content["stopped"]!!.jsonPrimitive.content)
+    }
+
+    /**
+     * 2026-11 的微信小游戏素材：CTA 是「去微信立即玩小游戏」，旧词表一个都不含，
+     * 固定坐标又落在卡片下面的空白里。按文字取「最靠下的那一行」才点得到。
+     */
+    @Test
+    fun tapsTheWechatMiniGameCtaByItsText() = runTest {
+        val dispatcher = toolDispatcher(FakeScreen())
+        val taps = mutableListOf<String>()
+        var phase = 0
+        val fake = SubActions { call ->
+            when (call.name) {
+                "phone_query" -> when (text(call.argsJson)) {
+                    "去完成" -> reply(listOf(match("去完成", "@go")))
+                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", "@e1")))
+                    "激励任务" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("激励任务", "@title")))
+                    else -> reply(emptyList())
+                }
+                "phone_observe" -> ToolExecution(buildJsonObject {
+                    put("ok", true)
+                    put("visibleText", JsonArray(listOf(
+                        buildJsonObject { put("text", "开玩 15秒 小游戏"); put("center", JsonArray(listOf(JsonPrimitive(500), JsonPrimitive(250)))) },
+                        buildJsonObject { put("text", "灵画师游戏软件"); put("center", JsonArray(listOf(JsonPrimitive(500), JsonPrimitive(400)))) },
+                        buildJsonObject { put("text", "去微信立即玩小游戏"); put("center", JsonArray(listOf(JsonPrimitive(500), JsonPrimitive(706)))) },
+                    )))
+                })
+                "phone_tap", "phone_gesture" -> {
+                    taps += call.argsJson
+                    when {
+                        call.argsJson.contains("@go") -> phase = 1
+                        call.argsJson.contains("[500,706]") -> phase = 2
+                    }
+                    ToolExecution(buildJsonObject { put("ok", true) })
+                }
+                "phone_diagnose" -> ToolExecution(buildJsonObject { put("ok", true); put("currentApp", HOST) })
+                else -> ToolExecution(buildJsonObject { put("ok", false) })
+            }
+        }
+
+        val r = dispatcher.execute(
+            Part.ToolCall("c1", "phone_watch_reward_videos", """{"taskText":"惊喜礼包","rounds":1}"""),
+            ActionPass(),
+            sub = fake,
+        )
+
+        assertTrue(taps.any { it.contains("[500,706]") })
+        assertTrue(taps.none { it.contains("[500,800]") })
+        assertEquals(1, r.content["watched"]!!.jsonPrimitive.int)
+    }
+
+    /**
+     * 广告页一个字都读不出来时，靠右上角候选位置关：这批素材的 ✕ 在 (920,82)，
+     * 旧代码写死的 (923,115) 落在图标外沿，两下都点空。
+     */
+    @Test
+    fun closesWithTheTopRightXWhenNothingIsReadable() = runTest {
+        val dispatcher = toolDispatcher(FakeScreen())
+        val taps = mutableListOf<String>()
+        var phase = 0
+        val fake = SubActions { call ->
+            when (call.name) {
+                "phone_query" -> when (text(call.argsJson)) {
+                    "去完成" -> reply(listOf(match("去完成", "@go")))
+                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", "@e1")))
+                    "激励任务" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("激励任务", "@title")))
+                    else -> reply(emptyList())
+                }
+                // 广告页读不出字
+                "phone_observe" -> ToolExecution(buildJsonObject { put("ok", true); put("visibleText", JsonArray(emptyList())) })
+                "phone_tap", "phone_gesture" -> {
+                    taps += call.argsJson
+                    when {
+                        call.argsJson.contains("@go") -> phase = 1
+                        call.argsJson.contains("[920,82]") -> phase = 2
+                    }
+                    ToolExecution(buildJsonObject { put("ok", true) })
+                }
+                "phone_diagnose" -> ToolExecution(buildJsonObject { put("ok", true); put("currentApp", HOST) })
+                else -> ToolExecution(buildJsonObject { put("ok", false) })
+            }
+        }
+
+        val r = dispatcher.execute(
+            Part.ToolCall("c1", "phone_watch_reward_videos", """{"taskText":"惊喜礼包","rounds":1}"""),
+            ActionPass(),
+            sub = fake,
+        )
+
+        assertTrue(taps.any { it.contains("[920,82]") })
+        assertEquals(1, r.content["watched"]!!.jsonPrimitive.int)
+    }
+
+    /**
+     * 页面上好几个「去完成」：要用「激励任务」这块的标题做锚点，点离它最近的那个，
+     * 不能一路点「完成 3 个广告任务」或「做任务得白泽宇航员装扮」。
+     */
+    @Test
+    fun picksTheGoButtonNextToTheIncentiveTitle() = runTest {
+        val dispatcher = toolDispatcher(FakeScreen())
+        val taps = mutableListOf<String>()
+        var phase = 0
+        val fake = SubActions { call ->
+            when (call.name) {
+                "phone_query" -> when (text(call.argsJson)) {
+                    "去完成" -> reply(listOf(
+                        match("去完成", "@go-far", listOf(900, 1850, 1150, 1930)),
+                        match("去完成", "@go-incentive", listOf(900, 740, 1150, 820)),
+                        match("去完成", "@go-middle", listOf(900, 1280, 1150, 1360)),
+                    ))
+                    "激励任务" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("激励任务", "@title", listOf(100, 690, 400, 770))))
+                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", "@e1")))
+                    else -> reply(emptyList())
+                }
+                "phone_observe" -> ToolExecution(buildJsonObject {
+                    put("ok", true)
+                    put("visibleText", JsonArray(listOf(buildJsonObject {
+                        put("text", "去微信立即玩小游戏")
+                        put("center", JsonArray(listOf(JsonPrimitive(500), JsonPrimitive(706))))
+                    })))
+                })
+                "phone_tap", "phone_gesture" -> {
+                    taps += call.argsJson
+                    when {
+                        call.argsJson.contains("@go-incentive") -> phase = 1
+                        call.argsJson.contains("[500,706]") -> phase = 2
+                    }
+                    ToolExecution(buildJsonObject { put("ok", true) })
+                }
+                "phone_diagnose" -> ToolExecution(buildJsonObject { put("ok", true); put("currentApp", HOST) })
+                else -> ToolExecution(buildJsonObject { put("ok", false) })
+            }
+        }
+
+        val r = dispatcher.execute(
+            Part.ToolCall("c1", "phone_watch_reward_videos", """{"taskText":"惊喜礼包","rounds":1}"""),
+            ActionPass(),
+            sub = fake,
+        )
+
+        assertTrue(taps.any { it.contains("@go-incentive") })
+        assertTrue(taps.none { it.contains("@go-far") || it.contains("@go-middle") })
+        assertEquals(1, r.content["watched"]!!.jsonPrimitive.int)
+    }
+
+    /**
+     * 横版素材的 ✕ 不在 OCR 里，但在无障碍树里：优量汇给它的 content-desc 是「点击退出关闭视频」，
+     * 还带 ref。2026-11 实测整屏只有这一个可点元素——按坐标猜只会在 2772×1272 上乱戳。
+     */
+    @Test
+    fun closesTheAdByItsAccessibilityNameInsteadOfGuessing() = runTest {
+        val dispatcher = toolDispatcher(FakeScreen())
+        val taps = mutableListOf<String>()
+        // 0 = 福利页，1 = 横版广告盖着，2 = 关掉之后回到福利页
+        var phase = 0
+        val fake = SubActions { call ->
+            when (call.name) {
+                "phone_query" -> when (text(call.argsJson)) {
+                    "去完成" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("去完成", "@go")))
+                    "激励任务" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("激励任务", "@title")))
+                    "惊喜礼包" -> if (phase == 1) reply(emptyList()) else reply(listOf(match("惊喜礼包", "@e1")))
+                    // ✕ 只有无障碍名字、没有文字：OCR 那一路永远查不到它
+                    "退出关闭" -> if (phase == 1) {
+                        reply(listOf(match("点击退出关闭视频", "@close", listOf(946, 143, 984, 226))))
+                    } else reply(emptyList())
+                    else -> reply(emptyList())
+                }
+                "phone_observe" -> ToolExecution(buildJsonObject {
+                    put("ok", true)
+                    put("viewport", buildJsonObject { put("width", 2772); put("height", 1272) })
+                    put("visibleText", JsonArray(listOf(
+                        buildJsonObject {
+                            put("text", "开玩 15秒 小游戏")
+                            put("center", JsonArray(listOf(JsonPrimitive(499), JsonPrimitive(217))))
+                        },
+                        buildJsonObject {
+                            put("text", "去微信立即玩小游戏")
+                            put("center", JsonArray(listOf(JsonPrimitive(499), JsonPrimitive(706))))
+                        },
+                    )))
+                })
+                "phone_tap", "phone_gesture" -> {
+                    taps += call.argsJson
+                    when {
+                        call.argsJson.contains("@go") -> phase = 1
+                        call.argsJson.contains("@close") -> phase = 2
+                    }
+                    ToolExecution(buildJsonObject { put("ok", true) })
+                }
+                "phone_diagnose" -> ToolExecution(buildJsonObject { put("ok", true); put("currentApp", HOST) })
+                else -> ToolExecution(buildJsonObject { put("ok", false) })
+            }
+        }
+
+        val r = dispatcher.execute(
+            Part.ToolCall("c1", "phone_watch_reward_videos", """{"taskText":"惊喜礼包","rounds":1}"""),
+            ActionPass(),
+            sub = fake,
+        )
+
+        assertTrue(taps.any { it.contains("@close") })
+        // 一次坐标都没猜：名字查得到就不该走到候选点
+        assertTrue(taps.none { it.contains("[920,82]") || it.contains("[978,30]") })
+        assertEquals(1, r.content["watched"]!!.jsonPrimitive.int)
+        assertEquals("round_limit", r.content["stopped"]!!.jsonPrimitive.content)
     }
 }
