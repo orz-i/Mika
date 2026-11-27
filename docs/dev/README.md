@@ -31,7 +31,7 @@
 | [teach-mika.md](teach-mika.md) | 人工示范怎样收成待确认的知识型技能 |
 | [app-atlas-governance.md](app-atlas-governance.md) | App 页面经验的隐私/正确性约束、旧数据迁移、分享 v2 与验证边界 |
 | [agent-loop-governance.md](agent-loop-governance.md) | 主循环的插话启动边界、调用结果配对、终态一致性、并发额度与压缩数据承接 |
-| [capture-plugin-packages.md](capture-plugin-packages.md) | 抓包插件三层边界：探测规则、声明式解码管道、外部插件包，以及什么时候才需要重编 |
+| [capture-plugin-packages.md](capture-plugin-packages.md) | 插件包四层边界：探测规则、声明式解码管道、外部包，以及 `flows` 应用脚本（`phone_run_flow` 解释执行） |
 
 ## 仓库里别处的开发文档
 

@@ -441,3 +441,119 @@ id 带前缀是为了内置包和外部包同名时不互相影响。
 失败原因按类别给（没有 `plugin.json` / 一个包里有多份 / 太大 / 路径越界 / 读不出来 / 校验不过），
 最后一种额外把加载器的原话（`api_version_mismatch:99!=1`）照原样显示：用户要拿它去改包，
 转述一遍只会丢信息。
+
+---
+
+## 九、L4：应用脚本（`flows`）
+
+抓包解决「看得见请求」，脚本解决「点得动界面」。同一个 `plugin.json` 里多一个 `flows` 数组，
+一个 App 一个包：既能写解码规则，也能写操作流程，改文案不用重编宿主。
+
+### 9.1 形态
+
+`assets/aau_capture_plugins/qidian/plugin.json`（起点读书）就是只带脚本的包：
+
+```json
+{
+  "id": "qidian",
+  "apiVersion": 1,
+  "packages": ["com.qidian.QDReader"],
+  "flows": [{
+    "id": "reward-video",
+    "params": {"rounds": {"type": "int", "default": "9"}},
+    "steps": [
+      {"op": "wait", "query": {"textAny": ["激励任务", "书架", "今日阅读"]}, "timeoutMs": 15000, "optional": true},
+      {"op": "if", "not": {"text": "激励任务"}, "then": [
+        {"op": "tap", "at": [870, 209]},
+        {"op": "sleep", "ms": 1500}
+      ]},
+      {"op": "repeat", "times": "${rounds}", "as": "round", "steps": [
+        {"op": "tap", "query": {"text": "领取", "exclude": ["已领"]}, "optional": true},
+        {"op": "tap", "query": {"text": "去完成", "near": "激励任务", "pick": "nearest"}},
+        {"op": "wait", "query": {"text": "激励任务"}, "gone": true, "timeoutMs": 25000, "optional": true},
+        {"op": "if", "query": {"text": "激励任务"}, "then": [
+          {"op": "if", "query": {"text": "已领取"}, "then": [{"op": "stop", "reason": "all_claimed"}]},
+          {"op": "stop", "reason": "ad_not_shown"}
+        ]},
+        {"op": "sleep", "ms": 15600},
+        {"op": "tap", "query": {"textAny": ["去微信立即玩", "立即试玩"], "source": "text", "pick": "maxY"}, "optional": true},
+        {"op": "returnto", "package": "com.qidian.QDReader", "max": 3},
+        {"op": "tap", "query": {"textAny": ["退出关闭", "关闭视频"]}, "optional": true}
+      ]},
+      {"op": "stop", "reason": "round_limit"}
+    ]
+  }]
+}
+```
+
+### 9.2 九个 op
+
+| `op` | 字段 | 做什么 |
+|---|---|---|
+| `tap` | `query` 或 `at: [x,y]`、`optional` | 点一个元素；**先按命中项的中心点落指**，坐标缺失才退回 `ref`（原因见 9.3） |
+| `wait` | `query`、`gone`、`timeoutMs`、`stop`、`optional` | 等它出现/消失；超时可以按 `stop` 给的 reason 结束整条脚本 |
+| `sleep` | `ms` | 等固定时长（正片、浏览时长） |
+| `back` | `times` | 按返回键 |
+| `returnto` | `package`、`max`、`settleMs` | 按返回直到回到指定 App；回不去就 `stuck_outside` |
+| `if` | `query` / `not` / `foreground`，`then`、`else` | 条件分支。`foreground` 写 `!com.foo` 表示「不是它」 |
+| `repeat` | `times`、`as`（默认 `round`）、`steps` | 定次循环，当前轮次进 `${round}` |
+| `stop` | `reason` | 正常收尾（`round_limit`、`all_claimed`、`ad_not_shown`）；理由会原样进回执 |
+| `log` | `text` | 进回执的 `log`，不碰界面 |
+
+选择器字段：
+
+| 字段 | 说明 |
+|---|---|
+| `text` / `textAny` | 包含匹配，忽略大小写 |
+| `exclude` | 名字里含这些词的命中不算。`领取` 会命中 `已领取`，点灰按钮没反应还占掉一轮 |
+| `role` / `id` | 无障碍类名 / 资源 ID 的子串 |
+| `source` | `a11y`（默认，带 ref）或 `text`（OCR 行，只有 0–999 坐标） |
+| `pick` | `first` / `last` / `maxY` / `minY` / `nearest`；`nearest` 要配 `near`（锚点文字） |
+| `near` | 锚点。**先查锚点、再查目标**——每次查询都会刷新快照，顺序反了 ref 就过期 |
+
+参数用 `params` 声明默认值，脚本里写 `${name}`，调用方传同名参数覆盖。缺参数直接报
+`missing_var`，不拿空串去点屏幕。`phone_run_flow` 的 `params` 是 JSON **对象**
+（`{"rounds":2}`），不是字符串——schema 里就声明成 object，模型不用绕一道转义。
+
+**同名脚本谁说了算**：内置包在 `capture_plugins_builtin/`、用户包在 `capture_plugins/`，
+两处出现同一个 `flow id` 时以**用户包**为准。所以试新文案不用先删内置包：把改过的
+`plugin.json` 放进 `capture_plugins/qidian/`，下一次调用就跑它。
+
+`pick=maxY` 挑中的是**最靠下那一个**，落指用它当次读到的中心点，不会按名字重查一次取首个——
+同屏常常好几个「查看详情」，重查会把最靠下悄悄换成最靠上。
+
+### 9.3 落指为什么先坐标、后 ref
+
+起点福利中心整页是 H5。真机上照节点发 `phone_tap`（无障碍的点击动作），页面上只起一个
+按下的涟漪，JS 的 `click` 不触发——点「去完成」毫无反应，广告永远不出来，而且 `phone_tap`
+自己回的是 `ok`，看不出问题。同一个位置改用 `phone_gesture` 落指，广告立刻出来。
+
+所以 `FlowHost.tap` 现在**先按中心点落指**：无障碍树的 `bounds` 已经是 0–999（`ScreenReader`
+按屏宽高归一化过），OCR 行本来就是，两条路的中心点同一套网格，和手指点下去一模一样。
+`ref` 留作坐标缺失时的退路。
+
+配套的一个前提：**App 必须在任务自己那块屏上**。用户手动开的起点留在主屏，Mika 的手势注进
+虚拟屏，一样是「点下去没反应」；任务里 `phone_launch_app` 起的才在 agent 屏上。所以脚本开头
+先用坐标点书架右上角的「领福利」自己进福利中心，不假设起点已经停在那一页。
+
+### 9.4 边界
+
+- 脚本只能经 `FlowHost` 做六件事：找元素、点元素、点坐标、返回、取前台、记日志。
+  **没有「调用任意工具」的口子**——插件包是用户能放的文件，能力越少越好审。
+- 解释器不认的 `op` 直接判这条脚本坏掉（`unknown_op`），不静默跳过：脚本是行为，跑一半比报错更难查。
+- 未知**字段**忽略，方便以后加参数而不涨 `apiVersion`；改语义才涨。
+- 脚本不带 dex，也不参与抓包注册表——脚本跑不跑和抓包开不开是两件事。
+
+### 9.5 谁跑它
+
+- 解析与解释在 `aau-ui` 的 `com.agent.use.flow`（纯 JVM，宿主可换读屏实现）；
+- 落地在宿主的 `phone_run_flow`：挑当前 App 的脚本、填参数、把每一步接到和手点一样的手机工具上；
+- 内置包每次取插件包目录时都过一遍安装器：磁盘上那份不比 assets 里的旧就跳过，旧了才覆盖
+  （和抓包同一个安装器）。所以**改了内置脚本要把 `version` 往上加**，否则升级完还是跑旧的那份；
+  现场试新文案则不必动版本——放进 `capture_plugins/` 就覆盖内置的同名脚本。
+
+设置页的插件包详情里，`channels` 会多一行 `flow:1`，表示这个包带了脚本。
+
+真机回归是 `FlowPackDeviceTest`（`app/src/androidTest`）：一份写到 `capture_plugins/` 的设置页脚本
+验「用户包即时生效、按前台包名挑脚本、读屏落指都对」，一份打开起点跑内置的 `reward-video`，
+以回执里的 `stopped` 和步数说话。
