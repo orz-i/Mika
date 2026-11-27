@@ -41,6 +41,11 @@ internal fun int(d: String, min: Int? = null, max: Int? = null) = buildJsonObjec
 
 internal fun bool(d: String) = buildJsonObject { put("type", "boolean"); put("description", d) }
 
+/** 键不固定的对象（脚本参数这类）：值由调用方自己定，schema 只能说到「是个对象」。 */
+internal fun objectArg(d: String) = buildJsonObject {
+    put("type", "object"); put("description", d); put("additionalProperties", true)
+}
+
 internal fun strArray(d: String, max: Int) = buildJsonObject {
     put("type", "array"); put("description", d); put("maxItems", max)
     put("items", buildJsonObject { put("type", "string") })

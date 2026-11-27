@@ -29,6 +29,9 @@ class AppAccessScreenPort(
 
     @Volatile private var verified: Verified? = null
 
+    /** 应用插件包目录不碰界面，直接透给端口；这里显式写出来，免得以后加成员时默默漏过去。 */
+    override val flowPackRoots: List<java.io.File> get() = inner.flowPackRoots
+
     override suspend fun checkAppAccess() {
         val state = appAccess.current()
         if (!state.available) throw AppAccessDenied("app_access_unavailable", null)

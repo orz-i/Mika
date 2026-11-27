@@ -93,6 +93,14 @@ interface ScreenPort : ScreenSurface {
     /** 固定的能力声明；问它不连接助手、不建屏，也不加载模型。 */
     val supportsLocalIcons: Boolean get() = false
 
+    /**
+     * 应用插件包的根目录（内置包 `capture_plugins_builtin/`、用户包 `capture_plugins/`）。
+     *
+     * 插件包不只有抓包规则，还可以带 `flows` 应用脚本（见 [com.agent.use.flow.AppFlow]）。
+     * 目录由宿主给：core 是纯 JVM，不认 `filesDir`。
+     */
+    val flowPackRoots: List<java.io.File> get() = emptyList()
+
     suspend fun findLocalIcon(icon: LocalIcon, region: LocalIconRegion): LocalIconResult = LocalIconResult.Miss.Unavailable
 
     /** 仅用于已有的点击执行入口。端口必须在落指前核对帧；不支持时绝不能退回普通坐标点击。 */

@@ -1,10 +1,12 @@
 package com.wangzan101.mika.core.tool
 
 import com.wangzan101.mika.core.prompt.Feedback
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import kotlin.math.roundToInt
 
 /** 参数校验失败;message 点名字段。 */
@@ -49,6 +51,18 @@ internal class Args(val tool: ToolDef, val o: JsonObject) {
         if (d != Math.floor(d)) throw ArgError(k, "must be an integer")
         if (d < min || d > max) throw ArgError(k, "must be between $min and $max")
         return d.toInt()
+    }
+
+    /**
+     * 自由形状的对象参数：键由调用方（或插件包里的脚本）自己定，工具只把它当一张表读。
+     *
+     * 也收 JSON 字符串：模型有时把对象写成一行字符串，为这点差别让整次调用失败不值得。
+     */
+    fun obj(k: String): JsonObject? = when (val v = o[k]) {
+        null, is JsonNull -> null
+        is JsonObject -> v
+        is JsonPrimitive -> runCatching { Json.parseToJsonElement(v.content).jsonObject }.getOrNull()
+        else -> throw ArgError(k, "must be an object")
     }
 
     /** 坐标容忍 [a,b](取中点)。 */

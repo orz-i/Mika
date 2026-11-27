@@ -139,6 +139,7 @@ class AppAccessScreenPortTest {
             reached += m.name
             when (m.name) {
                 "snapshot", "peek" -> ScreenSnapshot("s", "bank", emptyList(), 1, 1)
+                "getFlowPackRoots" -> emptyList<java.io.File>()
                 "getSupportsLocalIcons" -> true
                 else -> null
             }
@@ -261,6 +262,8 @@ class AppAccessScreenPortTest {
             "systemAction", "systemCommand", "bulkCalendarInsert", "listApps", "otherProfiles", "appCopies", "getAfterTask",
             // 抓包端口读的是旁路流量,不驱动任何 App 的界面,也没有目标 App 这一说
             "getNetwork", "getSupportsLocalIcons",
+            // 插件包目录只是磁盘上的路径,读它不碰任何 App 的界面
+            "getFlowPackRoots",
         )
     }
 }
