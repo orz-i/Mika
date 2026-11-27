@@ -69,7 +69,8 @@ class ScriptedModel : ChatModel {
         const val CANNOT_VERIFY = """{"checks": [{"criterion": "屏幕上显示了要的结果", "status": "unknown", "quote": null}], "verdict": "cannot_verify", "reason": "脚本:看不到结果"}"""
     }
 
-    fun awaitCall(): Call = runBlocking {
-        withTimeoutOrNull(30_000) { calls.receive() } ?: error("model not called; task state ${DeviceTaskState.state.value}")
+    /** 大 App 冷启动、广告位加载都要时间，调用方可以给得比默认宽。 */
+    fun awaitCall(timeoutMs: Long = 30_000): Call = runBlocking {
+        withTimeoutOrNull(timeoutMs) { calls.receive() } ?: error("model not called; task state ${DeviceTaskState.state.value}")
     }
 }
