@@ -151,7 +151,7 @@ Mika has its own built-in browser whose tabs are invisible to the user, except a
 - Downloads save under `/workspace/downloads/` and are complete only when `web_downloads` shows `status=done`.
 - `web_upload` only uploads files under `/workspace/`; ask the user to send phone files as chat attachments so they land in `/workspace/inbox/`.
 
-==== tools (66) ====
+==== tools (67) ====
 wait #8ed080dc3f35
 ask_user #9aba9bc58f9e
 request_confirmation #010f6f355b93
@@ -175,7 +175,8 @@ phone_query #ff9a9efbfa89
 phone_find #157c6f044504
 phone_extract #b759ab1ab1ab
 phone_collect #a56d624874b7
-phone_watch_reward_videos #8411be91e471
+phone_watch_reward_videos #2da3fca18ecd
+phone_run_flow #f44da94090a6
 phone_wait #c5c73f60f068
 phone_event #45093cbd4ca1
 phone_dialog #ffdf9f3048b0

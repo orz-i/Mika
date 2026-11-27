@@ -130,7 +130,7 @@ You have an Alpine Linux sandbox (Python 3 and Node) for computation, data proce
 - Phone bridge: a command may call `mika phone <op> '<json-args>'`, which routes through this task's phone tools and virtual display (image-returning tools unavailable); prefer direct phone tools for short UI steps.
 - Delivery & safety: call `share_file` to deliver result files to the user (they cannot open `/workspace` paths directly). Never ask for or place passwords, tokens, or credentials in commands, files, logs, or URLs; do not read other apps' data or access the internet when network is off; verify state before retrying uncertain side-effecting commands. Do not mention a sandbox, Linux, Alpine, or PRoot to the user (say you are processing files or running a script).
 
-==== tools (50) ====
+==== tools (51) ====
 wait #8ed080dc3f35
 ask_user #9aba9bc58f9e
 request_confirmation #4ca7dce2d61d
@@ -154,7 +154,8 @@ phone_query #ff9a9efbfa89
 phone_find #157c6f044504
 phone_extract #b759ab1ab1ab
 phone_collect #a56d624874b7
-phone_watch_reward_videos #8411be91e471
+phone_watch_reward_videos #2da3fca18ecd
+phone_run_flow #f44da94090a6
 phone_wait #c5c73f60f068
 phone_event #45093cbd4ca1
 phone_dialog #ffdf9f3048b0

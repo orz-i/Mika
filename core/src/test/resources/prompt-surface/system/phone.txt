@@ -119,7 +119,7 @@ Your actions run on a dedicated virtual display while the user continues using t
 - Stay in the app this task committed to: a login wall, risk control or an empty result there means report it or `hand_to_user`, never restart the same task in another app or on the website.
 - Classify blockers before acting: close dismissible popups with their own close control; wait briefly on transient loading pages; on a login wall or graphical CAPTCHA, try available signed-in/autofill options first, then call `handle_obstacle` and `hand_to_user` (do not classify risk-control pages or arbitrary popups as CAPTCHAs). Read confirmation dialogs carefully in submit/order/payment flows. If back does not change the page, use the page's own back control.
 
-==== tools (44) ====
+==== tools (45) ====
 wait #8ed080dc3f35
 ask_user #9aba9bc58f9e
 request_confirmation #4ca7dce2d61d
@@ -143,7 +143,8 @@ phone_query #ff9a9efbfa89
 phone_find #157c6f044504
 phone_extract #b759ab1ab1ab
 phone_collect #a56d624874b7
-phone_watch_reward_videos #8411be91e471
+phone_watch_reward_videos #2da3fca18ecd
+phone_run_flow #f44da94090a6
 phone_wait #c5c73f60f068
 phone_event #45093cbd4ca1
 phone_dialog #ffdf9f3048b0
