@@ -717,6 +717,7 @@ class TaskRun(
                     }.orEmpty()
                 },
                 networkProvider = { if (FeatureFlags.get(service).networkCaptureEnabled()) phoneServices.network else null },
+                flowRoots = { com.wangzan101.mika.cap.phone.network.AppPluginPacks.roots(service) },
             ) { connectPhone() }
             val accessedPhone = com.wangzan101.mika.core.uistate.AppAccessScreenPort(
                 phoneScreen, appAccess,

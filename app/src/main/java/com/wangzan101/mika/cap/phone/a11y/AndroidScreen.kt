@@ -21,6 +21,8 @@ import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
+import java.io.File
+import com.wangzan101.mika.cap.phone.network.AppPluginPacks
 import com.wangzan101.mika.core.cap.phone.GesturePacing
 import com.wangzan101.mika.core.cap.phone.TypingPacing
 import com.wangzan101.mika.core.uistate.ActionResult
@@ -182,6 +184,12 @@ class AndroidScreen(
     private val shellReadLock = kotlinx.coroutines.sync.Mutex()
     private val localIcons = lazy { LocalIcons.create(a11y.assets) }
     override val supportsLocalIcons get() = LocalIcons.supported
+
+    /**
+     * 应用插件包的目录。第一次取时把 APK 里的内置包装到磁盘：`phone_run_flow` 读的是磁盘，
+     * 没装过就等于「这个 App 没有脚本」。安装器和抓包启动时用的是同一个，不会出现两份规则。
+     */
+    override val flowPackRoots: List<File> by lazy { AppPluginPacks.roots(a11y.context) }
     private enum class WindowProtection { Clear, Protected, Unknown }
 
     /** 最近一次 launch_app 成功打开的包,用于判断是否被切走。 */

@@ -20,6 +20,7 @@ import com.wangzan101.mika.core.uistate.WheelOutcome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 
 /** 操作手机 App 需要的(内置助手、无障碍)此刻没有;[hint] 是告诉模型和用户怎么弄好的一句话。 */
 class PhoneUnavailable(val hint: String) : Exception(hint)
@@ -36,6 +37,8 @@ class LazyPhoneScreen(
     private val listApps: suspend () -> List<Pair<String, String>>,
     private val appCopies: suspend () -> List<AppCopy> = { emptyList() },
     private val networkProvider: (() -> com.wangzan101.mika.core.net.PhoneNetworkPort?)? = null,
+    /** 应用插件包目录；和手机连没连上无关，脚本可能在任何时刻被调用。 */
+    private val flowRoots: () -> List<File> = { emptyList() },
     private val acquire: suspend () -> ScreenPort,
 ) : ScreenPort {
     private val lock = Mutex()
@@ -43,6 +46,8 @@ class LazyPhoneScreen(
 
     /** 模型标下的任务结束时各 App 的去留;收尾时由任务交给内置助手执行(没接上过手机就没有可处理的)。 */
     override val afterTask = AfterTaskMarks()
+
+    override val flowPackRoots: List<File> get() = port?.flowPackRoots?.takeIf { it.isNotEmpty() } ?: flowRoots()
 
     /** 本任务用过手机(已接上)。 */
     val acquired: Boolean get() = port != null
